@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     alist::{self, File},
-    message, tmdb,
+    push, tmdb,
 };
 
 #[derive(Debug)]
@@ -145,7 +145,7 @@ impl TvProcessor<'_> {
         if moved {
             info!("send message to telegram");
             let message = format!("{} season {} has been processed", tv_name, season_number);
-            message::send(self.state, message.as_str()).await;
+            push::send(self.state, message.as_str()).await;
         }
 
         Ok(())

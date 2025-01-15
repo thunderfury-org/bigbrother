@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use serde::Deserialize;
 
@@ -12,9 +12,13 @@ pub struct AppConfig {
     pub tmdb_api_key: String,
 
     #[serde(default)]
-    pub telegram_bot_token: String,
+    pub push: PushConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct PushConfig {
     #[serde(default)]
-    pub telegram_chat_id: String,
+    pub params: HashMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

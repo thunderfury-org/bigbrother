@@ -3,7 +3,7 @@ use tracing::{error, info};
 use crate::common::state::AppState;
 
 mod alist;
-mod message;
+mod push;
 mod tmdb;
 mod tv;
 
