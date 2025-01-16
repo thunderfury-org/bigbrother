@@ -15,7 +15,7 @@ pub struct Client<'a> {
     api_key: &'a str,
 }
 
-impl<'a> Client<'a> {
+impl Client<'_> {
     async fn get<U: IntoUrl + Display, T: DeserializeOwned>(
         &self,
         url: U,
