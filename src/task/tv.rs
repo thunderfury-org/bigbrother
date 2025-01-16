@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
+use regex::Regex;
 use tracing::info;
 
 use crate::{
@@ -57,10 +58,16 @@ impl TvProcessor<'_> {
             }
             info!("processing dir: {:?}", file);
 
-            self.process_one_tv(&file.name, &file.path).await?;
+            let name = self.parse_tv_name(&file.name);
+            self.process_one_tv(&name, &file.path).await?;
         }
 
         Ok(())
+    }
+
+    fn parse_tv_name(&self, name: &str) -> String {
+        let re = Regex::new(r"\(\s*\d{4}\s*\)").unwrap();
+        re.replace(name, "").trim().to_string()
     }
 
     async fn process_one_tv(&self, name: &str, path: &str) -> Result<()> {
@@ -114,7 +121,7 @@ impl TvProcessor<'_> {
         let empty_map = HashMap::new();
         let exist_episodes = exists_seasons.get(&season_number).unwrap_or(&empty_map);
 
-        let mut moved = false;
+        let mut moved_episodes: Vec<i32> = vec![];
         for (episode_number, file) in episode_map {
             if exist_episodes.contains_key(episode_number) {
                 continue;
@@ -139,16 +146,30 @@ impl TvProcessor<'_> {
             self.alist_client
                 .move_file(&file.file_dir, dest_path, &dest_file_name)
                 .await?;
-            moved = true;
+
+            moved_episodes.push(*episode_number);
         }
 
-        if moved {
-            info!("send message to telegram");
-            let message = format!("{} season {} has been processed", tv_name, season_number);
-            push::send(self.state, message.as_str()).await;
+        if !moved_episodes.is_empty() {
+            moved_episodes.sort();
+            push::send(
+                self.state,
+                self.format_message(tv_name, season_number, &moved_episodes).as_str(),
+            )
+            .await;
         }
 
         Ok(())
+    }
+
+    fn format_message(&self, tv_name: &str, season_number: i32, episodes: &Vec<i32>) -> String {
+        let first = episodes.first().unwrap();
+        let last = episodes.last().unwrap();
+        if first == last {
+            format!("{} 第 {} 季第 {} 集已就绪", tv_name, season_number, first)
+        } else {
+            format!("{} 第 {} 季 {} - {} 集已就绪", tv_name, season_number, first, last)
+        }
     }
 
     async fn get_tv_info(&self, title: &str) -> Result<TvInfo> {

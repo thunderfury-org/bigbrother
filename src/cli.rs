@@ -11,6 +11,7 @@ pub struct Cli {
 pub enum Commands {
     Server(DataDirArgs),
     Once(DataDirArgs),
+    Push(PushArgs),
 }
 
 #[derive(Args)]
@@ -18,6 +19,16 @@ pub struct DataDirArgs {
     /// data directory
     #[arg(short, long, default_value_t = String::from("./data"))]
     pub data_dir: String,
+}
+
+#[derive(Args)]
+pub struct PushArgs {
+    /// data directory
+    #[arg(short, long, default_value_t = String::from("./data"))]
+    pub data_dir: String,
+
+    #[arg(short, long)]
+    pub message: String,
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ use clap::Parser;
 
 use cli::{Cli, Commands};
 use common::{config::Manager, state::AppState};
+use task::push;
 
 mod cli;
 mod common;
@@ -18,6 +19,9 @@ fn main() {
         }
         Commands::Once(args) => {
             run_once(args.data_dir.as_str());
+        }
+        Commands::Push(push_args) => {
+            push(push_args.data_dir.as_str(), &push_args.message);
         }
     }
 }
@@ -68,4 +72,14 @@ fn new_runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .unwrap()
+}
+
+fn push(data_dir: &str, message: &str) {
+    let state = init_state(data_dir);
+
+    // init logger
+    logger::init(std::io::stdout);
+
+    // run
+    new_runtime().block_on(push::send(&state, message));
 }
