@@ -13,7 +13,7 @@ pub struct Client<'a> {
     api_token: &'a str,
 }
 
-impl<'a> Client<'a> {
+impl Client<'_> {
     async fn post<I: Serialize, T: DeserializeOwned + Default>(&self, url: &str, json: &I) -> Result<T> {
         let result = self
             .client
