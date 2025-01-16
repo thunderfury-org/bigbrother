@@ -162,7 +162,7 @@ impl TvProcessor<'_> {
         Ok(())
     }
 
-    fn format_message(&self, tv_name: &str, season_number: i32, episodes: &Vec<i32>) -> String {
+    fn format_message(&self, tv_name: &str, season_number: i32, episodes: &[i32]) -> String {
         let first = episodes.first().unwrap();
         let last = episodes.last().unwrap();
         if first == last {

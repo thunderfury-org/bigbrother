@@ -82,7 +82,7 @@ async fn send_inner(state: &AppState, message: &str) -> Result<()> {
     if !content.contains("\"errcode\":0") {
         return Err(Error::Internal(format!("send message to wecom failed, {}", content)));
     }
-    return Ok(());
+    Ok(())
 }
 
 async fn get_access_token(state: &AppState, corp_id: &str, corp_secret: &str, refresh: bool) -> Result<String> {
