@@ -1,7 +1,7 @@
-use lazy_static::lazy_static;
+use std::sync::Mutex;
+
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use crate::common::error::{Error, Result};
@@ -18,9 +18,7 @@ struct AccessToken {
     expires_at: u64,
 }
 
-lazy_static! {
-    static ref ACCESS_TOKEN_CACHE: Mutex<Option<AccessToken>> = Mutex::new(None);
-}
+static ACCESS_TOKEN_CACHE: Mutex<Option<AccessToken>> = Mutex::new(None);
 
 pub async fn send(state: &AppState, message: &str) {
     let msg = format!("BigBrother 来信\n{}", message);
@@ -86,7 +84,7 @@ async fn send_inner(state: &AppState, message: &str) -> Result<()> {
 }
 
 async fn get_access_token(state: &AppState, corp_id: &str, corp_secret: &str, refresh: bool) -> Result<String> {
-    let mut cache = ACCESS_TOKEN_CACHE.lock().await;
+    let mut cache = ACCESS_TOKEN_CACHE.lock().unwrap();
     if !refresh && cache.is_some() {
         let token = cache.as_ref().unwrap();
         if token.expires_at > now() {

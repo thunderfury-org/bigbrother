@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use std::sync::LazyLock;
 
-use lazy_static::lazy_static;
 use lingua::Language::{Chinese, English, Japanese};
 use lingua::{LanguageDetector, LanguageDetectorBuilder};
+use serde::Deserialize;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::lang::{self};
@@ -13,12 +13,10 @@ pub struct Title {
     pub title: String,
 }
 
-lazy_static! {
-    static ref LANG_DETECTOR: LanguageDetector = {
-        let languages = vec![English, Chinese, Japanese];
-        LanguageDetectorBuilder::from_languages(&languages).build()
-    };
-}
+static LANG_DETECTOR: LazyLock<LanguageDetector> = LazyLock::new(|| {
+    let languages = vec![English, Chinese, Japanese];
+    LanguageDetectorBuilder::from_languages(&languages).build()
+});
 
 impl Title {
     pub fn parse(s: &str) -> Vec<Self> {
