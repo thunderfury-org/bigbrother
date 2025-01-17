@@ -1,6 +1,5 @@
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, sync::LazyLock};
 
-use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 
 use super::{lang, EpisodeInfo, FileType, Title};
@@ -48,10 +47,8 @@ impl EpisodeInfo {
     }
 
     fn parse_resolution(&mut self, filename: &mut String) {
-        lazy_static! {
-            static ref RESOLUTION_RE: Regex =
-                Regex::new(r"(\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk])").unwrap();
-        }
+        static RESOLUTION_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk])").unwrap());
 
         if let Some(caps) = RESOLUTION_RE.captures(filename) {
             if let Some(height) = caps.name("height") {
@@ -69,9 +66,8 @@ impl EpisodeInfo {
     }
 
     fn parse_special_season_number(&mut self, filename: &mut String) {
-        lazy_static! {
-            static ref SPECIAL_SEASON_NUMBER_RE: Regex = Regex::new(r"第(?P<season_number>\d{1,3})季").unwrap();
-        }
+        static SPECIAL_SEASON_NUMBER_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"第(?P<season_number>\d{1,3})季").unwrap());
 
         if let Some(caps) = SPECIAL_SEASON_NUMBER_RE.captures(filename) {
             if let Some(season_number) = caps.name("season_number") {
@@ -83,12 +79,8 @@ impl EpisodeInfo {
     }
 
     fn parse_season_and_episode_number<'a>(&mut self, filename: &'a str) -> Option<(&'a str, &'a str)> {
-        lazy_static! {
-            static ref SEASON_AND_EPISODE_NUMBER_RE: Regex =
-                Regex::new(r"(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?").unwrap();
-
-            static ref SIMPLE_EPISODE_NUMBER_RE: Regex = Regex::new(r"(?P<episode_number>\d{1,4})").unwrap();
-        }
+        static SIMPLE_EPISODE_NUMBER_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(?P<episode_number>\d{1,4})").unwrap());
 
         if let Some(p) = self.try_parse_season_and_episode_number(filename) {
             Some(p)
@@ -105,10 +97,9 @@ impl EpisodeInfo {
     }
 
     fn try_parse_season_and_episode_number<'a>(&mut self, filename: &'a str) -> Option<(&'a str, &'a str)> {
-        lazy_static! {
-            static ref SEASON_AND_EPISODE_NUMBER_RE: Regex =
-                Regex::new(r"(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?").unwrap();
-        }
+        static SEASON_AND_EPISODE_NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?").unwrap()
+        });
 
         let mut all_caps: Vec<Captures<'_>> = vec![];
 
@@ -152,9 +143,8 @@ impl EpisodeInfo {
     }
 
     fn parse_title(&mut self, filename: &str) {
-        lazy_static! {
-            static ref TITLE_RE: Regex = Regex::new(r"(\[(?P<release_group>[^\]]+)\])?\[?(?P<title>[^\]\[]+)").unwrap();
-        }
+        static TITLE_RE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(\[(?P<release_group>[^\]]+)\])?\[?(?P<title>[^\]\[]+)").unwrap());
 
         if filename.is_empty() {
             return;
@@ -174,13 +164,13 @@ impl EpisodeInfo {
     }
 
     fn parse_subtitles(&mut self, filename: &str) {
-        lazy_static! {
-            static ref LANG_MAP: HashMap<&'static str, Vec<&'static str>> = HashMap::from([
+        static LANG_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
+            HashMap::from([
                 (lang::LANG_ZH_CN, vec!["简", "chs", "gb", "zh-hans"]),
                 (lang::LANG_ZH_TW, vec!["繁", "cht", "big5", "zh-hant"]),
                 (lang::LANG_JP, vec!["日"]),
-            ]);
-        }
+            ])
+        });
 
         let filename = filename.to_lowercase();
         let mut subtitles: Vec<String> = Vec::new();
@@ -201,13 +191,13 @@ impl EpisodeInfo {
 }
 
 fn nomalize_filename(filename: &str) -> String {
-    lazy_static! {
-        static ref NORMALIZE_FILENAME_RE_LIST: Vec<Regex> = vec![
+    static NORMALIZE_FILENAME_RE_LIST: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+        vec![
             Regex::new(r"(?i)@?\d{2,3}\s*fps").unwrap(),
             Regex::new(r"第[^\d]+季").unwrap(),
             Regex::new(r"[\[★](\S{1,4}年)?\S{1,2}月新番[\]★]").unwrap(),
-        ];
-    }
+        ]
+    });
 
     let mut n = filename
         .replace('【', "[")

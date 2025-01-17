@@ -1,4 +1,5 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -18,9 +19,7 @@ struct AccessToken {
     expires_at: u64,
 }
 
-lazy_static! {
-    static ref ACCESS_TOKEN_CACHE: Mutex<Option<AccessToken>> = Mutex::new(None);
-}
+static ACCESS_TOKEN_CACHE: LazyLock<Mutex<Option<AccessToken>>> = LazyLock::new(|| Mutex::new(None));
 
 pub async fn send(state: &AppState, message: &str) {
     let msg = format!("BigBrother 来信\n{}", message);
