@@ -72,11 +72,8 @@ impl TvProcessor<'_> {
 
     fn parse_season_number(&self, name: &str) -> Option<i32> {
         let re = Regex::new(r"(?i)S(easons?)?\s*(\d{1,3})").unwrap();
-        let caps = re.captures(name);
-        match caps {
-            Some(caps) => Some(caps.get(2).unwrap().as_str().parse::<i32>().unwrap()),
-            None => None,
-        }
+        re.captures(name)
+            .map(|caps| caps.get(2).unwrap().as_str().parse::<i32>().unwrap())
     }
 
     async fn process_one_tv(&self, name: &str, path: &str) -> Result<()> {
