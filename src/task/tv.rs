@@ -70,7 +70,43 @@ impl TvProcessor<'_> {
         re.replace(name, "").trim().to_string()
     }
 
+    fn parse_season_number(&self, name: &str) -> Option<i32> {
+        let re = Regex::new(r"(?i)S(easons?)?\s*(\d{1,3})").unwrap();
+        let caps = re.captures(name);
+        match caps {
+            Some(caps) => Some(caps.get(2).unwrap().as_str().parse::<i32>().unwrap()),
+            None => None,
+        }
+    }
+
     async fn process_one_tv(&self, name: &str, path: &str) -> Result<()> {
+        let files: Vec<File> = self.alist_client.list(path).await?;
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        let tv_info = self.get_tv_info(name).await?;
+        info!("found tv info: {:?}", tv_info);
+
+        self.process_one_folder(
+            path,
+            &tv_info,
+            if tv_info.number_of_seasons == 1 { Some(1) } else { None },
+        )
+        .await?;
+
+        for file in &files {
+            if !file.is_dir {
+                continue;
+            }
+            let season_number = self.parse_season_number(&file.name);
+            self.process_one_folder(&file.path, &tv_info, season_number).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn process_one_folder(&self, path: &str, tv_info: &TvInfo, season_number: Option<i32>) -> Result<()> {
         let episode_files: Vec<File> = self
             .alist_client
             .list(path)
@@ -82,16 +118,13 @@ impl TvProcessor<'_> {
             return Ok(());
         }
 
-        let tv_info = self.get_tv_info(name).await?;
-        info!("found tv info: {:?}", tv_info);
+        let episodes = self.parse_episodes(&episode_files, season_number);
 
-        let episodes = self.parse_episodes(&episode_files, Some(&tv_info));
         for (season_number, _episode_map) in episodes {
             let dest_path = format!(
                 "{}/{} ({})/Season {:02}",
                 self.task.dest_dir, tv_info.name, tv_info.year, season_number
             );
-            info!("processing season: {}", season_number);
 
             self.process_one_season(&tv_info.name, season_number, &_episode_map, dest_path.as_str())
                 .await?;
@@ -187,7 +220,11 @@ impl TvProcessor<'_> {
         })
     }
 
-    fn parse_episodes(&self, files: &Vec<File>, tv_info: Option<&TvInfo>) -> HashMap<i32, HashMap<i32, EpisodeFile>> {
+    fn parse_episodes(
+        &self,
+        files: &Vec<File>,
+        default_season: Option<i32>,
+    ) -> HashMap<i32, HashMap<i32, EpisodeFile>> {
         let mut result: HashMap<i32, HashMap<i32, EpisodeFile>> = HashMap::new();
 
         for file in files {
@@ -206,16 +243,8 @@ impl TvProcessor<'_> {
 
             let season_number = match info.season_number {
                 Some(n) => n,
-                None => match tv_info {
-                    Some(tv_info) => {
-                        if tv_info.number_of_seasons > 1 {
-                            info!("can not find season number from file {}", file.name);
-                            continue;
-                        }
-
-                        // if there is only one season, we can assume the season number is 1
-                        1
-                    }
+                None => match default_season {
+                    Some(s) => s,
                     None => {
                         info!("can not find season number from file {}", file.name);
                         continue;
