@@ -58,16 +58,35 @@ impl TvProcessor<'_> {
             }
             info!("processing dir: {:?}", file);
 
-            let name = self.parse_tv_name(&file.name);
-            self.process_one_tv(&name, &file.path).await?;
+            let (name, year) = TvProcessor::parse_tv_name(&file.name);
+            self.process_one_tv(&name, year, &file.path).await?;
         }
 
         Ok(())
     }
 
-    fn parse_tv_name(&self, name: &str) -> String {
-        let re = Regex::new(r"\(\s*\d{4}\s*\)").unwrap();
-        re.replace(name, "").trim().to_string()
+    /// Parses the TV show name and year from a string formatted like "xxx (2022)".
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string slice that holds the name and year of the TV show.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the TV show name and an optional year as an integer.
+    fn parse_tv_name(name: &str) -> (String, Option<i32>) {
+        // Regular expression to capture year in parentheses
+        let re = Regex::new(r"([^\(（]+)\s*([\(（]\s*(\d{4})\s*[\)）])?").unwrap();
+
+        // Attempt to capture the year from the input name
+        if let Some(caps) = re.captures(name) {
+            let name = caps.get(1).unwrap().as_str();
+            let year = caps.get(3).map(|y| y.as_str().parse().unwrap());
+            return (name.trim().to_string(), year);
+        }
+
+        // Return the name as is with None for the year if parsing fails
+        (name.trim().to_string(), None)
     }
 
     fn parse_season_number(&self, name: &str) -> Option<i32> {
@@ -76,13 +95,13 @@ impl TvProcessor<'_> {
             .map(|caps| caps.get(2).unwrap().as_str().parse::<i32>().unwrap())
     }
 
-    async fn process_one_tv(&self, name: &str, path: &str) -> Result<()> {
+    async fn process_one_tv(&self, name: &str, year: Option<i32>, path: &str) -> Result<()> {
         let files: Vec<File> = self.alist_client.list(path).await?;
         if files.is_empty() {
             return Ok(());
         }
 
-        let tv_info = self.get_tv_info(name).await?;
+        let tv_info = self.get_tv_info(name, year).await?;
         info!("found tv info: {:?}", tv_info);
 
         self.process_one_folder(
@@ -202,8 +221,8 @@ impl TvProcessor<'_> {
         }
     }
 
-    async fn get_tv_info(&self, title: &str) -> Result<TvInfo> {
-        let results = self.tmdb_client.search_tv(title).await?;
+    async fn get_tv_info(&self, title: &str, year: Option<i32>) -> Result<TvInfo> {
+        let results = self.tmdb_client.search_tv(title, year).await?;
         if results.is_empty() {
             return Err(Error::NotFound(format!("no tv found in tmdb for {}", title)));
         }
@@ -267,5 +286,52 @@ impl TvProcessor<'_> {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TvProcessor;
+
+    #[test]
+    fn test_parse_tv_name_valid_with_year() {
+        let input = "The Office (2005)";
+        let expected = ("The Office".to_string(), Some(2005));
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
+    }
+
+    #[test]
+    fn test_parse_tv_name_valid_without_year() {
+        let input = "The Office";
+        let expected = ("The Office".to_string(), None);
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
+    }
+
+    #[test]
+    fn test_parse_tv_name_invalid_format() {
+        let input = "The Office 2005";
+        let expected = ("The Office 2005".to_string(), None);
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
+    }
+
+    #[test]
+    fn test_parse_tv_name_multiple_spaces() {
+        let input = "The  Office  (2005)";
+        let expected = ("The  Office".to_string(), Some(2005));
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
+    }
+
+    #[test]
+    fn test_parse_tv_name_special_characters() {
+        let input = "The Office: US (2005)";
+        let expected = ("The Office: US".to_string(), Some(2005));
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
+    }
+
+    #[test]
+    fn test_parse_tv_name_zh_characters() {
+        let input = "The Office: US （2005）";
+        let expected = ("The Office: US".to_string(), Some(2005));
+        assert_eq!(TvProcessor::parse_tv_name(input), expected);
     }
 }
