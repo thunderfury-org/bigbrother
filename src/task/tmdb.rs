@@ -73,7 +73,7 @@ impl Client<'_> {
                     ("query", query),
                     ("include_adult", "true"),
                     ("page", "1"),
-                    ("first_air_date_year", &year.unwrap_or(0).to_string()),
+                    ("first_air_date_year", &year.map(|y| y.to_string()).unwrap_or_default()),
                 ]),
             )
             .await?;
