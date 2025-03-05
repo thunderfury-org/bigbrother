@@ -65,11 +65,16 @@ impl Client<'_> {
         }
     }
 
-    pub async fn search_tv(&self, query: &str) -> Result<Vec<SearchTvResult>> {
+    pub async fn search_tv(&self, query: &str, year: Option<i32>) -> Result<Vec<SearchTvResult>> {
         let response: SearchTvResponse = self
             .get(
                 "/search/tv",
-                Some(vec![("query", query), ("include_adult", "true"), ("page", "1")]),
+                Some(vec![
+                    ("query", query),
+                    ("include_adult", "true"),
+                    ("page", "1"),
+                    ("first_air_date_year", &year.map(|y| y.to_string()).unwrap_or_default()),
+                ]),
             )
             .await?;
         Ok(response.results)
