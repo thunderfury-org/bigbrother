@@ -1,0 +1,10 @@
+alist_host:
+alist_api_token:
+
+tmdb_api_key:
+
+push:
+  channel: telegram
+  params:
+    token:
+    chat_id:
