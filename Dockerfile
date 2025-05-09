@@ -3,7 +3,7 @@ WORKDIR /app
 COPY . /app
 RUN cargo build --release
 
-FROM gcr.io/distroless/cc
+FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=build-env /app/target/release/bigbrother ./
 VOLUME ["/app/data"]
