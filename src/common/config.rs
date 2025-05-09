@@ -18,6 +18,9 @@ pub struct AppConfig {
 #[derive(Debug, Default, Deserialize)]
 pub struct PushConfig {
     #[serde(default)]
+    pub channel: String,
+
+    #[serde(default)]
     pub params: HashMap<String, String>,
 }
 

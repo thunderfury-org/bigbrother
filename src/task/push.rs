@@ -5,6 +5,7 @@ use serde_json::json;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
+use crate::common::config::PushConfig;
 use crate::common::error::{Error, Result};
 use crate::common::state::AppState;
 
@@ -19,8 +20,6 @@ struct AccessToken {
     expires_at: u64,
 }
 
-static ACCESS_TOKEN_CACHE: LazyLock<Mutex<Option<AccessToken>>> = LazyLock::new(|| Mutex::new(None));
-
 pub async fn send(state: &AppState, message: &str) {
     let msg = format!("BigBrother 来信\n{}", message);
     if let Err(e) = send_inner(state, msg.as_str()).await {
@@ -30,6 +29,42 @@ pub async fn send(state: &AppState, message: &str) {
 
 async fn send_inner(state: &AppState, message: &str) -> Result<()> {
     let push = &state.config.get_app_config().push;
+    match push.channel.as_str() {
+        "telegram" => send_telegram_msg(state, push, message).await,
+        "wecom" => send_wecom_msg(state, push, message).await,
+        _ => Ok(()),
+    }
+}
+
+async fn send_telegram_msg(state: &AppState, push: &PushConfig, message: &str) -> Result<()> {
+    let token = push.params.get("token").map_or("", String::as_ref);
+    let chat_id = push.params.get("chat_id").map_or("", String::as_ref);
+    if token.is_empty() || chat_id.is_empty() {
+        info!("telegram token/chat id is empty, skip send message");
+        return Ok(());
+    }
+
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", token);
+    let resp = state
+        .http_client
+        .post(url)
+        .json(&json!({"chat_id": chat_id, "text": message}))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        Err(Error::Internal(format!(
+            "send message to telegram failed, {}",
+            resp.text().await?,
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+static ACCESS_TOKEN_CACHE: LazyLock<Mutex<Option<AccessToken>>> = LazyLock::new(|| Mutex::new(None));
+
+async fn send_wecom_msg(state: &AppState, push: &PushConfig, message: &str) -> Result<()> {
     let corp_id = push.params.get("corp_id").map_or("", String::as_ref);
     let agent_id = push.params.get("agent_id").map_or("", String::as_ref);
     let corp_secret = push.params.get("corp_secret").map_or("", String::as_ref);
