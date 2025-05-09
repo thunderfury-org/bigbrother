@@ -52,7 +52,7 @@ fn run_server(data_dir: &str) {
     new_runtime().block_on(async {
         loop {
             task::run_tasks(&state).await;
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(120)).await;
         }
     })
 }

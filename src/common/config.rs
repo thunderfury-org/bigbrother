@@ -67,6 +67,13 @@ impl TryFrom<&str> for Manager {
         }
 
         let config_file = format!("{data_dir}/config.yaml");
+        if !std::fs::exists(config_file.as_str())? {
+            return Ok(Self {
+                data_dir: Arc::new(data_dir.to_string()),
+                app_config: Arc::new(AppConfig::default()),
+                tasks: Arc::new(vec![]),
+            });
+        }
 
         match serde_yaml::from_str(read_string(config_file.as_str())?.as_str()) {
             Ok(config) => {
