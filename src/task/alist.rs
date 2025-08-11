@@ -14,6 +14,64 @@ pub struct Client<'a> {
 }
 
 impl Client<'_> {
+    async fn post_with_null_response<I: Serialize>(&self, url: &str, json: &I) -> Result<()> {
+        let result = self
+            .client
+            .post(format!("{}{}", self.host, url))
+            .header("Authorization", self.api_token)
+            .json(json)
+            .send()
+            .await;
+        if result.is_err() {
+            return Err(Error::Internal(format!(
+                "http post {} failed, {}",
+                url,
+                result.err().unwrap()
+            )));
+        }
+
+        let response = result.unwrap();
+
+        if !response.status().is_success() {
+            let u = response.url().to_string();
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("parse response body to string error, {}", e));
+
+            return Err(Error::Internal(format!(
+                "http post {u} failed, status: {status}, body: {body}"
+            )));
+        }
+
+        let text = response.text().await.unwrap();
+
+        let json_result = serde_json::from_str::<NullResponse>(text.as_str());
+        if json_result.is_err() {
+            return Err(Error::Internal(format!(
+                "http post {} failed, decode body failed, {}, body: {}",
+                url,
+                json_result.err().unwrap(),
+                text
+            )));
+        }
+
+        let r = json_result.unwrap();
+        if r.code != 200 {
+            if r.message.contains("not found") {
+                return Err(Error::NotFound(r.message));
+            } else {
+                return Err(Error::Internal(format!(
+                    "http post failed, code: {}, message: {}",
+                    r.code, r.message
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn post<I: Serialize, T: DeserializeOwned + Default>(&self, url: &str, json: &I) -> Result<T> {
         let result = self
             .client
@@ -76,11 +134,12 @@ impl Client<'_> {
     }
 
     pub async fn mkdir(&self, path: &str) -> Result<()> {
-        self.post("/api/fs/mkdir", &serde_json::json!({"path": path})).await
+        self.post_with_null_response("/api/fs/mkdir", &serde_json::json!({"path": path}))
+            .await
     }
 
     pub async fn rename(&self, file_path: &str, new_name: &str) -> Result<()> {
-        self.post(
+        self.post_with_null_response(
             "/api/fs/rename",
             &serde_json::json!({
                 "path": file_path,
@@ -91,7 +150,7 @@ impl Client<'_> {
     }
 
     pub async fn move_file(&self, src_dir: &str, dest_dir: &str, name: &str) -> Result<()> {
-        self.post(
+        self.post_with_null_response(
             "/api/fs/move",
             &serde_json::json!({
                 "src_dir": src_dir,
@@ -151,6 +210,12 @@ impl<'a> TryFrom<&'a AppState> for Client<'a> {
             api_token,
         })
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct NullResponse {
+    pub code: i32,
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize)]
