@@ -1,0 +1,25 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Install dependencies
+        run: go get ./...
+      - name: Build
+        run: make build
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
