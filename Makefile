@@ -9,7 +9,7 @@ build:
 
 .PHONY: test
 test:
-	go test -coverprofile=coverage.txt ./...
+	go test -race -covermode=atomic -coverprofile=coverage.txt ./...
 
 .PHONY: fmt
 fmt:
