@@ -20,7 +20,12 @@ jobs:
         run: go get ./...
       - name: Build
         run: make build
-      - name: Lint
-        run: make lint
+      - name: Vet
+        run: go vet ./...
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          install-go: false
       - name: Test
         run: make test
