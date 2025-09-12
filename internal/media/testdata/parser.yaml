@@ -1,0 +1,248 @@
+- input: "20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    episode_number: 20
+
+- input: "A_20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+
+- input: "A_4K_20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "A_20_4K.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "A.B.C.20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A B C"
+        language: "en"
+    episode_number: 20
+
+- input: "A.B.C.20.4k.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A B C"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "【智械尚未危机制作】Isekai One Turn Kill Neesan 异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "Isekai One Turn Kill Neesan"
+        language: "en"
+      - title: "异世界一击无双姐姐和姐姐一起开始异世界生活"
+        language: "zh"
+    release_group: "智械尚未危机制作"
+    episode_number: 1
+    resolution: "1080p"
+
+- input: "【智械尚未危机制作】异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ Isekai One Turn Kill Neesan - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "异世界一击无双姐姐和姐姐一起开始异世界生活"
+        language: "zh"
+      - title: "Isekai One Turn Kill Neesan"
+        language: "en"
+    release_group: "智械尚未危机制作"
+    episode_number: 1
+    resolution: "1080p"
+
+- input: "[桜都字幕组] 因为太怕痛就全点防御力了。 第2季 / Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu. S2 [10][1080P@60FPS][简繁内封]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "因为太怕痛就全点防御力了"
+        language: "zh"
+      - title: "Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu"
+        language: "en"
+    release_group: "桜都字幕组"
+    season_number: 2
+    episode_number: 10
+    resolution: "1080p"
+    subtitles:
+      - zh-CN
+      - zh-TW
+
+- input: "[桜都字幕组] 因为太怕痛就全点防御力了。 第2季 / Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu. Season 2 [10][1080p][简繁内封]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "因为太怕痛就全点防御力了"
+        language: "zh"
+      - title: "Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu"
+        language: "en"
+    release_group: "桜都字幕组"
+    season_number: 2
+    episode_number: 10
+    resolution: "1080p"
+    subtitles:
+      - zh-CN
+      - zh-TW
+
+- input: "[爱恋字幕社&猫恋汉化组][1月新番][因为太怕痛就全点防御力了。 第二季][Bofuri S2][10][1080P][MP4][GB][简中]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "因为太怕痛就全点防御力了"
+        language: "zh"
+    release_group: "爱恋字幕社&猫恋汉化组"
+    season_number: 2
+    episode_number: 10
+    resolution: "1080p"
+    subtitles:
+      - zh-CN
+
+- input: "【个人翻译】[因为太怕痛就全点防御力了][S02E01][Web先行版][1080P][简体内封][AVC AAC][mkv]【2023年1月新番】"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "因为太怕痛就全点防御力了"
+        language: "zh"
+    release_group: "个人翻译"
+    season_number: 2
+    episode_number: 1
+    resolution: "1080p"
+    subtitles:
+      - zh-CN
+
+- input: "[喵萌奶茶屋&LoliHouse] 与山田谈一场Lv999的恋爱 / Yamada-kun to Lv999 no Koi wo Suru - 12 [WebRip 1080p HEVC-10bit AAC][简繁日内封字幕]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "与山田谈一场Lv999的恋爱"
+        language: "zh"
+      - title: "Yamada kun to Lv999 no Koi wo Suru"
+        language: "en"
+    release_group: "喵萌奶茶屋&LoliHouse"
+    episode_number: 12
+    resolution: "1080p"
+    subtitles:
+      - jp
+      - zh-CN
+      - zh-TW
+
+- input: "[orion origin] Mashle [03] [1080p] [H265 AAC] [CHS].mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "Mashle"
+        language: "en"
+    release_group: "orion origin"
+    episode_number: 3
+    resolution: "1080p"
+    subtitles:
+      - zh-CN
+
+- input: "[Lilith-Raws] 勇者死了！ / Yuusha ga Shinda! - 12 [Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "勇者死了"
+        language: "zh"
+      - title: "Yuusha ga Shinda"
+        language: "en"
+    release_group: "Lilith-Raws"
+    episode_number: 12
+    resolution: "1080p"
+    subtitles:
+      - zh-TW
+
+- input: "【喵萌奶茶屋】★04月新番★[勇者死了！/勇者が死んだ！/Yuusha ga Shinda!][03-06][1080p][繁体][招募翻译校对]"
+  expected:
+    file_type: "unknown"
+    titles:
+      - title: "勇者死了"
+        language: "zh"
+      - title: "勇者が死んだ"
+        language: "jp"
+      - title: "Yuusha ga Shinda"
+        language: "en"
+    release_group: "喵萌奶茶屋"
+    resolution: "1080p"
+    subtitles:
+      - zh-TW
+
+- input: "《LV1魔王與獨居廢勇者》#7 (日語原聲)【Ani-One Asia】.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "LV1魔王與獨居廢勇者"
+        language: "zh"
+    episode_number: 7
+    subtitles:
+      - jp
+
+- input: "《LV1魔王與獨居廢勇者》#7 (日文自動產生字幕)【Ani-One Asia】.ja.srt"
+  expected:
+    file_type: "subtitle"
+    extension: ".srt"
+    titles:
+      - title: "LV1魔王與獨居廢勇者"
+        language: "zh"
+    episode_number: 7
+    subtitles:
+      - jp
+
+- input: "《LV1魔王與獨居廢勇者》#7 (簡中字幕)【Ani-One Asia】.zh-Hans.srt"
+  expected:
+    file_type: "subtitle"
+    extension: ".srt"
+    titles:
+      - title: "LV1魔王與獨居廢勇者"
+        language: "zh"
+    episode_number: 7
+    subtitles:
+      - zh-CN
+
+- input: "《LV1魔王與獨居廢勇者》#7 (繁中字幕)【Ani-One Asia】.zh-Hant.srt"
+  expected:
+    file_type: "subtitle"
+    extension: ".srt"
+    titles:
+      - title: "LV1魔王與獨居廢勇者"
+        language: "zh"
+    episode_number: 7
+    subtitles:
+      - zh-TW
+
+- input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H264.AAC-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    season_number: 1
+    episode_number: 1
+    resolution: 2160p
