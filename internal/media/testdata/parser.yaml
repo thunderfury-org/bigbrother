@@ -52,6 +52,19 @@
     episode_number: 20
     resolution: "2160p"
 
+- input: "银翼杀手2048：无处可逃.2017.2160p.WEB-DL.DV.AAC.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "银翼杀手2048：无处可逃"
+        language: "zh"
+    year: 2017
+    resolution: "2160p"
+    source: "WEB-DL"
+    hdr: "Dolby Vision"
+    audio_codec: "AAC"
+
 - input: "【智械尚未危机制作】Isekai One Turn Kill Neesan 异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
   expected:
     file_type: "unknown"

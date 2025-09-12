@@ -30,7 +30,7 @@ func TestParse(t *testing.T) {
 	for _, tc := range testCases {
 		actual := Parse(tc.Input)
 		if !reflect.DeepEqual(actual, tc.Expected) {
-			t.Errorf("Parse(%q) = %v, want %v", tc.Input, actual, tc.Expected)
+			t.Fatalf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
 		}
 	}
 }

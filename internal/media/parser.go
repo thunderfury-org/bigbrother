@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-var resolutionRe = regexp.MustCompile(`(\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk])`)
-var seasonEpisodeRe = regexp.MustCompile(`(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?`)
-
 // video extensions (from https://en.wikipedia.org/wiki/Video_file_format)
 var videoExtensions map[string]struct{} = make(map[string]struct{})
 var subtitleExtensions map[string]struct{} = make(map[string]struct{})
@@ -78,6 +75,8 @@ func (p *parser) parseFileType() {
 	p.name = p.name[:dotIndex]
 }
 
+var resolutionRe = regexp.MustCompile(`(\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk])`)
+
 func (p *parser) parseResolution() {
 	match := reFind(resolutionRe, p.name)
 	if match == nil {
@@ -102,6 +101,14 @@ func (p *parser) parseResolution() {
 	p.name = p.name[:match.start] + p.name[match.end:]
 }
 
+var yearRe = regexp.MustCompile(`(?P<year>19\d{2}|20\d{2})`)
+
+func (p *parser) parseYear() {
+
+}
+
+var seasonEpisodeRe = regexp.MustCompile(`(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?`)
+
 func (p *parser) parseSeasonEpisode() {
 	match := reFind(seasonEpisodeRe, p.name)
 	if match == nil {
@@ -121,8 +128,7 @@ func (p *parser) parseSeasonEpisode() {
 		p.info.EpisodeNumber = mustAtoi(episodeNumber)
 	}
 
-	p.name = p.name[:match.start]
-	p.other = p.name[match.end:]
+	p.name, p.other = p.name[:match.start], p.name[match.end:]
 }
 
 func mustAtoi(s string) int {
