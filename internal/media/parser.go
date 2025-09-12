@@ -45,6 +45,7 @@ func newParser(name string) *parser {
 func (p *parser) parse() *MediaInfo {
 	p.parseFileType()
 	p.parseResolution()
+	p.parseYear()
 	p.parseSeasonEpisode()
 	return p.info
 }
@@ -101,10 +102,16 @@ func (p *parser) parseResolution() {
 	p.name = p.name[:match.start] + p.name[match.end:]
 }
 
-var yearRe = regexp.MustCompile(`(?P<year>19\d{2}|20\d{2})`)
+var yearRe = regexp.MustCompile(`\s+(?P<year>19\d{2}|20\d{2})`)
 
 func (p *parser) parseYear() {
+	match := reFindLast(yearRe, p.name)
+	if match == nil {
+		return
+	}
 
+	p.info.Year = match.groups["year"]
+	p.name = p.name[:match.start] + p.name[match.end:]
 }
 
 var seasonEpisodeRe = regexp.MustCompile(`(?i)(\[?S(eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)?([\[|E]|(\-\s+)|(#\s*))(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?`)

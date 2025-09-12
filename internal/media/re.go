@@ -8,12 +8,7 @@ type reFindResutlt struct {
 	groups map[string]string
 }
 
-func reFind(r *regexp.Regexp, s string) *reFindResutlt {
-	matchIndices := r.FindStringSubmatchIndex(s)
-	if matchIndices == nil {
-		return nil
-	}
-
+func convertResults(r *regexp.Regexp, matchIndices []int, s string) *reFindResutlt {
 	result := &reFindResutlt{
 		start:  matchIndices[0],
 		end:    matchIndices[1],
@@ -33,4 +28,26 @@ func reFind(r *regexp.Regexp, s string) *reFindResutlt {
 	}
 
 	return result
+}
+
+func reFind(r *regexp.Regexp, s string) *reFindResutlt {
+	matchIndices := r.FindStringSubmatchIndex(s)
+	if matchIndices == nil {
+		return nil
+	}
+
+	return convertResults(r, matchIndices, s)
+}
+
+func reFindLast(r *regexp.Regexp, s string) *reFindResutlt {
+	// Find all matches in the string
+	allMatches := r.FindAllStringSubmatchIndex(s, -1)
+	if len(allMatches) == 0 {
+		return nil
+	}
+
+	// Select the last match (closest to the end of the string)
+	matchIndices := allMatches[len(allMatches)-1]
+
+	return convertResults(r, matchIndices, s)
 }
