@@ -149,3 +149,9 @@ func mustAtoi(s string) int {
 func Parse(name string) *MediaInfo {
 	return newParser(name).parse()
 }
+
+func ParseDir(name string) *MediaInfo {
+	p := newParser(name)
+	p.info.FileType = "directory"
+	return p.info
+}

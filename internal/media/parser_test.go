@@ -15,8 +15,14 @@ type TestCase struct {
 }
 
 func TestParse(t *testing.T) {
-	// Load test cases from parser.yaml
-	data, err := os.ReadFile(filepath.Join("testdata", "parser.yaml"))
+	filenames := []string{"tv_episode.yaml", "tv_season_episode.yaml", "movie.yaml", "anime.yaml"}
+	for _, filename := range filenames {
+		testParse(t, filename)
+	}
+}
+
+func testParse(t *testing.T, filename string) {
+	data, err := os.ReadFile(filepath.Join("testdata", filename))
 	if err != nil {
 		t.Fatalf("Failed to read test data: %v", err)
 	}
@@ -29,6 +35,26 @@ func TestParse(t *testing.T) {
 
 	for _, tc := range testCases {
 		actual := Parse(tc.Input)
+		if !reflect.DeepEqual(actual, tc.Expected) {
+			t.Fatalf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
+		}
+	}
+}
+
+func TestParseDir(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "dir.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to read test data: %v", err)
+	}
+
+	var testCases []TestCase
+	err = yaml.Unmarshal(data, &testCases)
+	if err != nil {
+		t.Fatalf("Failed to parse test data: %v", err)
+	}
+
+	for _, tc := range testCases {
+		actual := ParseDir(tc.Input)
 		if !reflect.DeepEqual(actual, tc.Expected) {
 			t.Fatalf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
 		}

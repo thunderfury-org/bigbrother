@@ -16,6 +16,8 @@ type MediaInfo struct {
 	FileType  string `yaml:"file_type,omitempty"` // File type based on file extension
 	Extension string `yaml:"extension,omitempty"` // File extension (e.g: .mkv, .mp4, .srt)
 
+	TmdbID string `yaml:"tmdb_id,omitempty"`
+
 	Titles        []MediaTitle `yaml:"titles,omitempty"`         // Movie or TV Show title
 	Year          string       `yaml:"year,omitempty"`           // Release year
 	SeasonNumber  int          `yaml:"season_number,omitempty"`  // Season number for TV shows

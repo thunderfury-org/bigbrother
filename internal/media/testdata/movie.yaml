@@ -1,0 +1,12 @@
+- input: "银翼杀手2048：无处可逃.2017.2160p.WEB-DL.DV.AAC.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "银翼杀手2048：无处可逃"
+        language: "zh"
+    year: 2017
+    resolution: "2160p"
+    source: "WEB-DL"
+    hdr: "DV"
+    audio_codec: "AAC"
