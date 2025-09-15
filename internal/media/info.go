@@ -24,7 +24,7 @@ type MediaInfo struct {
 	EpisodeNumber int          `yaml:"episode_number,omitempty"` // Episode number for TV shows
 
 	Resolution string `yaml:"resolution,omitempty"`  // Video resolution (e.g: 2160p, 1080p, 720p)
-	Source     string `yaml:"source,omitempty"`      // Source of the media (e.g: BluRay, WEB-DL)
+	Quality    string `yaml:"quality,omitempty"`     // Quality of the media (e.g: BluRay, WEB-DL)
 	HDR        string `yaml:"hdr,omitempty"`         // HDR type (e.g: HDR10, HDR10+, DolbyVision, HLG)
 	VideoCodec string `yaml:"video_codec,omitempty"` // Video codec (e.g: H.264, H.265)
 	AudioCodec string `yaml:"audio_codec,omitempty"` // Audio codec (e.g: AAC, DTS)

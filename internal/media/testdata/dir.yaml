@@ -90,3 +90,13 @@
         language: "en"
     year: 2015
     season_number: 1
+
+- input: "S01"
+  expected:
+    file_type: "unknown"
+    season_number: 1
+
+- input: "Season 01"
+  expected:
+    file_type: "unknown"
+    season_number: 1

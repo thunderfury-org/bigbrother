@@ -56,7 +56,7 @@ func TestParseDir(t *testing.T) {
 	for _, tc := range testCases {
 		actual := ParseDir(tc.Input)
 		if !reflect.DeepEqual(actual, tc.Expected) {
-			t.Fatalf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
+			t.Errorf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
 		}
 	}
 }

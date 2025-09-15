@@ -38,7 +38,10 @@ type parser struct {
 func newParser(name string) *parser {
 	return &parser{
 		name: strings.TrimSpace(name),
-		info: &MediaInfo{},
+		info: &MediaInfo{
+			SeasonNumber:  -1,
+			EpisodeNumber: -1,
+		},
 	}
 }
 
@@ -150,8 +153,29 @@ func Parse(name string) *MediaInfo {
 	return newParser(name).parse()
 }
 
+var dirRe = regexp.MustCompile(`(?i)((?P<title>.*)\s*([\(]\s*(?P<year>19\d{2}|20\d{2})\s*[\)])\s*({\s*tmdb-(?P<tmdb_id>\d+)\s*})?)?(\s*S(eason)?\s*(?P<season_number>\d{1,2}))?`)
+
 func ParseDir(name string) *MediaInfo {
-	p := newParser(name)
-	p.info.FileType = "directory"
-	return p.info
+	info := &MediaInfo{
+		SeasonNumber:  -1,
+		EpisodeNumber: -1,
+	}
+
+	match := reFind(dirRe, name)
+	if match == nil {
+		return info
+	}
+
+	title := strings.TrimSpace(match.groups["title"])
+	if title != "" {
+		info.Titles = append(info.Titles, MediaTitle{Title: title, Language: "zh"})
+	}
+	info.Year = match.groups["year"]
+	info.TmdbID = match.groups["tmdb_id"]
+	seasonNumber := match.groups["season_number"]
+	if seasonNumber != "" {
+		info.SeasonNumber = mustAtoi(seasonNumber)
+	}
+
+	return info
 }
