@@ -38,10 +38,7 @@ type parser struct {
 func newParser(name string) *parser {
 	return &parser{
 		name: strings.TrimSpace(name),
-		info: &MediaInfo{
-			SeasonNumber:  -1,
-			EpisodeNumber: -1,
-		},
+		info: &MediaInfo{},
 	}
 }
 
@@ -54,8 +51,6 @@ func (p *parser) parse() *MediaInfo {
 }
 
 func (p *parser) parseFileType() {
-	p.info.FileType = FileTypeUnknown
-
 	// find from the last dot
 	dotIndex := strings.LastIndex(p.name, ".")
 	if dotIndex < 0 {
@@ -141,12 +136,12 @@ func (p *parser) parseSeasonEpisode() {
 	p.name, p.other = p.name[:match.start], p.name[match.end:]
 }
 
-func mustAtoi(s string) int {
+func mustAtoi(s string) *int {
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		panic(err)
 	}
-	return n
+	return &n
 }
 
 func Parse(name string) *MediaInfo {
@@ -156,10 +151,7 @@ func Parse(name string) *MediaInfo {
 var dirRe = regexp.MustCompile(`(?i)((?P<title>.*)\s*([\(]\s*(?P<year>19\d{2}|20\d{2})\s*[\)])\s*({\s*tmdb-(?P<tmdb_id>\d+)\s*})?)?(\s*S(eason)?\s*(?P<season_number>\d{1,2}))?`)
 
 func ParseDir(name string) *MediaInfo {
-	info := &MediaInfo{
-		SeasonNumber:  -1,
-		EpisodeNumber: -1,
-	}
+	info := &MediaInfo{}
 
 	match := reFind(dirRe, name)
 	if match == nil {

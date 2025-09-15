@@ -1,6 +1,5 @@
 - input: "银翼杀手2048：无处可逃 (2017)"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -8,7 +7,6 @@
 
 - input: "银翼杀手2048：无处可逃(2017)"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -16,7 +14,6 @@
 
 - input: "银翼杀手2048：无处可逃 （2017）"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -24,7 +21,6 @@
 
 - input: "银翼杀手2048：无处可逃（2017）"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -32,14 +28,12 @@
 
 - input: "银翼杀手2048：无处可逃"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
 
 - input: "银翼杀手2048：无处可逃 (2017) {tmdb-55005}"
   expected:
-    file_type: "unknown"
     tmdb_id: "55005"
     titles:
       - title: "银翼杀手2048：无处可逃"
@@ -48,7 +42,6 @@
 
 - input: "银翼杀手2048：无处可逃 (2017) S01"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -57,7 +50,6 @@
 
 - input: "银翼杀手2048：无处可逃 S01"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -66,7 +58,6 @@
 
 - input: "银翼杀手2048：无处可逃 Season 01"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -75,7 +66,6 @@
 
 - input: "银翼杀手2048：无处可逃 Season 01 HDR"
   expected:
-    file_type: "unknown"
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
@@ -84,7 +74,6 @@
 
 - input: "Reply 1988 (2015) S01"
   expected:
-    file_type: "unknown"
     titles:
       - title: "Reply 1988"
         language: "en"
@@ -93,10 +82,8 @@
 
 - input: "S01"
   expected:
-    file_type: "unknown"
     season_number: 1
 
 - input: "Season 01"
   expected:
-    file_type: "unknown"
     season_number: 1
