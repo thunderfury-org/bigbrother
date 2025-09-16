@@ -53,7 +53,6 @@
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
-    year: 2017
     season_number: 1
 
 - input: "银翼杀手2048：无处可逃 Season 01"
@@ -61,7 +60,6 @@
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
-    year: 2017
     season_number: 1
 
 - input: "银翼杀手2048：无处可逃 Season 01 HDR"
@@ -69,8 +67,8 @@
     titles:
       - title: "银翼杀手2048：无处可逃"
         language: "zh"
-    year: 2017
     season_number: 1
+    hdr: "HDR"
 
 - input: "Reply 1988 (2015) S01"
   expected:
@@ -80,6 +78,30 @@
     year: 2015
     season_number: 1
 
+- input: "Reply 1988 (2015) S01 1080p"
+  expected:
+    titles:
+      - title: "Reply 1988"
+        language: "en"
+    year: 2015
+    season_number: 1
+    resolution: "1080p"
+
+- input: "Reply 1988.2015.S01"
+  expected:
+    titles:
+      - title: "Reply 1988"
+        language: "en"
+    year: 2015
+    season_number: 1
+
+- input: "Reply 1988 S01"
+  expected:
+    titles:
+      - title: "Reply 1988"
+        language: "en"
+    season_number: 1
+
 - input: "S01"
   expected:
     season_number: 1
@@ -87,3 +109,13 @@
 - input: "Season 01"
   expected:
     season_number: 1
+
+- input: "Mad.Men.S01.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-NOGRP"
+  expected:
+    titles:
+      - title: "Mad Men"
+        language: "en"
+    season_number: 1
+    resolution: "1080p"
+    quality: "Remux"
+    video_codec: "H.264"

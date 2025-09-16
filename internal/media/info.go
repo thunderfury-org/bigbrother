@@ -1,9 +1,33 @@
 package media
 
+import "strconv"
+
 const (
 	FileTypeVideo    = "video"
 	FileTypeSubtitle = "subtitle"
 )
+
+const (
+	LanguageChinese  = "zh"
+	LanguageJapanese = "ja"
+	LanguageEnglish  = "en"
+
+	LanguageChineseSimplified  = "zh-CN"
+	LanguageChineseTraditional = "zh-TW"
+)
+
+type NullableInt int
+
+func (n *NullableInt) IsNull() bool {
+	return n == nil
+}
+
+func (n *NullableInt) String() string {
+	if n == nil {
+		return "nil"
+	}
+	return strconv.Itoa(int(*n))
+}
 
 type MediaTitle struct {
 	Title    string `yaml:"title,omitempty"`
@@ -19,8 +43,8 @@ type MediaInfo struct {
 
 	Titles        []MediaTitle `yaml:"titles,omitempty"`         // Movie or TV Show title
 	Year          string       `yaml:"year,omitempty"`           // Release year
-	SeasonNumber  *int         `yaml:"season_number,omitempty"`  // Season number for TV shows
-	EpisodeNumber *int         `yaml:"episode_number,omitempty"` // Episode number for TV shows
+	SeasonNumber  *NullableInt `yaml:"season_number,omitempty"`  // Season number for TV shows
+	EpisodeNumber *NullableInt `yaml:"episode_number,omitempty"` // Episode number for TV shows
 
 	Resolution string `yaml:"resolution,omitempty"`  // Video resolution (e.g: 2160p, 1080p, 720p)
 	Quality    string `yaml:"quality,omitempty"`     // Quality of the media (e.g: BluRay, WEB-DL)

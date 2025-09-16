@@ -9,7 +9,7 @@
     season_number: 1
     episode_number: 1
     resolution: 2160p
-    source: "WEB-DL"
+    quality: "WEB-DL"
     video_codec: "H264"
     audio_codec: "AAC"
     release_group: "CYW"
