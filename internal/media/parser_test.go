@@ -15,20 +15,13 @@ type TestCase struct {
 }
 
 func TestParse(t *testing.T) {
-	filenames := []string{"tv_episode.yaml", "tv_season_episode.yaml", "movie.yaml", "anime.yaml"}
+	filenames := []string{"dir.yaml", "tv_episode.yaml", "tv_season_episode.yaml", "movie.yaml", "anime.yaml"}
 	for _, filename := range filenames {
-		testParse(t, filename, false)
+		testParse(t, filename)
 	}
 }
 
-func TestParseDir(t *testing.T) {
-	filenames := []string{"dir.yaml"}
-	for _, filename := range filenames {
-		testParse(t, filename, true)
-	}
-}
-
-func testParse(t *testing.T, filename string, isDir bool) {
+func testParse(t *testing.T, filename string) {
 	data, err := os.ReadFile(filepath.Join("testdata", filename))
 	if err != nil {
 		t.Fatalf("Failed to read test data: %v", err)
@@ -41,13 +34,7 @@ func testParse(t *testing.T, filename string, isDir bool) {
 	}
 
 	for _, tc := range testCases {
-		var actual *MediaInfo
-		if isDir {
-			actual = ParseDir(tc.Input)
-		} else {
-			actual = Parse(tc.Input)
-		}
-
+		actual := Parse(tc.Input)
 		if !reflect.DeepEqual(actual, tc.Expected) {
 			t.Errorf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
 		}

@@ -1,33 +1,34 @@
 
 - input: "【智械尚未危机制作】Isekai One Turn Kill Neesan 异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
   expected:
-    file_type: "unknown"
     titles:
       - title: "Isekai One Turn Kill Neesan"
         language: "en"
-      - title: "异世界一击无双姐姐和姐姐一起开始异世界生活"
+      - title: "异世界一击无双姐姐 ～和姐姐一起开始异世界生活"
         language: "zh"
     release_group: "智械尚未危机制作"
     episode_number: 1
     resolution: "1080p"
+    video_codec: "H.264"
+    audio_codec: "AAC"
 
 - input: "【智械尚未危机制作】异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ Isekai One Turn Kill Neesan - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "异世界一击无双姐姐和姐姐一起开始异世界生活"
+      - title: "异世界一击无双姐姐 ～和姐姐一起开始异世界生活"
         language: "zh"
-      - title: "Isekai One Turn Kill Neesan"
+      - title: "～ Isekai One Turn Kill Neesan"
         language: "en"
     release_group: "智械尚未危机制作"
     episode_number: 1
     resolution: "1080p"
+    video_codec: "H.264"
+    audio_codec: "AAC"
 
 - input: "[桜都字幕组] 因为太怕痛就全点防御力了。 第2季 / Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu. S2 [10][1080P@60FPS][简繁内封]"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "因为太怕痛就全点防御力了"
+      - title: "因为太怕痛就全点防御力了。"
         language: "zh"
       - title: "Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu"
         language: "en"
@@ -35,15 +36,15 @@
     season_number: 2
     episode_number: 10
     resolution: "1080p"
+    frame_rate: "60fps"
     subtitles:
       - zh-CN
       - zh-TW
 
 - input: "[桜都字幕组] 因为太怕痛就全点防御力了。 第2季 / Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu. Season 2 [10][1080p][简繁内封]"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "因为太怕痛就全点防御力了"
+      - title: "因为太怕痛就全点防御力了。"
         language: "zh"
       - title: "Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu"
         language: "en"
@@ -57,9 +58,8 @@
 
 - input: "[爱恋字幕社&猫恋汉化组][1月新番][因为太怕痛就全点防御力了。 第二季][Bofuri S2][10][1080P][MP4][GB][简中]"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "因为太怕痛就全点防御力了"
+      - title: "因为太怕痛就全点防御力了。   Bofuri"
         language: "zh"
     release_group: "爱恋字幕社&猫恋汉化组"
     season_number: 2
@@ -70,7 +70,6 @@
 
 - input: "【个人翻译】[因为太怕痛就全点防御力了][S02E01][Web先行版][1080P][简体内封][AVC AAC][mkv]【2023年1月新番】"
   expected:
-    file_type: "unknown"
     titles:
       - title: "因为太怕痛就全点防御力了"
         language: "zh"
@@ -78,22 +77,25 @@
     season_number: 2
     episode_number: 1
     resolution: "1080p"
+    video_codec: "H.264"
+    audio_codec: "AAC"
     subtitles:
       - zh-CN
 
 - input: "[喵萌奶茶屋&LoliHouse] 与山田谈一场Lv999的恋爱 / Yamada-kun to Lv999 no Koi wo Suru - 12 [WebRip 1080p HEVC-10bit AAC][简繁日内封字幕]"
   expected:
-    file_type: "unknown"
     titles:
       - title: "与山田谈一场Lv999的恋爱"
         language: "zh"
-      - title: "Yamada kun to Lv999 no Koi wo Suru"
+      - title: "Yamada-kun to Lv999 no Koi wo Suru"
         language: "en"
     release_group: "喵萌奶茶屋&LoliHouse"
     episode_number: 12
     resolution: "1080p"
+    quality: "WEBRip"
+    video_codec: "H.265"
+    audio_codec: "AAC"
     subtitles:
-      - jp
       - zh-CN
       - zh-TW
 
@@ -107,34 +109,54 @@
     release_group: "orion origin"
     episode_number: 3
     resolution: "1080p"
+    video_codec: "H.265"
+    audio_codec: "AAC"
     subtitles:
       - zh-CN
 
 - input: "[Lilith-Raws] 勇者死了！ / Yuusha ga Shinda! - 12 [Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "勇者死了"
+      - title: "勇者死了！"
         language: "zh"
-      - title: "Yuusha ga Shinda"
+      - title: "Yuusha ga Shinda!"
         language: "en"
     release_group: "Lilith-Raws"
     episode_number: 12
+    quality: "WEB-DL"
     resolution: "1080p"
+    video_codec: "H.264"
+    audio_codec: "AAC"
     subtitles:
       - zh-TW
 
 - input: "【喵萌奶茶屋】★04月新番★[勇者死了！/勇者が死んだ！/Yuusha ga Shinda!][03-06][1080p][繁体][招募翻译校对]"
   expected:
-    file_type: "unknown"
     titles:
-      - title: "勇者死了"
+      - title: "勇者死了！"
         language: "zh"
-      - title: "勇者が死んだ"
+      - title: "勇者が死んだ！"
         language: "jp"
-      - title: "Yuusha ga Shinda"
+      - title: "Yuusha ga Shinda!"
         language: "en"
+    episode_number: 3
+    second_episode_number: 6
+    resolution: "1080p"
     release_group: "喵萌奶茶屋"
+    subtitles:
+      - zh-TW
+
+- input: "[勇者死了！/勇者が死んだ！/Yuusha ga Shinda!][03-06][1080p][繁体][招募翻译校对]"
+  expected:
+    titles:
+      - title: "勇者死了！"
+        language: "zh"
+      - title: "勇者が死んだ！"
+        language: "jp"
+      - title: "Yuusha ga Shinda!"
+        language: "en"
+    episode_number: 3
+    second_episode_number: 6
     resolution: "1080p"
     subtitles:
       - zh-TW
@@ -147,8 +169,6 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
-    subtitles:
-      - jp
 
 - input: "《LV1魔王與獨居廢勇者》#7 (日文自動產生字幕)【Ani-One Asia】.ja.srt"
   expected:
@@ -158,8 +178,6 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
-    subtitles:
-      - jp
 
 - input: "《LV1魔王與獨居廢勇者》#7 (簡中字幕)【Ani-One Asia】.zh-Hans.srt"
   expected:
@@ -182,3 +200,77 @@
     episode_number: 7
     subtitles:
       - zh-TW
+
+- input: "[NC-Raws] 海贼王 / One Piece - 1049 (B-Global 3840x2160 HEVC AAC MKV)"
+  expected:
+    titles:
+      - title: "海贼王"
+        language: "zh"
+      - title: "One Piece"
+        language: "en"
+    episode_number: 1049
+    resolution: "2160p"
+    video_codec: "H.265"
+    audio_codec: "AAC"
+    release_group: "NC-Raws"
+
+- input: "[Skymoon-Raws][One Piece 海贼王][1143][ViuTV][WEB-RIP][CHT][SRT][1080p][MKV]"
+  expected:
+    titles:
+      - title: "One Piece"
+        language: "en"
+      - title: "海贼王"
+        language: "zh"
+    episode_number: 1143
+    resolution: "1080p"
+    quality: "WEBRip"
+    release_group: "Skymoon-Raws"
+    subtitles: [ "zh-TW" ]
+
+- input: "[ZeroTV][海贼王][第1122集][WEB-MKV/1.93GB][简繁英字幕][4K-2160P]"
+  expected:
+    titles:
+      - title: "海贼王"
+        language: "zh"
+    episode_number: 1122
+    resolution: "2160p"
+    subtitles: [ "zh-CN", "zh-TW" ]
+    release_group: "ZeroTV"
+
+- input: "[银色子弹字幕组][名侦探柯南][第1175集 玻璃水面（后篇）][WEBRIP][简繁日多语MKV][PGS][1080P]"
+  expected:
+    titles:
+      - title: "名侦探柯南"
+        language: "zh"
+    episode_number: 1175
+    resolution: "1080p"
+    quality: "WEBRip"
+    release_group: "银色子弹字幕组"
+    subtitles: [ "zh-CN", "zh-TW" ]
+
+- input: "[银色子弹字幕组][名侦探柯南][第88-89集 德古拉庄杀人事件][WEBRIP][简日双语MP4/繁日双语MP4/简繁日多语MKV][1080P]"
+  expected:
+    titles:
+      - title: "名侦探柯南"
+        language: "zh"
+    episode_number: 88
+    second_episode_number: 89
+    resolution: "1080p"
+    quality: "WEBRip"
+    release_group: "银色子弹字幕组"
+    subtitles: [ "zh-CN", "zh-TW" ]
+
+- input: "[SBSUB][CONAN][88][WEBRIP][1080P][AVC_AAC][CHS_JP](96A907B8).mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "CONAN"
+        language: "en"
+    episode_number: 88
+    resolution: "1080p"
+    quality: "WEBRip"
+    video_codec: "H.264"
+    audio_codec: "AAC"
+    release_group: "SBSUB"
+    subtitles: [ "zh-CN" ]

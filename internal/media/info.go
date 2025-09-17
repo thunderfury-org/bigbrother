@@ -9,7 +9,7 @@ const (
 
 const (
 	LanguageChinese  = "zh"
-	LanguageJapanese = "ja"
+	LanguageJapanese = "jp"
 	LanguageEnglish  = "en"
 
 	LanguageChineseSimplified  = "zh-CN"
@@ -41,12 +41,14 @@ type MediaInfo struct {
 
 	TmdbID string `yaml:"tmdb_id,omitempty"`
 
-	Titles        []MediaTitle `yaml:"titles,omitempty"`         // Movie or TV Show title
-	Year          string       `yaml:"year,omitempty"`           // Release year
-	SeasonNumber  *NullableInt `yaml:"season_number,omitempty"`  // Season number for TV shows
-	EpisodeNumber *NullableInt `yaml:"episode_number,omitempty"` // Episode number for TV shows
+	Titles              []MediaTitle `yaml:"titles,omitempty"`                // Movie or TV Show title
+	Year                string       `yaml:"year,omitempty"`                  // Release year
+	SeasonNumber        *NullableInt `yaml:"season_number,omitempty"`         // Season number for TV shows
+	EpisodeNumber       *NullableInt `yaml:"episode_number,omitempty"`        // Episode number for TV shows
+	SecondEpisodeNumber *NullableInt `yaml:"second_episode_number,omitempty"` // For episode like 01-02
 
 	Resolution string `yaml:"resolution,omitempty"`  // Video resolution (e.g: 2160p, 1080p, 720p)
+	FrameRate  string `yaml:"frame_rate,omitempty"`  // Frame rate (e.g: 24fps, 30fps, 60fps)
 	Quality    string `yaml:"quality,omitempty"`     // Quality of the media (e.g: BluRay, WEB-DL)
 	HDR        string `yaml:"hdr,omitempty"`         // HDR type (e.g: HDR10, HDR10+, DolbyVision, HLG)
 	VideoCodec string `yaml:"video_codec,omitempty"` // Video codec (e.g: H.264, H.265)

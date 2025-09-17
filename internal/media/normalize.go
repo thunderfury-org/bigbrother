@@ -1,12 +1,13 @@
 package media
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/pemistahl/lingua-go"
 )
 
-func getLanguage(l lingua.Language) string {
+func normalizeLanguage(l lingua.Language) string {
 	switch l {
 	case lingua.Chinese:
 		return LanguageChinese
@@ -19,8 +20,8 @@ func getLanguage(l lingua.Language) string {
 	}
 }
 
-func getQuality(quality string) string {
-	quality = strings.ToLower(quality)
+func normalizeQuality(quality string) string {
+	quality = strings.ToLower(strings.ReplaceAll(quality, ".", ""))
 	if strings.Contains(quality, "remux") {
 		return "Remux"
 	}
@@ -29,7 +30,7 @@ func getQuality(quality string) string {
 	case "web-dl", "webdl":
 		return "WEB-DL"
 	case "web-rip", "webrip":
-		return "WEB-Rip"
+		return "WEBRip"
 	case "bluray", "blu-ray":
 		return "BluRay"
 	case "bdrip", "bd-rip":
@@ -43,7 +44,7 @@ func getQuality(quality string) string {
 	}
 }
 
-func getVideoCodec(codec string) string {
+func normalizeVideoCodec(codec string) string {
 	switch strings.ToLower(codec) {
 	case "x264", "h264", "avc":
 		return "H.264"
@@ -51,5 +52,26 @@ func getVideoCodec(codec string) string {
 		return "H.265"
 	default:
 		return strings.ToUpper(codec)
+	}
+}
+
+var audioNormalizeRe = regexp.MustCompile(`\d\.\d`)
+
+func normalizeAudioCodec(codec string) string {
+	codec = strings.ToUpper(codec)
+	match := audioNormalizeRe.FindStringIndex(codec)
+	if match == nil {
+		return codec
+	}
+	return strings.TrimSpace(strings.ReplaceAll(codec[:match[0]], ".", " ")) + " " + codec[match[0]:]
+}
+
+func normalizeHDR(hdr string) string {
+	hdr = strings.ToUpper(strings.ReplaceAll(hdr, "-", ""))
+	switch {
+	case strings.Contains(hdr, "DOLBY"):
+		return "DV"
+	default:
+		return hdr
 	}
 }
