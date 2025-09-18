@@ -1,0 +1,100 @@
+- input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H264.AAC-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    resolution: 2160p
+    quality: "WEB-DL"
+    video_codec: "H.264"
+    audio_codec: "AAC"
+
+- input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H264-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    resolution: 2160p
+    quality: "WEB-DL"
+    video_codec: "H.264"
+
+- input: "甄嬛传 (2011).S01E01.WEB-DL.4K-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    resolution: 2160p
+    quality: "WEB-DL"
+
+- input: "甄嬛传 (2011).S01E01.WEB-DL-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    quality: "WEB-DL"
+
+- input: "甄嬛传 (2011).S01E01-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+
+- input: "甄嬛传 (2011).S01E01.WEB-DL-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    quality: "WEB-DL"
+
+- input: "甄嬛传.2011.S01E01.WEB-DL-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    quality: "WEB-DL"
+
+- input: "甄嬛传.S01E01.2011.WEB-DL-CYW.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "甄嬛传"
+        language: "zh"
+    year: 2011
+    season_number: 1
+    episode_number: 1
+    quality: "WEB-DL"

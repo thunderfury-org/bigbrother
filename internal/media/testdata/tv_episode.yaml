@@ -1,0 +1,73 @@
+- input: "20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    episode_number: 20
+
+- input: "A_20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+
+- input: "A_4K_20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "A_20_4K.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "A.B.C.20.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A B C"
+        language: "en"
+    episode_number: 20
+
+- input: "A.B.C.20.4k.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "A B C"
+        language: "en"
+    episode_number: 20
+    resolution: "2160p"
+
+- input: "23.2024.E01.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "23"
+        language: "en"
+    year: 2024
+    episode_number: 1
+
+- input: "23.2024.01.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "23"
+        language: "en"
+    year: 2024
+    episode_number: 1

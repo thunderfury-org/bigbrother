@@ -1,0 +1,88 @@
+- input: "银翼杀手2048：无处可逃.2017.2160p.WEB-DL.DV.AAC.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "银翼杀手2048：无处可逃"
+        language: "zh"
+    year: 2017
+    resolution: "2160p"
+    quality: "WEB-DL"
+    hdr: "DV"
+    audio_codec: "AAC"
+
+- input: "The.Forbidden.Legend.Sex.And.Chopsticks.1.2008.BluRay.1080P.DTS-HD.MA.DD.5.1-YSY.m2ts"
+  expected:
+    file_type: "video"
+    extension: ".m2ts"
+    titles:
+      - title: "The Forbidden Legend Sex And Chopsticks 1"
+        language: "en"
+    year: 2008
+    resolution: "1080p"
+    quality: "BluRay"
+    audio_codec: "DTS-HD MA DD 5.1"
+
+- input: "戏台.2025.2160p.WEB-DL.60fps.DV HQ.H265.DTS 5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "戏台"
+        language: "zh"
+    year: 2025
+    quality: "WEB-DL"
+    resolution: "2160p"
+    frame_rate: "60fps"
+    hdr: "DV"
+    video_codec: "H.265"
+    audio_codec: "DTS 5.1"
+
+- input: "Johnny.Keep.Walking.2023.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    year: 2023
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    audio_codec: "DTS 5.1"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    audio_codec: "DTS 5.1"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.Dolby-Vision.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    hdr: "DV"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.HDR10.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    hdr: "HDR10"
