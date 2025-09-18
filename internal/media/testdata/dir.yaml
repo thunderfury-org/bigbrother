@@ -40,6 +40,14 @@
         language: "zh"
     year: 2017
 
+- input: "银翼杀手2048：无处可逃(2017){tmdb-55005}"
+  expected:
+    tmdb_id: "55005"
+    titles:
+      - title: "银翼杀手2048：无处可逃"
+        language: "zh"
+    year: 2017
+
 - input: "银翼杀手2048：无处可逃 (2017) [tmdb-55005]"
   expected:
     tmdb_id: "55005"

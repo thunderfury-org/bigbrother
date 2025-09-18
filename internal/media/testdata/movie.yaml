@@ -62,3 +62,27 @@
     resolution: "2160p"
     video_codec: "H.265"
     audio_codec: "DTS 5.1"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.Dolby-Vision.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    hdr: "DV"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.HDR10.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H.265"
+    hdr: "HDR10"

@@ -1,6 +1,3 @@
-/*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -12,7 +9,7 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "bigbrother",
-	Short: "A brief description of your application",
+	Short: "",
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

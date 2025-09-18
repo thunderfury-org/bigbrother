@@ -16,7 +16,7 @@ func normalizeLanguage(l lingua.Language) string {
 	case lingua.English:
 		return LanguageEnglish
 	default:
-		return ""
+		return l.String()
 	}
 }
 

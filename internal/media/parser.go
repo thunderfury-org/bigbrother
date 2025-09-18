@@ -57,48 +57,48 @@ func (p *parser) updateTitleIndexEnd(index int) {
 	}
 }
 
+func (p *parser) updateNameAndIndex(match []int) {
+	p.name = p.name[:match[0]] + "." + p.name[match[1]:]
+	p.updateTitleIndexEnd(match[0])
+}
+
+func (p *parser) parseValueFromName(re *regexp.Regexp) string {
+	match := reFindLastIndex(re, p.name)
+	if match == nil {
+		return ""
+	}
+
+	value := getGroupFromMatch(tmdbRe, match, p.name, "value")
+	p.updateNameAndIndex(match)
+	return value
+}
+
+var (
+	tmdbRe       = regexp.MustCompile(`(?i)[\[{]\s*tmdb-(?P<value>\d+)\s*[\]}]`)
+	frameRateRe  = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>\d{2,3}fps)(?:\.| |-|\])`)
+	qualityRe    = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)(?:\.| |-|\])`)
+	hdrRe        = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV)(?:\.| |-|\])`)
+	videoCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>[hx]\.?26[45]|avc|hevc)(?:\.| |-|\])`)
+	audioCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>aac|flac|ddp?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ](DD[\. ]?)?\d\.\d|DTS[\. ]?\d\.\d)(?:\.| |-|\])`)
+)
+
 func (p *parser) parse() *MediaInfo {
 	p.normalizeName()
-	p.parseTmdbID()
+
+	p.info.TmdbID = p.parseValueFromName(tmdbRe)
+	p.info.FrameRate = strings.ToLower(p.parseValueFromName(frameRateRe))
+	p.info.Quality = normalizeQuality(p.parseValueFromName(qualityRe))
+	p.info.HDR = normalizeHDR(p.parseValueFromName(hdrRe))
+	p.info.VideoCodec = normalizeVideoCodec(p.parseValueFromName(videoCodecRe))
+	p.info.AudioCodec = normalizeAudioCodec(p.parseValueFromName(audioCodecRe))
+
 	p.parseResolution()
-	p.parseFrameRate()
 	p.parseYear()
-	p.parseQuality()
-	p.parseHDR()
-	p.parseVideoCodec()
-	p.parseAudioCodec()
 	p.parseSeasonEpisode()
 	p.parseFileType()
 	p.parseSubtitles()
 	p.parseTitle()
 	return p.info
-}
-
-func (p *parser) parseFileType() {
-	// find from the last dot
-	dotIndex := strings.LastIndex(p.other, ".")
-	if dotIndex < 0 {
-		// no extension
-		return
-	}
-
-	extension := strings.TrimSpace(strings.ToLower(p.other[dotIndex:]))
-	if len(extension) <= 1 {
-		// no extension
-		return
-	}
-
-	if _, ok := videoExtensions[extension]; ok {
-		p.info.FileType = FileTypeVideo
-	} else if _, ok := subtitleExtensions[extension]; ok {
-		p.info.FileType = FileTypeSubtitle
-	} else {
-		// unknown file type
-		return
-	}
-	p.info.Extension = extension
-
-	p.other = p.other[:dotIndex]
 }
 
 var replaceRes = []*regexp.Regexp{
@@ -115,19 +115,6 @@ func (p *parser) normalizeName() {
 		p.name = re.ReplaceAllLiteralString(p.name, ".")
 	}
 	p.name = " " + p.name + " "
-}
-
-var tmdbRe = regexp.MustCompile(`(?i)[\[{]\s*tmdb-(?P<tmdb_id>\d+)\s*[\]}]`)
-
-func (p *parser) parseTmdbID() {
-	match := reFindLastIndex(tmdbRe, p.name)
-	if match == nil {
-		return
-	}
-
-	p.info.TmdbID = getGroupFromMatch(tmdbRe, match, p.name, "tmdb_id")
-	p.name = p.name[:match[0]] + p.name[match[1]:]
-	p.updateTitleIndexEnd(match[0])
 }
 
 var resolutionRe = regexp.MustCompile(`(?:\.|\[| |\()\s*((\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk]))\s*(?:\.|\]| |-)`)
@@ -153,21 +140,7 @@ func (p *parser) parseResolution() {
 		}
 	}
 
-	p.name = p.name[:match[0]] + "." + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
-}
-
-var frameRateRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<frame_rate>\d{2,3}fps)(?:\.| |-|\])`)
-
-func (p *parser) parseFrameRate() {
-	match := reFindLastIndex(frameRateRe, p.name)
-	if match == nil {
-		return
-	}
-
-	p.info.FrameRate = strings.ToLower(getGroupFromMatch(frameRateRe, match, p.name, "frame_rate"))
-	p.name = p.name[:match[0]] + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
+	p.updateNameAndIndex(match)
 }
 
 var yearRe = regexp.MustCompile(`(?:\.|\()\s*(?P<year>19\d{2}|20\d{2})\s*(?:\.|\))`)
@@ -193,8 +166,7 @@ func (p *parser) parseYear() {
 	}
 
 	p.info.Year = getGroupFromMatch(yearRe, match, p.name, "year")
-	p.name = p.name[:match[0]] + "." + p.name[match[1]:]
-	p.updateTitleIndexEnd(match[0])
+	p.updateNameAndIndex(match)
 	p.yearIndexStart = match[0]
 }
 
@@ -239,56 +211,31 @@ func (p *parser) parseSeasonEpisode() {
 	p.name, p.other = p.name[:match[0]], "."+p.name[match[1]:]
 }
 
-var qualityRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<quality>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)(?:\.| |-|\])`)
-
-func (p *parser) parseQuality() {
-	match := reFindLastIndex(qualityRe, p.name)
-	if match == nil {
+func (p *parser) parseFileType() {
+	// find from the last dot
+	dotIndex := strings.LastIndex(p.other, ".")
+	if dotIndex < 0 {
+		// no extension
 		return
 	}
 
-	p.info.Quality = normalizeQuality(getGroupFromMatch(qualityRe, match, p.name, "quality"))
-	p.name = p.name[:match[0]+1] + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
-}
-
-var hdrRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<hdr>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV)(?:\.| |-|\])`)
-
-func (p *parser) parseHDR() {
-	match := reFindLastIndex(hdrRe, p.name)
-	if match == nil {
+	extension := strings.TrimSpace(strings.ToLower(p.other[dotIndex:]))
+	if len(extension) <= 1 {
+		// no extension
 		return
 	}
 
-	p.info.HDR = normalizeHDR(getGroupFromMatch(hdrRe, match, p.name, "hdr"))
-	p.name = p.name[:match[0]+1] + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
-}
-
-var videoCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<video_codec>[hx]\.?26[45]|avc|hevc)(?:\.| |-|\])`)
-
-func (p *parser) parseVideoCodec() {
-	match := reFindLastIndex(videoCodecRe, p.name)
-	if match == nil {
+	if _, ok := videoExtensions[extension]; ok {
+		p.info.FileType = FileTypeVideo
+	} else if _, ok := subtitleExtensions[extension]; ok {
+		p.info.FileType = FileTypeSubtitle
+	} else {
+		// unknown file type
 		return
 	}
+	p.info.Extension = extension
 
-	p.info.VideoCodec = normalizeVideoCodec(getGroupFromMatch(videoCodecRe, match, p.name, "video_codec"))
-	p.name = p.name[:match[0]+1] + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
-}
-
-var audioCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<audio_codec>aac|flac|ddp?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ](DD[\. ]?)?\d\.\d|DTS[\. ]?\d\.\d)(?:\.| |-|\])`)
-
-func (p *parser) parseAudioCodec() {
-	match := reFindLastIndex(audioCodecRe, p.name)
-	if match == nil {
-		return
-	}
-
-	p.info.AudioCodec = normalizeAudioCodec(getGroupFromMatch(audioCodecRe, match, p.name, "audio_codec"))
-	p.name = p.name[:match[0]+1] + p.name[match[1]-1:]
-	p.updateTitleIndexEnd(match[0])
+	p.other = p.other[:dotIndex]
 }
 
 var languageDetector = lingua.NewLanguageDetectorBuilder().
@@ -356,7 +303,7 @@ func (p *parser) parseSubtitles() {
 func mustAtoi(s string) *NullableInt {
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	i := NullableInt(n)
 	return &i
