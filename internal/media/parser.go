@@ -58,7 +58,7 @@ func (p *parser) updateTitleIndexEnd(index int) {
 }
 
 func (p *parser) updateNameAndIndex(match []int) {
-	p.name = p.name[:match[0]] + "." + p.name[match[1]:]
+	p.name = p.name[:match[0]] + ".." + p.name[match[1]:]
 	p.updateTitleIndexEnd(match[0])
 }
 
@@ -171,7 +171,7 @@ func (p *parser) parseYear() {
 }
 
 var seasonEpisodeRe = regexp.MustCompile(`(?i)([\.\s\[]S(?:eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)([E#-\[]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?)?`)
-var episodeOnlyRe = regexp.MustCompile(`(?i)([\.\s\-#\[第]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[\.\s\]\-集])`)
+var episodeOnlyRe = regexp.MustCompile(`(?i)([\.\s\-#E\[第]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[\.\s\]\-集])`)
 
 func (p *parser) parseSeasonEpisode() {
 	re := seasonEpisodeRe
@@ -248,6 +248,7 @@ var titleRes = []struct {
 	{regexp.MustCompile(`[\.\[\]]`), " "},
 	{regexp.MustCompile(`第[^\.\[\]]+季`), ""},
 }
+var digitRe = regexp.MustCompile(`^\d+$`)
 
 func (p *parser) parseTitle() {
 	index := strings.Index(p.name, "]")
@@ -267,6 +268,17 @@ func (p *parser) parseTitle() {
 
 	for part := range strings.SplitSeq(name, "/") {
 		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if digitRe.MatchString(part) {
+			p.info.Titles = append(p.info.Titles, MediaTitle{
+				Language: LanguageEnglish,
+				Title:    part,
+			})
+			continue
+		}
+
 		for _, result := range languageDetector.DetectMultipleLanguagesOf(part) {
 			p.info.Titles = append(p.info.Titles, MediaTitle{
 				Language: normalizeLanguage(result.Language()),
