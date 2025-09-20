@@ -1,4 +1,3 @@
-
 - input: "【智械尚未危机制作】Isekai One Turn Kill Neesan 异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
   expected:
     titles:
@@ -9,7 +8,7 @@
     release_group: "智械尚未危机制作"
     episode_number: 1
     resolution: "1080p"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
 
 - input: "【智械尚未危机制作】异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ Isekai One Turn Kill Neesan - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
@@ -22,7 +21,7 @@
     release_group: "智械尚未危机制作"
     episode_number: 1
     resolution: "1080p"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
 
 - input: "[桜都字幕组] 因为太怕痛就全点防御力了。 第2季 / Itai No Wa Iya Nano De Bougyoryoku Ni Kyokufuri Shitai To Omoimasu. S2 [10][1080P@60FPS][简繁内封]"
@@ -77,7 +76,7 @@
     season_number: 2
     episode_number: 1
     resolution: "1080p"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
     subtitles:
       - zh-CN
@@ -93,7 +92,7 @@
     episode_number: 12
     resolution: "1080p"
     quality: "WEBRip"
-    video_codec: "H.265"
+    video_codec: "H265"
     audio_codec: "AAC"
     subtitles:
       - zh-CN
@@ -109,7 +108,7 @@
     release_group: "orion origin"
     episode_number: 3
     resolution: "1080p"
-    video_codec: "H.265"
+    video_codec: "H265"
     audio_codec: "AAC"
     subtitles:
       - zh-CN
@@ -125,7 +124,7 @@
     episode_number: 12
     quality: "WEB-DL"
     resolution: "1080p"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
     subtitles:
       - zh-TW
@@ -169,6 +168,7 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
+    release_group: "Ani-One Asia"
 
 - input: "《LV1魔王與獨居廢勇者》#7 (日文自動產生字幕)【Ani-One Asia】.ja.srt"
   expected:
@@ -178,6 +178,7 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
+    release_group: "Ani-One Asia"
 
 - input: "《LV1魔王與獨居廢勇者》#7 (簡中字幕)【Ani-One Asia】.zh-Hans.srt"
   expected:
@@ -187,6 +188,7 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
+    release_group: "Ani-One Asia"
     subtitles:
       - zh-CN
 
@@ -198,6 +200,7 @@
       - title: "LV1魔王與獨居廢勇者"
         language: "zh"
     episode_number: 7
+    release_group: "Ani-One Asia"
     subtitles:
       - zh-TW
 
@@ -210,7 +213,7 @@
         language: "en"
     episode_number: 1049
     resolution: "2160p"
-    video_codec: "H.265"
+    video_codec: "H265"
     audio_codec: "AAC"
     release_group: "NC-Raws"
 
@@ -225,7 +228,7 @@
     resolution: "1080p"
     quality: "WEBRip"
     release_group: "Skymoon-Raws"
-    subtitles: [ "zh-TW" ]
+    subtitles: ["zh-TW"]
 
 - input: "[ZeroTV][海贼王][第1122集][WEB-MKV/1.93GB][简繁英字幕][4K-2160P]"
   expected:
@@ -234,7 +237,7 @@
         language: "zh"
     episode_number: 1122
     resolution: "2160p"
-    subtitles: [ "zh-CN", "zh-TW" ]
+    subtitles: ["zh-CN", "zh-TW"]
     release_group: "ZeroTV"
 
 - input: "[银色子弹字幕组][名侦探柯南][第1175集 玻璃水面（后篇）][WEBRIP][简繁日多语MKV][PGS][1080P]"
@@ -246,7 +249,7 @@
     resolution: "1080p"
     quality: "WEBRip"
     release_group: "银色子弹字幕组"
-    subtitles: [ "zh-CN", "zh-TW" ]
+    subtitles: ["zh-CN", "zh-TW"]
 
 - input: "[银色子弹字幕组][名侦探柯南][第88-89集 德古拉庄杀人事件][WEBRIP][简日双语MP4/繁日双语MP4/简繁日多语MKV][1080P]"
   expected:
@@ -258,7 +261,7 @@
     resolution: "1080p"
     quality: "WEBRip"
     release_group: "银色子弹字幕组"
-    subtitles: [ "zh-CN", "zh-TW" ]
+    subtitles: ["zh-CN", "zh-TW"]
 
 - input: "[SBSUB][CONAN][88][WEBRIP][1080P][AVC_AAC][CHS_JP](96A907B8).mp4"
   expected:
@@ -270,7 +273,32 @@
     episode_number: 88
     resolution: "1080p"
     quality: "WEBRip"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
     release_group: "SBSUB"
-    subtitles: [ "zh-CN" ]
+    subtitles: ["zh-CN"]
+
+- input: "[ANi] 桃源暗鬼 - 11 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    titles:
+      - title: "桃源暗鬼"
+        language: "zh"
+    episode_number: 11
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "ANi"
+    subtitles: ["zh-TW"]
+
+- input: "[APTX4869][CONAN][名侦探柯南 1038 警校篇 狂野警察物语 CASE. 伊达航][BDRIP][1080P][MKV]"
+  expected:
+    titles:
+      - title: "CONAN  名侦探柯南"
+        language: "zh"
+    episode_number: 1038
+    resolution: "1080p"
+    quality: "BDRip"
+    release_group: "APTX4869"

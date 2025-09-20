@@ -165,5 +165,6 @@
     season_number: 1
     resolution: "1080p"
     quality: "Remux"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "DTS-HD MA 5.1"
+    release_group: "NOGRP"

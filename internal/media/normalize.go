@@ -47,9 +47,9 @@ func normalizeQuality(quality string) string {
 func normalizeVideoCodec(codec string) string {
 	switch strings.ToLower(codec) {
 	case "x264", "h264", "avc":
-		return "H.264"
+		return "H264"
 	case "x265", "h265", "hevc":
-		return "H.265"
+		return "H265"
 	default:
 		return strings.ToUpper(codec)
 	}
@@ -63,7 +63,12 @@ func normalizeAudioCodec(codec string) string {
 	if match == nil {
 		return codec
 	}
-	return strings.TrimSpace(strings.ReplaceAll(codec[:match[0]], ".", " ")) + " " + codec[match[0]:]
+
+	part := strings.TrimSpace(strings.ReplaceAll(codec[:match[0]], ".", " "))
+	if part == "TRUEHD" {
+		part = "TrueHD"
+	}
+	return part + " " + codec[match[0]:]
 }
 
 func normalizeHDR(hdr string) string {
