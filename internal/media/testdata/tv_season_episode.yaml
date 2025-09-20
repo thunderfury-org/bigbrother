@@ -10,8 +10,9 @@
     episode_number: 1
     resolution: 2160p
     quality: "WEB-DL"
-    video_codec: "H.264"
+    video_codec: "H264"
     audio_codec: "AAC"
+    release_group: "CYW"
 
 - input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H264-CYW.mp4"
   expected:
@@ -25,7 +26,8 @@
     episode_number: 1
     resolution: 2160p
     quality: "WEB-DL"
-    video_codec: "H.264"
+    video_codec: "H264"
+    release_group: "CYW"
 
 - input: "甄嬛传 (2011).S01E01.WEB-DL.4K-CYW.mp4"
   expected:
@@ -39,6 +41,7 @@
     episode_number: 1
     resolution: 2160p
     quality: "WEB-DL"
+    release_group: "CYW"
 
 - input: "甄嬛传 (2011).S01E01.WEB-DL-CYW.mp4"
   expected:
@@ -51,6 +54,7 @@
     season_number: 1
     episode_number: 1
     quality: "WEB-DL"
+    release_group: "CYW"
 
 - input: "甄嬛传 (2011).S01E01-CYW.mp4"
   expected:
@@ -62,6 +66,7 @@
     year: 2011
     season_number: 1
     episode_number: 1
+    release_group: "CYW"
 
 - input: "甄嬛传 (2011).S01E01.WEB-DL-CYW.mp4"
   expected:
@@ -74,6 +79,7 @@
     season_number: 1
     episode_number: 1
     quality: "WEB-DL"
+    release_group: "CYW"
 
 - input: "甄嬛传.2011.S01E01.WEB-DL-CYW.mp4"
   expected:
@@ -86,6 +92,7 @@
     season_number: 1
     episode_number: 1
     quality: "WEB-DL"
+    release_group: "CYW"
 
 - input: "甄嬛传.S01E01.2011.WEB-DL-CYW.mp4"
   expected:
@@ -98,3 +105,19 @@
     season_number: 1
     episode_number: 1
     quality: "WEB-DL"
+    release_group: "CYW"
+
+- input: "Mojin.Return.to.the.South.China.Sea.S01E02.2025.2160p.WEB-DL.H265.AAC5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Mojin Return to the South China Sea"
+        language: "en"
+    year: 2025
+    season_number: 1
+    episode_number: 2
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "AAC 5.1"

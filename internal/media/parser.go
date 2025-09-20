@@ -58,8 +58,8 @@ func (p *parser) updateTitleIndexEnd(index int) {
 }
 
 func (p *parser) updateNameAndIndex(match []int) {
-	p.name = p.name[:match[0]] + ".." + p.name[match[1]:]
-	p.updateTitleIndexEnd(match[0])
+	p.name = p.name[:match[0]+1] + p.name[match[1]-1:]
+	p.updateTitleIndexEnd(match[0] + 1)
 }
 
 func (p *parser) parseValueFromName(re *regexp.Regexp) string {
@@ -74,12 +74,14 @@ func (p *parser) parseValueFromName(re *regexp.Regexp) string {
 }
 
 var (
-	tmdbRe       = regexp.MustCompile(`(?i)[\[{]\s*tmdb-(?P<value>\d+)\s*[\]}]`)
-	frameRateRe  = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>\d{2,3}fps)(?:\.| |-|\])`)
-	qualityRe    = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)(?:\.| |-|\])`)
-	hdrRe        = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV)(?:\.| |-|\])`)
-	videoCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>[hx]\.?26[45]|avc|hevc)(?:\.| |-|\])`)
-	audioCodecRe = regexp.MustCompile(`(?i)(?:\.| |\[)(?P<value>aac|flac|ddp?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ](DD[\. ]?)?\d\.\d|DTS[\. ]?\d\.\d)(?:\.| |-|\])`)
+	reBegin      = `(?i)[\. \-\[\{\(@]\s*`
+	reEnd        = `\s*[\. \-\]\}\)@]`
+	tmdbRe       = regexp.MustCompile(reBegin + `tmdb-(?P<value>\d+)` + reEnd)
+	frameRateRe  = regexp.MustCompile(reBegin + `(?P<value>\d{2,3}fps)` + reEnd)
+	qualityRe    = regexp.MustCompile(reBegin + `(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)` + reEnd)
+	hdrRe        = regexp.MustCompile(reBegin + `(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV)` + reEnd)
+	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[hx]\.?26[45]|avc|hevc)` + reEnd)
+	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|DDP?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ](DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
 )
 
 func (p *parser) parse() *MediaInfo {
@@ -96,13 +98,14 @@ func (p *parser) parse() *MediaInfo {
 	p.parseYear()
 	p.parseSeasonEpisode()
 	p.parseFileType()
-	p.parseSubtitles()
 	p.parseTitle()
+	p.parseSubtitles()
+	p.parseReleaseGroup()
 	return p.info
 }
 
 var replaceRes = []*regexp.Regexp{
-	regexp.MustCompile(`[_（）《》@]`),
+	regexp.MustCompile(`[_（）《》]`),
 	regexp.MustCompile(`[\[★](\S{1,4}年)?\S{1,2}月新番[\]★]`),
 }
 
@@ -117,7 +120,7 @@ func (p *parser) normalizeName() {
 	p.name = " " + p.name + " "
 }
 
-var resolutionRe = regexp.MustCompile(`(?:\.|\[| |\()\s*((\d{3,4}x(?P<height>\d{3,4}))|(?i)(?P<resolution>\d{1,4}[pk]))\s*(?:\.|\]| |-)`)
+var resolutionRe = regexp.MustCompile(reBegin + `((\d{3,4}x(?P<height>\d{3,4}))|(?P<resolution>\d{1,4}[pk]))` + reEnd)
 
 func (p *parser) parseResolution() {
 	match := reFindLastIndex(resolutionRe, p.name)
@@ -245,7 +248,7 @@ var titleRes = []struct {
 	re *regexp.Regexp
 	to string
 }{
-	{regexp.MustCompile(`[\.\[\]]`), " "},
+	{regexp.MustCompile(`[\.\[\]\{\}\(\)]`), " "},
 	{regexp.MustCompile(`第[^\.\[\]]+季`), ""},
 }
 var digitRe = regexp.MustCompile(`^\d+$`)
@@ -310,6 +313,29 @@ func (p *parser) parseSubtitles() {
 			}
 		}
 	}
+}
+
+var releaseGroupRe = regexp.MustCompile(`\[\s*(?P<value>[^\[\]]+)\s*\]`)
+
+func (p *parser) parseReleaseGroup() {
+	if len(p.info.ReleaseGroup) > 0 {
+		return
+	}
+
+	match := reFindLastIndex(releaseGroupRe, p.other)
+	if match != nil {
+		value := strings.TrimSpace(getGroupFromMatch(releaseGroupRe, match, p.other, "value"))
+		if strings.Contains(value, "-") {
+			p.info.ReleaseGroup = value
+			return
+		}
+	}
+
+	index := strings.LastIndex(p.other, "-")
+	if index < 0 {
+		return
+	}
+	p.info.ReleaseGroup = strings.TrimSpace(p.other[index+1:])
 }
 
 func mustAtoi(s string) *NullableInt {
