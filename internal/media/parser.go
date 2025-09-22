@@ -62,7 +62,7 @@ func (p *parser) updateNameAndIndex(match []int) {
 	p.updateTitleIndexEnd(match[0] + 1)
 }
 
-func (p *parser) parseValueFromName(re *regexp.Regexp) string {
+func (p *parser) parseValueFromName(re *regexp.Regexp, normalizer ...func(string) string) string {
 	match := reFindLastIndex(re, p.name)
 	if match == nil {
 		return ""
@@ -70,6 +70,10 @@ func (p *parser) parseValueFromName(re *regexp.Regexp) string {
 
 	value := getGroupFromMatch(tmdbRe, match, p.name, "value")
 	p.updateNameAndIndex(match)
+
+	for _, fn := range normalizer {
+		value = fn(value)
+	}
 	return value
 }
 
