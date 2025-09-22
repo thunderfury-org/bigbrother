@@ -4,19 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
 type Client struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	host  string
+	token string
 }
 
-func NewClient(baseURL, apiKey string) *Client {
+func NewClient(host, token string) *Client {
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		host:  host,
+		token: token,
 	}
 }
 
@@ -26,38 +26,49 @@ type apiResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func (c *Client) post(path string, payload interface{}, response interface{}) error {
-	url := fmt.Sprintf("%s%s", c.baseURL, path)
-
+func (c *Client) post(path string, payload interface{}, respPayload interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	url := fmt.Sprintf("%s%s", c.host, path)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	req.Header.Set("Authorization", c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status code: %d", resp.StatusCode)
+		return fmt.Errorf("http request failed, url: %s, status code: %d", url, resp.StatusCode)
 	}
 
-	var result ListFilesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	return &result, nil
+	var result apiResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("failed to decode response: %w, payload: %s", err, string(respBody))
+	}
+
+	if result.Code != 200 {
+		return fmt.Errorf("http request failed, url %s, msg: %s", url, result.Message)
+	}
+
+	if respPayload != nil {
+		if err := json.Unmarshal(result.Data, respPayload); err != nil {
+			return fmt.Errorf("failed to decode response payload: %w, payload: %s", err, string(result.Data))
+		}
+	}
+	return nil
 }

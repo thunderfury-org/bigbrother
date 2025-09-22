@@ -8,7 +8,7 @@ import (
 
 	"github.com/thunderfury-org/bigbrother/internal/media"
 
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v3"
 )
 
 type TestCase struct {
