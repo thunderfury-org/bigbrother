@@ -74,7 +74,7 @@ func normalizeAudioCodec(codec string) string {
 func normalizeHDR(hdr string) string {
 	hdr = strings.ToUpper(strings.ReplaceAll(hdr, "-", ""))
 	switch {
-	case strings.Contains(hdr, "DOLBY"):
+	case strings.Contains(hdr, "DOLBY") || hdr == "DOVI":
 		return "DV"
 	default:
 		return hdr

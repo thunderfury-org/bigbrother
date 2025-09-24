@@ -1,36 +1,45 @@
 package server
 
 import (
-	"fmt"
-	"log"
+	"container/list"
+	"log/slog"
+	"path"
 
+	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/media"
 	"github.com/thunderfury-org/bigbrother/internal/openlist"
-
-	"github.com/spf13/viper"
 )
 
 func Run() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("./data/config")
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
-		panic(fmt.Errorf("fatal error config file: %w", err))
+	conf, err := config.Load("./data/config")
+	if err != nil {
+		slog.Error("Failed to load config", slog.Any("err", err))
+		return
 	}
 
 	// Create openlist client
-	client := openlist.NewClient(viper.GetString("openlist.host"), viper.GetString("openlist.token"))
+	client := openlist.NewClient(conf.OpenList.BaseURL, conf.OpenList.Token)
 
-	// read file list from openlist
-	files, err := client.ListFiles("/123pan/inbox/tgto123", false)
-	if err != nil {
-		log.Fatalf("Failed to read file list from openlist: %v", err)
-	}
+	fileList := list.New()
+	fileList.PushBack("/123pan/inbox/tgto123")
 
-	// Process files
-	for _, file := range files {
-		info := media.Parse(file.Name)
-		log.Printf("Processing file: %v", info)
+	for e := fileList.Front(); e != nil; e = e.Next() {
+		currentPath := e.Value.(string)
+		slog.Info("Processing path", slog.String("path", currentPath))
+		files, err := client.ListFiles(currentPath, false)
+		if err != nil {
+			slog.Error("Failed to read file list from openlist", slog.Any("err", err))
+			return
+		}
+
+		// Process files
+		for _, file := range files {
+			if file.IsDir {
+				fileList.PushBack(path.Join(currentPath, file.Name))
+			} else {
+				info := media.Parse(file.Name)
+				slog.Info("Processing file", slog.String("name", file.Name), slog.Any("file", info))
+			}
+		}
 	}
 }

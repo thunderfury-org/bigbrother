@@ -168,3 +168,75 @@
     video_codec: "H264"
     audio_codec: "DTS-HD MA 5.1"
     release_group: "NOGRP"
+
+
+- input: "神奇四侠：初露锋芒 (2025) {tmdbid=617126}"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) {tmdbid-617126}"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) {tmdb=617126}"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) {tmdb-617126}"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) [tmdbid=617126]"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) [tmdbid-617126]"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) [tmdb=617126]"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "神奇四侠：初露锋芒 (2025) [tmdb-617126]"
+  expected:
+    titles:
+      - title: "神奇四侠：初露锋芒"
+        language: "zh"
+    year: 2025
+    tmdb_id: 617126
+
+- input: "[地心历险记][2008][英语中字][1080P蓝光原盘REMUX][13.3G]"
+  expected:
+    titles:
+      - title: "地心历险记"
+        language: "zh"
+    year: 2008

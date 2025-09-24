@@ -9,14 +9,14 @@ import (
 )
 
 type Client struct {
-	host  string
-	token string
+	baseURL string
+	token   string
 }
 
-func NewClient(host, token string) *Client {
+func NewClient(baseURL, token string) *Client {
 	return &Client{
-		host:  host,
-		token: token,
+		baseURL: baseURL,
+		token:   token,
 	}
 }
 
@@ -26,13 +26,13 @@ type apiResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func (c *Client) post(path string, payload interface{}, respPayload interface{}) error {
+func (c *Client) post(path string, payload any, respPayload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request payload: %w", err)
 	}
 
-	url := fmt.Sprintf("%s%s", c.host, path)
+	url := fmt.Sprintf("%s%s", c.baseURL, path)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
