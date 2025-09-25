@@ -1,6 +1,11 @@
 package openlist
 
-import "time"
+import (
+	"container/list"
+	"fmt"
+	"path"
+	"time"
+)
 
 type listFilesRequest struct {
 	Path    string `json:"path"`
@@ -83,4 +88,44 @@ func (c *Client) BatchMove(srcDir string, dstDir string, names []string) error {
 		Names:  names,
 	}
 	return c.post("/api/fs/move", request, nil)
+}
+
+// currentDir is the full path of directory being walked
+// files is the list of files in currentDir, not include subdirectory
+type WalkDirFunc func(currentDir string, files []*File) error
+
+// WalkDir walks the directory tree rooted at dir, calling fn for each directory in the tree, including dir itself.
+func (c *Client) WalkDir(dir string, fn WalkDirFunc) error {
+	if dir == "" {
+		return fmt.Errorf("dir must not be empty")
+	}
+
+	dirs := list.New()
+	dirs.PushBack(dir)
+
+	for e := dirs.Front(); e != nil; e = e.Next() {
+		currentDir := e.Value.(string)
+
+		files, err := c.ListFiles(currentDir, true)
+		if err != nil {
+			return err
+		}
+
+		onlyFiles := []*File{}
+		for _, file := range files {
+			if file.IsDir {
+				dirs.PushBack(path.Join(currentDir, file.Name))
+			} else {
+				onlyFiles = append(onlyFiles, file)
+			}
+		}
+
+		if len(onlyFiles) > 0 {
+			err := fn(currentDir, onlyFiles)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

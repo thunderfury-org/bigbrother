@@ -30,12 +30,15 @@ type LibraryConfig struct {
 	// Must not be the same as other library path and must not be a subdirectory of other library path
 	Path string `yaml:"path"`
 
-	// Path in openlist to monitor for new files
+	// Path in openlist to watch for new files
 	//
 	// Will be renamed to Path after processing automatically.
 	//
 	// Must not be the same as Path and must not be a subdirectory of Path.
-	MonitorPath string `yaml:"monitor_path"`
+	WatchPath string `yaml:"watch_path"`
+
+	// Library path in openlist to move invalid files
+	InvalidPath string `yaml:"invalid_path"`
 
 	// Local storage path to generate strm files
 	LocalPath string `yaml:"local_path"`

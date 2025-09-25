@@ -165,7 +165,8 @@ func (p *parser) parseYear() {
 		newName := p.name[match[1]-1:]
 		match2 := reFindLastIndex(yearRe, newName)
 		if match2 != nil {
-			p.info.Year = getGroupFromMatch(yearRe, match2, newName, "year")
+			year := getGroupFromMatch(yearRe, match2, newName, "year")
+			p.info.Year, _ = strconv.Atoi(year)
 			p.name = p.name[:match[1]] + "." + newName[match2[1]:]
 			return
 		}
@@ -173,7 +174,8 @@ func (p *parser) parseYear() {
 		// not matched, keep the original match
 	}
 
-	p.info.Year = getGroupFromMatch(yearRe, match, p.name, "year")
+	year := getGroupFromMatch(yearRe, match, p.name, "year")
+	p.info.Year, _ = strconv.Atoi(year)
 	p.updateNameAndIndex(match)
 	p.yearIndexStart = match[0]
 }

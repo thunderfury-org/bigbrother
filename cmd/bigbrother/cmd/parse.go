@@ -39,8 +39,8 @@ var parseCmd = &cobra.Command{
 			}
 		}
 
-		if info.Year != "" {
-			fmt.Printf("Year: %s\n", info.Year)
+		if info.Year != 0 {
+			fmt.Printf("Year: %d\n", info.Year)
 		}
 		if info.SeasonNumber != nil {
 			fmt.Printf("SeasonNumber: %s\n", info.SeasonNumber.String())

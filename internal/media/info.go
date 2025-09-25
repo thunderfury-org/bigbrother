@@ -22,6 +22,13 @@ func (n *NullableInt) IsNull() bool {
 	return n == nil
 }
 
+func (n *NullableInt) Int() int {
+	if n == nil {
+		panic("NullableInt is nil")
+	}
+	return int(*n)
+}
+
 func (n *NullableInt) String() string {
 	if n == nil {
 		return "nil"
@@ -42,7 +49,7 @@ type MediaInfo struct {
 	TmdbID string `yaml:"tmdb_id,omitempty"`
 
 	Titles              []MediaTitle `yaml:"titles,omitempty"`                // Movie or TV Show title
-	Year                string       `yaml:"year,omitempty"`                  // Release year
+	Year                int          `yaml:"year,omitempty"`                  // Release year
 	SeasonNumber        *NullableInt `yaml:"season_number,omitempty"`         // Season number for TV shows
 	EpisodeNumber       *NullableInt `yaml:"episode_number,omitempty"`        // Episode number for TV shows
 	SecondEpisodeNumber *NullableInt `yaml:"second_episode_number,omitempty"` // For episode like 01-02
