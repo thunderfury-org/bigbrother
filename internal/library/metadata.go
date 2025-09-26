@@ -11,7 +11,7 @@ type metadataFetcher struct {
 	tmdb *tmdb.Client
 }
 
-func (f *metadataFetcher) SearchMovie(titles []media.MediaTitle, year int) (*tmdb.MovieDetail, error) {
+func (f *metadataFetcher) SearchMovie(titles []media.MediaTitle, year string) (*tmdb.MovieDetail, error) {
 	if len(titles) == 0 {
 		return nil, fmt.Errorf("no title to search")
 	}

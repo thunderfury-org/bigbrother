@@ -2,6 +2,7 @@ package library
 
 import (
 	"fmt"
+	"log/slog"
 	"path"
 
 	"github.com/thunderfury-org/bigbrother/internal/config"
@@ -51,11 +52,11 @@ func (m *Manager) AddLibrary(lib config.LibraryConfig) error {
 		openlist: m.openlist,
 		meta:     m.meta,
 		library: innerLibrary{
-			name:        lib.Name,
-			path:        lib.Path,
-			watchPath:   watchPath,
-			invalidPath: invalidPath,
-			localPath:   lib.LocalPath,
+			Name:        lib.Name,
+			Path:        lib.Path,
+			WatchPath:   watchPath,
+			InvalidPath: invalidPath,
+			LocalPath:   lib.LocalPath,
 		},
 	}
 
@@ -66,7 +67,7 @@ func (m *Manager) Start() error {
 	for name, watcher := range m.watchers {
 		err := watcher.Start()
 		if err != nil {
-			return fmt.Errorf("failed to start watcher for library %s: %w", name, err)
+			slog.Error(fmt.Sprintf("Failed to start watcher for library %s: %s", name, err))
 		}
 	}
 	return nil

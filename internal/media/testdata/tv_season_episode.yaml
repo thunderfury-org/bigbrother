@@ -14,7 +14,7 @@
     audio_codec: "AAC"
     release_group: "CYW"
 
-- input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H264-CYW.mp4"
+- input: "甄嬛传 (2011).S01E01.WEB-DL.4K.H.264-CYW.mp4"
   expected:
     file_type: "video"
     extension: ".mp4"

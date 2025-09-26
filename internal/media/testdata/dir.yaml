@@ -97,9 +97,10 @@
 - input: "Reply 1988 S01"
   expected:
     titles:
-      - title: "Reply 1988"
+      - title: "Reply"
         language: "en"
     season_number: 1
+    year: 1988
 
 - input: "Reply 1988 (2015) S01 1080p"
   expected:
@@ -137,9 +138,10 @@
 - input: "Reply 1988 S01"
   expected:
     titles:
-      - title: "Reply 1988"
+      - title: "Reply"
         language: "en"
     season_number: 1
+    year: 1988
 
 - input: "Reply.1988.Reply.2015.S01"
   expected:

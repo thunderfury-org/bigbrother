@@ -3,7 +3,11 @@ package openlist
 import (
 	"container/list"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -33,6 +37,7 @@ type File struct {
 	Thumb    string            `json:"thumb"`
 	Type     int               `json:"type"`
 	HashInfo map[string]string `json:"hash_info"`
+	RawURL   string            `json:"raw_url"`
 }
 
 func (c *Client) ListFiles(path string, refresh bool) ([]*File, error) {
@@ -47,6 +52,17 @@ func (c *Client) ListFiles(path string, refresh bool) ([]*File, error) {
 		return nil, err
 	}
 	return result.Content, nil
+}
+
+type mkdirRequest struct {
+	Path string `json:"path"`
+}
+
+func (c *Client) Mkdir(path string) error {
+	request := mkdirRequest{
+		Path: path,
+	}
+	return c.post("/api/fs/mkdir", request, nil)
 }
 
 type RenameObject struct {
@@ -90,6 +106,54 @@ func (c *Client) BatchMove(srcDir string, dstDir string, names []string) error {
 	return c.post("/api/fs/move", request, nil)
 }
 
+type getFileRequest struct {
+	Path    string `json:"path"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
+	Refresh bool   `json:"refresh"`
+}
+
+func (c *Client) GetFile(path string) (*File, error) {
+	request := getFileRequest{
+		Path:    path,
+		Page:    1,
+		PerPage: 0,
+		Refresh: false,
+	}
+	var file File
+	err := c.post("/api/fs/get", request, &file)
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
+func (c *Client) DownloadFile(path string, localPath string) error {
+	f, err := c.GetFile(path)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Get(f.RawURL)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file, status: %s", resp.Status)
+	}
+
+	fp, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer fp.Close()
+
+	_, err = io.Copy(fp, resp.Body)
+	return err
+}
+
 // currentDir is the full path of directory being walked
 // files is the list of files in currentDir, not include subdirectory
 type WalkDirFunc func(currentDir string, files []*File) error
@@ -113,6 +177,11 @@ func (c *Client) WalkDir(dir string, fn WalkDirFunc) error {
 
 		onlyFiles := []*File{}
 		for _, file := range files {
+			if strings.HasPrefix(file.Name, ".") {
+				// Skip hidden files
+				continue
+			}
+
 			if file.IsDir {
 				dirs.PushBack(path.Join(currentDir, file.Name))
 			} else {
@@ -120,11 +189,8 @@ func (c *Client) WalkDir(dir string, fn WalkDirFunc) error {
 			}
 		}
 
-		if len(onlyFiles) > 0 {
-			err := fn(currentDir, onlyFiles)
-			if err != nil {
-				return err
-			}
+		if err = fn(currentDir, onlyFiles); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -45,7 +45,7 @@ func normalizeQuality(quality string) string {
 }
 
 func normalizeVideoCodec(codec string) string {
-	codec = strings.ToLower(codec)
+	codec = strings.ToUpper(codec)
 	switch codec {
 	case "X264", "H.264", "AVC":
 		return "H264"

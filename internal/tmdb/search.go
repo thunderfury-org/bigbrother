@@ -20,10 +20,10 @@ type searchMovieResponse struct {
 	TotalResults int                  `json:"total_results"`
 }
 
-func (c *Client) SearchMovie(query string, year int) ([]*SearchMovieResult, error) {
+func (c *Client) SearchMovie(query string, year string) ([]*SearchMovieResult, error) {
 	params := url.Values{}
 	params.Add("query", query)
-	params.Add("year", strconv.Itoa(year))
+	params.Add("primary_release_year", year)
 
 	var result searchMovieResponse
 	if err := c.get("/3/search/movie", params, &result); err != nil {

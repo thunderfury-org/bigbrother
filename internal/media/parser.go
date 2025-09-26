@@ -84,8 +84,8 @@ var (
 	frameRateRe  = regexp.MustCompile(reBegin + `(?P<value>\d{2,3}fps)` + reEnd)
 	qualityRe    = regexp.MustCompile(reBegin + `(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)` + reEnd)
 	hdrRe        = regexp.MustCompile(reBegin + `(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV|DoVi)` + reEnd)
-	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[hx]\.?26[45]|avc|hevc)` + reEnd)
-	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|DDP?([\s\.]Atmos)?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ]?(DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
+	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[HX]\.?26[45]|AVC|HEVC|AV1|VP-9)` + reEnd)
+	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|DDP?([\s\.]Atmos)?(?:[\s\.]?\d\.\d)?|DTS-HD[\. ](?:MA)?[\. ]?(?:DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
 )
 
 func (p *parser) parse() *MediaInfo {
@@ -151,7 +151,7 @@ func (p *parser) parseResolution() {
 	p.updateNameAndIndex(match)
 }
 
-var yearRe = regexp.MustCompile(`[\.\(\[]\s*(?P<year>19\d{2}|20\d{2})\s*[\.\)\]]`)
+var yearRe = regexp.MustCompile(reBegin + `(?P<year>19\d{2}|20\d{2})` + reEnd)
 
 func (p *parser) parseYear() {
 	match := reFindLastIndex(yearRe, p.name)
@@ -165,8 +165,7 @@ func (p *parser) parseYear() {
 		newName := p.name[match[1]-1:]
 		match2 := reFindLastIndex(yearRe, newName)
 		if match2 != nil {
-			year := getGroupFromMatch(yearRe, match2, newName, "year")
-			p.info.Year, _ = strconv.Atoi(year)
+			p.info.Year = getGroupFromMatch(yearRe, match2, newName, "year")
 			p.name = p.name[:match[1]] + "." + newName[match2[1]:]
 			return
 		}
@@ -174,14 +173,13 @@ func (p *parser) parseYear() {
 		// not matched, keep the original match
 	}
 
-	year := getGroupFromMatch(yearRe, match, p.name, "year")
-	p.info.Year, _ = strconv.Atoi(year)
+	p.info.Year = getGroupFromMatch(yearRe, match, p.name, "year")
 	p.updateNameAndIndex(match)
 	p.yearIndexStart = match[0]
 }
 
 var seasonEpisodeRe = regexp.MustCompile(`(?i)([\.\s\[]S(?:eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)([E#-\[]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?)?`)
-var episodeOnlyRe = regexp.MustCompile(`(?i)([\.\s\-#E\[第]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[\.\s\]\-集])`)
+var episodeOnlyRe = regexp.MustCompile(reBegin + `[#第E]?\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[集]?` + reEnd)
 
 func (p *parser) parseSeasonEpisode() {
 	re := seasonEpisodeRe
