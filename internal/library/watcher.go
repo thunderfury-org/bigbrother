@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -152,7 +151,7 @@ func (w *innerWatcher) generateStrm(filePathInLib string) error {
 	localFilePath = localFilePath[:index] + ".strm"
 	slog.Info("Write strm file", "url", url, "localFilePath", localFilePath)
 
-	fp, err := os.Open(localFilePath)
+	fp, err := openLocalFile(localFilePath)
 	if err != nil {
 		return err
 	}
@@ -172,7 +171,7 @@ func (w *innerWatcher) downloadFile(filePathInLib string) error {
 
 	localFilePath := strings.Replace(filePathInLib, w.library.Path, w.library.LocalPath, 1)
 	slog.Info("Download file", "filePathInLib", filePathInLib, "localFilePath", localFilePath)
-	return w.openlist.DownloadFile(filePathInLib, localFilePath)
+	return downloadFile(w.openlist, filePathInLib, localFilePath)
 }
 
 // rename and move media file to library path

@@ -3,9 +3,6 @@ package openlist
 import (
 	"container/list"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -126,32 +123,6 @@ func (c *Client) GetFile(path string) (*File, error) {
 		return nil, err
 	}
 	return &file, nil
-}
-
-func (c *Client) DownloadFile(path string, localPath string) error {
-	f, err := c.GetFile(path)
-	if err != nil {
-		return err
-	}
-
-	resp, err := http.DefaultClient.Get(f.RawURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download file, status: %s", resp.Status)
-	}
-
-	fp, err := os.Open(localPath)
-	if err != nil {
-		return err
-	}
-	defer fp.Close()
-
-	_, err = io.Copy(fp, resp.Body)
-	return err
 }
 
 // currentDir is the full path of directory being walked
