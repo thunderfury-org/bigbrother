@@ -2,7 +2,6 @@ package tmdb
 
 import (
 	"net/url"
-	"strconv"
 )
 
 type SearchMovieResult struct {
@@ -47,10 +46,10 @@ type searchTVResponse struct {
 	TotalResults int               `json:"total_results"`
 }
 
-func (c *Client) SearchTV(query string, year int) ([]*SearchTVResult, error) {
+func (c *Client) SearchTV(query string, year string) ([]*SearchTVResult, error) {
 	params := url.Values{}
 	params.Add("query", query)
-	params.Add("first_air_date_year", strconv.Itoa(year))
+	params.Add("first_air_date_year", year)
 
 	var result searchTVResponse
 	if err := c.get("/3/search/tv", params, &result); err != nil {

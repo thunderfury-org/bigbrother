@@ -39,7 +39,7 @@ func (f *metadataFetcher) SearchMovie(titles []media.MediaTitle, year string) (*
 	return nil, nil
 }
 
-func (f *metadataFetcher) SearchTV(titles []media.MediaTitle, year int) (*tmdb.TVDetail, error) {
+func (f *metadataFetcher) SearchTV(titles []media.MediaTitle, year string) (*tmdb.TVDetail, error) {
 	if len(titles) == 0 {
 		return nil, fmt.Errorf("no title to search")
 	}

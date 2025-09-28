@@ -126,15 +126,177 @@ func (w *innerWatcher) processOneMovieFile(currentDir string, f *mediaFile) erro
 	}
 }
 
-func (w *innerWatcher) handleTvs(dir string, files []*mediaFile) error {
+func (w *innerWatcher) handleTvs(currentDir string, files []*mediaFile) error {
 	if len(files) == 0 {
 		return nil
 	}
 
-	for _, f := range files {
-		slog.Info("handleTvs", "file", f.File.Name)
+	dirInfo, err := w.parseMediaInfoFromPath(currentDir)
+	if err != nil {
+		return fmt.Errorf("failed to parse media info from path: %w", err)
 	}
+
+	// 按照 name - year 分组
+	tvGroups := make(map[string][]*mediaFile)
+	for _, f := range files {
+		var title string
+		if len(f.Info.Titles) > 0 {
+			title = f.Info.Titles[0].Title
+		} else if dirInfo != nil && len(dirInfo.Titles) > 0 {
+			title = dirInfo.Titles[0].Title
+		} else {
+			slog.Info("Skipping TV file", slog.String("file", f.File.Name), slog.String("reason", "no title found"))
+			continue
+		}
+
+		if f.Info.Year == "" && dirInfo != nil && dirInfo.Year != "" {
+			f.Info.Year = dirInfo.Year
+		}
+
+		key := fmt.Sprintf("%s.%s", title, f.Info.Year)
+		tvGroups[key] = append(tvGroups[key], f)
+	}
+
+	// 批量处理每个组的文件
+	for _, groupFiles := range tvGroups {
+		err = w.processOneTvGroup(currentDir, groupFiles)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) error {
+	tvInfo, err := w.meta.SearchTV(files[0].Info.Titles, files[0].Info.Year)
+	if err != nil {
+		slog.Info("Failed to get TV metadata", slog.String("title", files[0].Info.Titles[0].Title), slog.Any("err", err))
+		return nil
+	}
+	if tvInfo == nil {
+		slog.Warn("No TV metadata found", slog.String("title", files[0].Info.Titles[0].Title), slog.String("year", files[0].Info.Year))
+		return nil
+	}
+
+	var renameObjects []*openlist.RenameObject
+	var moveFiles []string
+
+	for _, f := range files {
+		// 更新媒体信息
+		f.Genres = tvInfo.Genres
+		f.OriginCountry = tvInfo.OriginCountry
+		f.Info.Titles = []media.MediaTitle{
+			{
+				Language: media.LanguageChinese,
+				Title:    tvInfo.Name,
+			},
+		}
+		f.Info.Year = tvInfo.FirstAirDate[:4]
+		f.Info.TmdbID = strconv.FormatInt(tvInfo.ID, 10)
+
+		// 准备重命名对象
+		oldName := f.File.Name
+		newNamePrefix := fmt.Sprintf("%s.%s.", f.Info.Titles[0].Title, f.Info.Year)
+		if !strings.HasPrefix(f.File.Name, newNamePrefix) {
+			newName := generateFileName(f.Info)
+			slog.Info("Rename TV file", slog.String("old", f.File.Name), slog.String("new", newName))
+			renameObjects = append(renameObjects, &openlist.RenameObject{
+				SrcName: oldName,
+				NewName: newName,
+			})
+			f.File.Name = newName
+		}
+		moveFiles = append(moveFiles, f.File.Name)
+	}
+
+	// 批量重命名文件
+	if len(renameObjects) > 0 {
+		err := w.openlist.BatchRename(currentDir, renameObjects)
+		if err != nil {
+			slog.Error("Batch rename failed", slog.String("dir", currentDir), slog.Any("err", err))
+			return err
+		}
+	}
+
+	destPath := w.generateDestPathInLibrary(files[0])
+
+	// 批量移动文件
+	if len(moveFiles) > 0 {
+		err := w.batchMoveFiles(currentDir, destPath, moveFiles)
+		if err != nil {
+			slog.Error("Batch move failed", slog.String("src", currentDir), slog.String("dest", destPath), slog.Any("err", err))
+			return err
+		}
+	}
+
+	// 处理 .strm 文件和下载字幕文件
+	for _, f := range files {
+		filePathInLib := fmt.Sprintf("%s/%s", destPath, f.File.Name)
+		switch f.Info.FileType {
+		case media.FileTypeVideo:
+			err := w.generateStrm(filePathInLib)
+			if err != nil {
+				slog.Error("Failed to generate strm", slog.String("file", filePathInLib), slog.Any("err", err))
+				return err
+			}
+		case media.FileTypeSubtitle:
+			err := w.downloadFile(filePathInLib)
+			if err != nil {
+				slog.Error("Failed to download file", slog.String("file", filePathInLib), slog.Any("err", err))
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// 从目录路径中获取电视剧名称信息
+func (w *innerWatcher) parseMediaInfoFromPath(currentDir string) (*media.MediaInfo, error) {
+	if strings.HasPrefix(w.library.WatchPath, currentDir) {
+		// 不是 library watch path 的子目录，直接返回 nil
+		return nil, nil
+	}
+
+	// 提取相对于 library path 的路径部分
+	subPath := currentDir[len(w.library.WatchPath):]
+	if subPath == "" {
+		return nil, fmt.Errorf("empty sub path, currentDir: %s", currentDir)
+	}
+
+	// 分割路径为各个部分
+	pathParts := strings.Split(strings.TrimPrefix(subPath, "/"), "/")
+	if len(pathParts) == 0 {
+		return nil, fmt.Errorf("empty path parts, currentDir: %s", currentDir)
+	}
+
+	// 对目录名进行解析，尝试提取信息
+	dirInfo := media.Parse(pathParts[len(pathParts)-1])
+	if len(dirInfo.Titles) > 0 && dirInfo.Year != "" {
+		return dirInfo, nil
+	}
+
+	if len(pathParts) == 1 {
+		return dirInfo, nil
+	}
+
+	// 继续解析上级目录
+	parentDirInfo := media.Parse(pathParts[len(pathParts)-2])
+	if len(parentDirInfo.Titles) == 0 {
+		return dirInfo, nil
+	}
+
+	if parentDirInfo.Year == "" {
+		parentDirInfo.Year = dirInfo.Year
+	}
+	if parentDirInfo.TmdbID == "" {
+		parentDirInfo.TmdbID = dirInfo.TmdbID
+	}
+	if parentDirInfo.SeasonNumber.IsNull() {
+		parentDirInfo.SeasonNumber = dirInfo.SeasonNumber
+	}
+	return parentDirInfo, nil
 }
 
 func (w *innerWatcher) generateStrm(filePathInLib string) error {
