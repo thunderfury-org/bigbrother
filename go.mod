@@ -6,6 +6,7 @@ require (
 	github.com/pemistahl/lingua-go v1.4.0
 	github.com/spf13/cobra v1.10.1
 	go.yaml.in/yaml/v3 v3.0.4
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -17,5 +18,4 @@ require (
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
