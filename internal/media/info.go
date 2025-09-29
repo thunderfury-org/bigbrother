@@ -29,6 +29,12 @@ func (n *NullableInt) Int() int {
 	return int(*n)
 }
 
+func (n *NullableInt) Set(i int) {
+	if n != nil {
+		*n = NullableInt(i)
+	}
+}
+
 func (n *NullableInt) String() string {
 	if n == nil {
 		return "nil"

@@ -36,7 +36,7 @@ func (f *metadataFetcher) SearchMovie(titles []media.MediaTitle, year string) (*
 		}
 	}
 
-	return nil, nil
+	return f.tmdb.GetMovieDetail(movies[0].ID)
 }
 
 func (f *metadataFetcher) SearchTV(titles []media.MediaTitle, year string) (*tmdb.TVDetail, error) {
@@ -64,5 +64,5 @@ func (f *metadataFetcher) SearchTV(titles []media.MediaTitle, year string) (*tmd
 		}
 	}
 
-	return nil, nil
+	return f.tmdb.GetTVDetail(tvs[0].ID)
 }

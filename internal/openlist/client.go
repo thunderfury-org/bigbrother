@@ -6,11 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
-)
-
-var (
-	ErrNotFound = fmt.Errorf("object not found")
 )
 
 type Client struct {
@@ -71,9 +66,6 @@ func (c *Client) post(path string, payload any, respPayload any) error {
 	}
 
 	if result.Code != 200 {
-		if strings.Contains(result.Message, "object not found") {
-			return ErrNotFound
-		}
 		return fmt.Errorf("http request failed, url %s, msg: %s", url, result.Message)
 	}
 

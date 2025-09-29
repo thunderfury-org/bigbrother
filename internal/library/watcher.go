@@ -1,7 +1,6 @@
 package library
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -42,6 +41,10 @@ func (w *innerWatcher) processLibrary() error {
 
 		for _, file := range files {
 			f := &mediaFile{File: file, Info: media.Parse(file.Name)}
+			if f.Info.FileType == "" {
+				continue
+			}
+
 			if f.Info.EpisodeNumber.IsNull() {
 				movies = append(movies, f)
 			} else {
@@ -69,9 +72,6 @@ func (w *innerWatcher) handleMovies(currentDir string, files []*mediaFile) error
 	}
 
 	for _, f := range files {
-		if f.Info.FileType == "" {
-			continue
-		}
 		if len(f.Info.Titles) == 0 {
 			slog.Warn("Skipping movie", slog.String("file", f.File.Name), slog.String("reason", "no title"))
 			continue
@@ -118,7 +118,7 @@ func (w *innerWatcher) processOneMovieFile(currentDir string, f *mediaFile) erro
 
 	switch f.Info.FileType {
 	case media.FileTypeVideo:
-		return w.generateStrm(filePathInLib)
+		return w.generateStrm(filePathInLib, f.File.Sign)
 	case media.FileTypeSubtitle:
 		return w.downloadFile(filePathInLib)
 	default:
@@ -143,14 +143,25 @@ func (w *innerWatcher) handleTvs(currentDir string, files []*mediaFile) error {
 		if len(f.Info.Titles) > 0 {
 			title = f.Info.Titles[0].Title
 		} else if dirInfo != nil && len(dirInfo.Titles) > 0 {
+			f.Info.Titles = dirInfo.Titles
 			title = dirInfo.Titles[0].Title
 		} else {
 			slog.Info("Skipping TV file", slog.String("file", f.File.Name), slog.String("reason", "no title found"))
 			continue
 		}
 
-		if f.Info.Year == "" && dirInfo != nil && dirInfo.Year != "" {
+		if f.Info.Year == "" {
+			// 如果年份为空，尝试从目录信息中获取
+			if dirInfo != nil && dirInfo.Year != "" {
+				f.Info.Year = dirInfo.Year
+			}
+		} else if dirInfo != nil && dirInfo.Year != f.Info.Year {
+			//  文件年份和目录年份不一致， 以目录年份为准
 			f.Info.Year = dirInfo.Year
+		}
+
+		if f.Info.SeasonNumber.IsNull() {
+			f.Info.SeasonNumber = dirInfo.SeasonNumber
 		}
 
 		key := fmt.Sprintf("%s.%s", title, f.Info.Year)
@@ -179,6 +190,13 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 		return nil
 	}
 
+	slog.Info("TV metadata found", slog.String("title", tvInfo.Name), slog.String("year", tvInfo.FirstAirDate))
+
+	var seasonEpisodeNumberMap = make(map[int]int)
+	for _, season := range tvInfo.Seasons {
+		seasonEpisodeNumberMap[season.SeasonNumber] = season.EpisodeCount
+	}
+
 	var renameObjects []*openlist.RenameObject
 	var moveFiles []string
 
@@ -194,10 +212,19 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 		}
 		f.Info.Year = tvInfo.FirstAirDate[:4]
 		f.Info.TmdbID = strconv.FormatInt(tvInfo.ID, 10)
+		if f.Info.SeasonNumber.IsNull() {
+			if tvInfo.NumberOfSeasons == 1 {
+				seasonNumber := media.NullableInt(1)
+				f.Info.SeasonNumber = &seasonNumber
+			} else {
+				slog.Warn("No season number found", slog.String("file", f.File.Name), slog.String("title", f.Info.Titles[0].Title), slog.String("year", f.Info.Year))
+				continue
+			}
+		}
 
 		// 准备重命名对象
 		oldName := f.File.Name
-		newNamePrefix := fmt.Sprintf("%s.%s.", f.Info.Titles[0].Title, f.Info.Year)
+		newNamePrefix := fmt.Sprintf("%s.%s.S%02dE%02d", f.Info.Titles[0].Title, f.Info.Year, f.Info.SeasonNumber.Int(), f.Info.EpisodeNumber.Int())
 		if !strings.HasPrefix(f.File.Name, newNamePrefix) {
 			newName := generateFileName(f.Info)
 			slog.Info("Rename TV file", slog.String("old", f.File.Name), slog.String("new", newName))
@@ -235,7 +262,7 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 		filePathInLib := fmt.Sprintf("%s/%s", destPath, f.File.Name)
 		switch f.Info.FileType {
 		case media.FileTypeVideo:
-			err := w.generateStrm(filePathInLib)
+			err := w.generateStrm(filePathInLib, f.File.Sign)
 			if err != nil {
 				slog.Error("Failed to generate strm", slog.String("file", filePathInLib), slog.Any("err", err))
 				return err
@@ -299,7 +326,7 @@ func (w *innerWatcher) parseMediaInfoFromPath(currentDir string) (*media.MediaIn
 	return parentDirInfo, nil
 }
 
-func (w *innerWatcher) generateStrm(filePathInLib string) error {
+func (w *innerWatcher) generateStrm(filePathInLib string, sign string) error {
 	if w.library.LocalPath == "" {
 		return nil
 	}
@@ -307,7 +334,7 @@ func (w *innerWatcher) generateStrm(filePathInLib string) error {
 		return fmt.Errorf("file path in library is empty")
 	}
 
-	url := fmt.Sprintf("%s/d%s", w.openlist.GetBaseURL(), filePathInLib)
+	url := fmt.Sprintf("%s/d%s?sign=%s", w.openlist.GetBaseURL(), filePathInLib, sign)
 	localFilePath := strings.Replace(filePathInLib, w.library.Path, w.library.LocalPath, 1)
 	index := strings.LastIndex(localFilePath, ".")
 	localFilePath = localFilePath[:index] + ".strm"
@@ -369,13 +396,8 @@ func (w *innerWatcher) archiveMediaFile(currentDir string, f *mediaFile) (string
 }
 
 func (w *innerWatcher) batchMoveFiles(srcDir string, destDir string, names []string) error {
-	err := w.openlist.BatchMove(srcDir, destDir, names)
-	if err != nil && !errors.Is(err, openlist.ErrNotFound) {
-		return err
-	}
-
 	// maybe dest dir not exists, create it
-	err = w.openlist.Mkdir(destDir)
+	err := w.openlist.Mkdir(destDir)
 	if err != nil {
 		return err
 	}
@@ -384,9 +406,15 @@ func (w *innerWatcher) batchMoveFiles(srcDir string, destDir string, names []str
 }
 
 func (w *innerWatcher) generateDestPathInLibrary(f *mediaFile) string {
-	return fmt.Sprintf("%s/%s/%s/%s (%s) {tmdb-%s}",
+	if f.Info.SeasonNumber.IsNull() {
+		return fmt.Sprintf("%s/%s/%s/%s (%s) {tmdb-%s}",
+			w.library.Path, getCatalog(f), getSubCatalog(f),
+			f.Info.Titles[0].Title, f.Info.Year, f.Info.TmdbID)
+	}
+
+	return fmt.Sprintf("%s/%s/%s/%s (%s) {tmdb-%s}/Season %02d",
 		w.library.Path, getCatalog(f), getSubCatalog(f),
-		f.Info.Titles[0].Title, f.Info.Year, f.Info.TmdbID)
+		f.Info.Titles[0].Title, f.Info.Year, f.Info.TmdbID, f.Info.SeasonNumber.Int())
 }
 
 func generateFileName(info *media.MediaInfo) string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
+	"time"
 
 	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/openlist"
@@ -64,13 +65,15 @@ func (m *Manager) AddLibrary(lib config.LibraryConfig) error {
 }
 
 func (m *Manager) Start() error {
-	for name, watcher := range m.watchers {
-		err := watcher.Start()
-		if err != nil {
-			slog.Error(fmt.Sprintf("Failed to start watcher for library %s: %s", name, err))
+	for {
+		for name, watcher := range m.watchers {
+			err := watcher.Start()
+			if err != nil {
+				slog.Error(fmt.Sprintf("Failed to start watcher for library %s: %s", name, err))
+			}
 		}
+		time.Sleep(time.Minute * 2)
 	}
-	return nil
 }
 
 func (m *Manager) Stop() error {
