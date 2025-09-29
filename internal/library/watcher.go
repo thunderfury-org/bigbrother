@@ -198,7 +198,7 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 	}
 
 	var renameObjects []*openlist.RenameObject
-	var moveFiles []string
+	moveFiles := make(map[string][]*mediaFile)
 
 	for _, f := range files {
 		// 更新媒体信息
@@ -234,7 +234,9 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 			})
 			f.File.Name = newName
 		}
-		moveFiles = append(moveFiles, f.File.Name)
+
+		destPath := w.generateDestPathInLibrary(f)
+		moveFiles[destPath] = append(moveFiles[destPath], f)
 	}
 
 	// 批量重命名文件
@@ -246,32 +248,51 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 		}
 	}
 
-	destPath := w.generateDestPathInLibrary(files[0])
-
-	// 批量移动文件
-	if len(moveFiles) > 0 {
-		err := w.batchMoveFiles(currentDir, destPath, moveFiles)
+	for destPath, files := range moveFiles {
+		// 批量移动文件
+		moveFiles := make([]string, len(files))
+		for i, f := range files {
+			moveFiles[i] = f.File.Name
+		}
+		err = w.batchMoveFiles(currentDir, destPath, moveFiles)
 		if err != nil {
 			slog.Error("Batch move failed", slog.String("src", currentDir), slog.String("dest", destPath), slog.Any("err", err))
 			return err
 		}
-	}
 
-	// 处理 .strm 文件和下载字幕文件
-	for _, f := range files {
-		filePathInLib := fmt.Sprintf("%s/%s", destPath, f.File.Name)
-		switch f.Info.FileType {
-		case media.FileTypeVideo:
-			err := w.generateStrm(filePathInLib, f.File.Sign)
-			if err != nil {
-				slog.Error("Failed to generate strm", slog.String("file", filePathInLib), slog.Any("err", err))
-				return err
+		mediaFileMap := make(map[string]*mediaFile)
+		for _, f := range files {
+			mediaFileMap[f.File.Name] = f
+		}
+
+		// 移动文件后重新获取文件信息, 用于获取 sign
+		newFiles, err := w.openlist.ListFiles(destPath, true)
+		if err != nil {
+			slog.Error("Failed to list files", slog.String("dir", destPath), slog.Any("err", err))
+			return err
+		}
+
+		// 处理 .strm 文件和下载字幕文件
+		for _, f := range newFiles {
+			mf := mediaFileMap[f.Name]
+			if mf == nil {
+				continue
 			}
-		case media.FileTypeSubtitle:
-			err := w.downloadFile(filePathInLib)
-			if err != nil {
-				slog.Error("Failed to download file", slog.String("file", filePathInLib), slog.Any("err", err))
-				return err
+
+			filePathInLib := fmt.Sprintf("%s/%s", destPath, f.Name)
+			switch mf.Info.FileType {
+			case media.FileTypeVideo:
+				err := w.generateStrm(filePathInLib, f.Sign)
+				if err != nil {
+					slog.Error("Failed to generate strm", slog.String("file", filePathInLib), slog.Any("err", err))
+					return err
+				}
+			case media.FileTypeSubtitle:
+				err := w.downloadFile(filePathInLib)
+				if err != nil {
+					slog.Error("Failed to download file", slog.String("file", filePathInLib), slog.Any("err", err))
+					return err
+				}
 			}
 		}
 	}
@@ -396,6 +417,10 @@ func (w *innerWatcher) archiveMediaFile(currentDir string, f *mediaFile) (string
 }
 
 func (w *innerWatcher) batchMoveFiles(srcDir string, destDir string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+
 	// maybe dest dir not exists, create it
 	err := w.openlist.Mkdir(destDir)
 	if err != nil {
