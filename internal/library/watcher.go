@@ -276,7 +276,6 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 		for _, f := range newFiles {
 			mf := mediaFileMap[f.Name]
 			if mf == nil {
-				slog.Warn("No media file found", slog.String("file", f.Name))
 				continue
 			}
 
