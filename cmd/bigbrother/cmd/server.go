@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"github.com/thunderfury-org/bigbrother/server"
 
 	"github.com/spf13/cobra"
 )
@@ -9,18 +9,18 @@ import (
 // serverCmd represents the server command
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Run bigbrother server",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("server called")
+		dataDir, err := cmd.Flags().GetString("data-dir")
+		if err != nil {
+			panic(err)
+		}
+		server.Run(dataDir)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
+
+	serverCmd.Flags().String("data-dir", "./data", "Data directory")
 }

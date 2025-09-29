@@ -33,3 +33,4 @@ go.work.sum
 
 coverage.txt
 bin/
+data/

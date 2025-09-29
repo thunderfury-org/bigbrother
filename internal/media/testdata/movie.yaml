@@ -127,3 +127,30 @@
     year: 2018
     quality: "Remux"
     resolution: "1080p"
+
+- input: "Journey.to.the.Center.of.the.Earth.2008.1080p.BluRay.Remux.DTS-HD.5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Journey to the Center of the Earth"
+        language: "en"
+    year: 2008
+    quality: "Remux"
+    resolution: "1080p"
+    audio_codec: "DTS-HD 5.1"
+
+- input: "The Super Mario Bros. Movie 2023 2160p REMUX HEVC HDR10 TrueHD 7.1-samhyde@torrentgalaxy.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Super Mario Bros  Movie"
+        language: "en"
+    year: 2023
+    quality: "Remux"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "TrueHD 7.1"
+    hdr: "HDR10"
+    release_group: "samhyde@torrentgalaxy"

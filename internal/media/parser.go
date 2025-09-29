@@ -62,7 +62,7 @@ func (p *parser) updateNameAndIndex(match []int) {
 	p.updateTitleIndexEnd(match[0] + 1)
 }
 
-func (p *parser) parseValueFromName(re *regexp.Regexp) string {
+func (p *parser) parseValueFromName(re *regexp.Regexp, normalizer ...func(string) string) string {
 	match := reFindLastIndex(re, p.name)
 	if match == nil {
 		return ""
@@ -70,29 +70,33 @@ func (p *parser) parseValueFromName(re *regexp.Regexp) string {
 
 	value := getGroupFromMatch(tmdbRe, match, p.name, "value")
 	p.updateNameAndIndex(match)
+
+	for _, fn := range normalizer {
+		value = fn(value)
+	}
 	return value
 }
 
 var (
 	reBegin      = `(?i)[\. \-\[\{\(@]\s*`
 	reEnd        = `\s*[\. \-\]\}\)@]`
-	tmdbRe       = regexp.MustCompile(reBegin + `tmdb-(?P<value>\d+)` + reEnd)
+	tmdbRe       = regexp.MustCompile(reBegin + `tmdb(?:id)?[-=](?P<value>\d+)` + reEnd)
 	frameRateRe  = regexp.MustCompile(reBegin + `(?P<value>\d{2,3}fps)` + reEnd)
 	qualityRe    = regexp.MustCompile(reBegin + `(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)` + reEnd)
-	hdrRe        = regexp.MustCompile(reBegin + `(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV)` + reEnd)
-	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[hx]\.?26[45]|avc|hevc)` + reEnd)
-	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|DDP?([\s\.]?\d\.\d)?|DTS-HD[\. ]MA[\. ](DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
+	hdrRe        = regexp.MustCompile(reBegin + `(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV|DoVi)` + reEnd)
+	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[HX]\.?26[45]|AVC|HEVC|AV1|VP-9)` + reEnd)
+	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|Dolby[\.\s]?Digital|DDP?([\s\.]Atmos)?(?:[\s\.]?\d\.\d)?|DTS-HD[\. ](?:MA)?[\. ]?(?:DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
 )
 
 func (p *parser) parse() *MediaInfo {
 	p.normalizeName()
 
 	p.info.TmdbID = p.parseValueFromName(tmdbRe)
-	p.info.FrameRate = strings.ToLower(p.parseValueFromName(frameRateRe))
-	p.info.Quality = normalizeQuality(p.parseValueFromName(qualityRe))
-	p.info.HDR = normalizeHDR(p.parseValueFromName(hdrRe))
-	p.info.VideoCodec = normalizeVideoCodec(p.parseValueFromName(videoCodecRe))
-	p.info.AudioCodec = normalizeAudioCodec(p.parseValueFromName(audioCodecRe))
+	p.info.FrameRate = p.parseValueFromName(frameRateRe, strings.ToLower)
+	p.info.Quality = p.parseValueFromName(qualityRe, normalizeQuality)
+	p.info.HDR = p.parseValueFromName(hdrRe, normalizeHDR)
+	p.info.VideoCodec = p.parseValueFromName(videoCodecRe, normalizeVideoCodec)
+	p.info.AudioCodec = p.parseValueFromName(audioCodecRe, normalizeAudioCodec)
 
 	p.parseResolution()
 	p.parseYear()
@@ -107,6 +111,7 @@ func (p *parser) parse() *MediaInfo {
 var replaceRes = []*regexp.Regexp{
 	regexp.MustCompile(`[_（）《》]`),
 	regexp.MustCompile(`[\[★](\S{1,4}年)?\S{1,2}月新番[\]★]`),
+	regexp.MustCompile(`(?i)\[\d+(\.\d+)G?\]`),
 }
 
 func (p *parser) normalizeName() {
@@ -146,7 +151,7 @@ func (p *parser) parseResolution() {
 	p.updateNameAndIndex(match)
 }
 
-var yearRe = regexp.MustCompile(`(?:\.|\()\s*(?P<year>19\d{2}|20\d{2})\s*(?:\.|\))`)
+var yearRe = regexp.MustCompile(reBegin + `(?P<year>19\d{2}|20\d{2})` + reEnd)
 
 func (p *parser) parseYear() {
 	match := reFindLastIndex(yearRe, p.name)
@@ -174,7 +179,7 @@ func (p *parser) parseYear() {
 }
 
 var seasonEpisodeRe = regexp.MustCompile(`(?i)([\.\s\[]S(?:eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)([E#-\[]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?)?`)
-var episodeOnlyRe = regexp.MustCompile(`(?i)([\.\s\-#E\[第]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[\.\s\]\-集])`)
+var episodeOnlyRe = regexp.MustCompile(reBegin + `[#第E]?\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[集]?` + reEnd)
 
 func (p *parser) parseSeasonEpisode() {
 	re := seasonEpisodeRe
@@ -257,19 +262,23 @@ func (p *parser) parseTitle() {
 	index := strings.Index(p.name, "]")
 	if index >= 0 {
 		// remove [group] at the start of the name
-		left := strings.TrimSpace(p.name[index+1:])
+		name := p.name[index+1:]
+		for _, r := range titleRes {
+			name = r.re.ReplaceAllString(name, r.to)
+		}
+
+		left := strings.TrimSpace(name)
 		if left != "" {
 			p.info.ReleaseGroup = strings.TrimSpace(strings.ReplaceAll(p.name[:index], "[", ""))
 			p.name = left
 		}
 	}
 
-	name := p.name
 	for _, r := range titleRes {
-		name = r.re.ReplaceAllString(name, r.to)
+		p.name = r.re.ReplaceAllString(p.name, r.to)
 	}
 
-	for part := range strings.SplitSeq(name, "/") {
+	for part := range strings.SplitSeq(p.name, "/") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue

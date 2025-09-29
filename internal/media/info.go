@@ -22,6 +22,19 @@ func (n *NullableInt) IsNull() bool {
 	return n == nil
 }
 
+func (n *NullableInt) Int() int {
+	if n == nil {
+		panic("NullableInt is nil")
+	}
+	return int(*n)
+}
+
+func (n *NullableInt) Set(i int) {
+	if n != nil {
+		*n = NullableInt(i)
+	}
+}
+
 func (n *NullableInt) String() string {
 	if n == nil {
 		return "nil"

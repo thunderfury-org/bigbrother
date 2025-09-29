@@ -1,4 +1,4 @@
-package media
+package media_test
 
 import (
 	"os"
@@ -6,12 +6,14 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/goccy/go-yaml"
+	"github.com/thunderfury-org/bigbrother/internal/media"
+
+	"go.yaml.in/yaml/v3"
 )
 
 type TestCase struct {
-	Input    string     `yaml:"input"`
-	Expected *MediaInfo `yaml:"expected"`
+	Input    string           `yaml:"input"`
+	Expected *media.MediaInfo `yaml:"expected"`
 }
 
 func TestParse(t *testing.T) {
@@ -34,7 +36,7 @@ func testParse(t *testing.T, filename string) {
 	}
 
 	for _, tc := range testCases {
-		actual := Parse(tc.Input)
+		actual := media.Parse(tc.Input)
 		if !reflect.DeepEqual(actual, tc.Expected) {
 			t.Errorf("Parse(%q)\n got  %v\n want %v", tc.Input, actual, tc.Expected)
 		}

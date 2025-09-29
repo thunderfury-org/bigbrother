@@ -45,13 +45,14 @@ func normalizeQuality(quality string) string {
 }
 
 func normalizeVideoCodec(codec string) string {
-	switch strings.ToLower(codec) {
-	case "x264", "h264", "avc":
+	codec = strings.ToUpper(codec)
+	switch codec {
+	case "X264", "H.264", "AVC":
 		return "H264"
-	case "x265", "h265", "hevc":
+	case "X265", "H.265", "HEVC":
 		return "H265"
 	default:
-		return strings.ToUpper(codec)
+		return codec
 	}
 }
 
@@ -74,7 +75,7 @@ func normalizeAudioCodec(codec string) string {
 func normalizeHDR(hdr string) string {
 	hdr = strings.ToUpper(strings.ReplaceAll(hdr, "-", ""))
 	switch {
-	case strings.Contains(hdr, "DOLBY"):
+	case strings.Contains(hdr, "DOLBY") || hdr == "DOVI":
 		return "DV"
 	default:
 		return hdr
