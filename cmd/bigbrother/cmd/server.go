@@ -11,10 +11,16 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Run bigbrother server",
 	Run: func(cmd *cobra.Command, args []string) {
-		server.Run()
+		dataDir, err := cmd.Flags().GetString("data-dir")
+		if err != nil {
+			panic(err)
+		}
+		server.Run(dataDir)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
+
+	serverCmd.Flags().String("data-dir", "./data", "Data directory")
 }

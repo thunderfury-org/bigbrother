@@ -2,6 +2,9 @@ package server
 
 import (
 	"log/slog"
+	"path"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/library"
@@ -9,8 +12,17 @@ import (
 	"github.com/thunderfury-org/bigbrother/internal/tmdb"
 )
 
-func Run() {
-	conf, err := config.Load("./data/config")
+func Run(dataDir string) {
+	// log to file with daily rotation
+	logger := &lumberjack.Logger{
+		Filename:   path.Join(dataDir, "logs", "bigbrother.log"),
+		MaxSize:    10, // megabytes
+		MaxBackups: 3,  // number of backups to keep
+		Compress:   false,
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(logger, nil)))
+
+	conf, err := config.Load(path.Join(dataDir, "config"))
 	if err != nil {
 		slog.Error("Failed to load config", slog.Any("err", err))
 		return
