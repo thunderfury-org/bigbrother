@@ -7,13 +7,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
+	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
 	"github.com/thunderfury-org/bigbrother/internal/media"
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
 )
 
 type innerWatcher struct {
 	openlist *openlist.Client
 	meta     *metadataFetcher
+	telegram *telegram.Client
 
 	library innerLibrary
 }
@@ -118,12 +120,20 @@ func (w *innerWatcher) processOneMovieFile(currentDir string, f *mediaFile) erro
 
 	switch f.Info.FileType {
 	case media.FileTypeVideo:
-		return w.generateStrm(filePathInLib, f.File.Sign)
+		err = w.generateStrm(filePathInLib, f.File.Sign)
 	case media.FileTypeSubtitle:
-		return w.downloadFile(filePathInLib)
-	default:
-		return nil
+		err = w.downloadFile(filePathInLib)
 	}
+	if err != nil {
+		return err
+	}
+
+	// send notification
+	err = w.telegram.SendMessage(fmt.Sprintf("Processed movie: %s (%s)", f.Info.Titles[0].Title, f.Info.Year))
+	if err != nil {
+		return fmt.Errorf("failed to send notification: %w", err)
+	}
+	return nil
 }
 
 func (w *innerWatcher) handleTvs(currentDir string, files []*mediaFile) error {
@@ -241,7 +251,7 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 
 	// 批量重命名文件
 	if len(renameObjects) > 0 {
-		err := w.openlist.BatchRename(currentDir, renameObjects)
+		err = w.openlist.BatchRename(currentDir, renameObjects)
 		if err != nil {
 			slog.Error("Batch rename failed", slog.String("dir", currentDir), slog.Any("err", err))
 			return err
@@ -295,6 +305,12 @@ func (w *innerWatcher) processOneTvGroup(currentDir string, files []*mediaFile) 
 				}
 			}
 		}
+	}
+
+	// send notification
+	err = w.telegram.SendMessage(fmt.Sprintf("Processed TV series: %s (%s)", tvInfo.Name, tvInfo.FirstAirDate[:4]))
+	if err != nil {
+		return fmt.Errorf("failed to send notification: %w", err)
 	}
 
 	return nil

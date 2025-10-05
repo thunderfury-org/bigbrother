@@ -1,9 +1,9 @@
 package library
 
 import (
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
+	"github.com/thunderfury-org/bigbrother/internal/client/tmdb"
 	"github.com/thunderfury-org/bigbrother/internal/media"
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
-	"github.com/thunderfury-org/bigbrother/internal/tmdb"
 )
 
 type mediaFile struct {

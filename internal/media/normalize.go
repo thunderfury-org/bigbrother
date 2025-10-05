@@ -62,14 +62,46 @@ func normalizeAudioCodec(codec string) string {
 	codec = strings.ToUpper(codec)
 	match := audioNormalizeRe.FindStringIndex(codec)
 	if match == nil {
+		return parseAudioCodec(codec)
+	}
+
+	parts := []string{
+		parseAudioCodec(codec[:match[0]]),
+		codec[match[0]:match[1]],
+	}
+	left := parseAudioCodec(codec[match[1]:])
+	if left != "" {
+		parts = append(parts, left)
+	}
+
+	return strings.Join(parts, ".")
+}
+
+func parseAudioCodec(codec string) string {
+	if codec == "" {
 		return codec
 	}
 
-	part := strings.TrimSpace(strings.ReplaceAll(codec[:match[0]], ".", " "))
-	if part == "TRUEHD" {
-		part = "TrueHD"
+	parts := []string{}
+	val := strings.ReplaceAll(codec, " ", ".")
+	for _, p := range strings.Split(val, ".") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		switch p {
+		case "TRUEHD":
+			p = "TrueHD"
+		case "ATMOS":
+			p = "Atmos"
+		case "DTSHD":
+			p = "DTS-HD"
+		}
+		parts = append(parts, p)
 	}
-	return part + " " + codec[match[0]:]
+
+	return strings.Join(parts, ".")
 }
 
 func normalizeHDR(hdr string) string {

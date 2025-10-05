@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
 )
 
 func downloadFile(c *openlist.Client, path string, localPath string) error {
