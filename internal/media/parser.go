@@ -85,7 +85,7 @@ var (
 	qualityRe    = regexp.MustCompile(reBegin + `(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)` + reEnd)
 	hdrRe        = regexp.MustCompile(reBegin + `(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV|DoVi)` + reEnd)
 	videoCodecRe = regexp.MustCompile(reBegin + `(?P<value>[HX]\.?26[45]|AVC|HEVC|AV1|VP-9)` + reEnd)
-	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>AAC([.\s]?\d\.\d)?|FLAC|Dolby[\.\s]?Digital|DDP?([\s\.]Atmos)?(?:[\s\.]?\d\.\d)?|DTS-HD[\. ](?:MA)?[\. ]?(?:DD[\. ]?)?\d\.\d|(?:TrueHD|DTS)[\. ]?\d\.\d)` + reEnd)
+	audioCodecRe = regexp.MustCompile(reBegin + `(?P<value>(?:AAC|FLAC|Dolby[\.\s]?Digital|DDP?|DTS(?:-?HD)?|TrueHD)(?:[\.\s]?(?:Atmos|MA|DDP?|\d\.\d))*)` + reEnd)
 )
 
 func (p *parser) parse() *MediaInfo {
@@ -112,6 +112,7 @@ var replaceRes = []*regexp.Regexp{
 	regexp.MustCompile(`[_（）《》]`),
 	regexp.MustCompile(`[\[★](\S{1,4}年)?\S{1,2}月新番[\]★]`),
 	regexp.MustCompile(`(?i)\[\d+(\.\d+)G?\]`),
+	regexp.MustCompile(`(?i)10-?bit`),
 }
 
 func (p *parser) normalizeName() {

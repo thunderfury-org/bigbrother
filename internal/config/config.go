@@ -10,6 +10,7 @@ import (
 type Config struct {
 	OpenList  OpenListConfig   `yaml:"openlist"`
 	Tmdb      TmdbConfig       `yaml:"tmdb"`
+	Telegram  TelegramConfig   `yaml:"telegram"`
 	Libraries []*LibraryConfig `yaml:"libraries"`
 }
 
@@ -20,6 +21,11 @@ type OpenListConfig struct {
 
 type TmdbConfig struct {
 	ApiKey string `yaml:"api_key"`
+}
+
+type TelegramConfig struct {
+	Token  string `yaml:"token"`
+	ChatId string `yaml:"chat_id"`
 }
 
 type LibraryConfig struct {

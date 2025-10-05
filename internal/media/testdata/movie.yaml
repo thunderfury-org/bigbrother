@@ -21,7 +21,7 @@
     year: 2008
     resolution: "1080p"
     quality: "BluRay"
-    audio_codec: "DTS-HD MA DD 5.1"
+    audio_codec: "DTS-HD.MA.DD.5.1"
     release_group: "YSY"
 
 - input: "戏台.2025.2160p.WEB-DL.60fps.DV HQ.H265.DTS 5.1.mkv"
@@ -37,7 +37,7 @@
     frame_rate: "60fps"
     hdr: "DV"
     video_codec: "H265"
-    audio_codec: "DTS 5.1"
+    audio_codec: "DTS.5.1"
 
 - input: "Johnny.Keep.Walking.2023.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
   expected:
@@ -50,7 +50,7 @@
     quality: "WEB-DL"
     resolution: "2160p"
     video_codec: "H265"
-    audio_codec: "DTS 5.1"
+    audio_codec: "DTS.5.1.DDP"
     release_group: "yiiha"
 
 - input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
@@ -63,7 +63,7 @@
     quality: "WEB-DL"
     resolution: "2160p"
     video_codec: "H265"
-    audio_codec: "DTS 5.1"
+    audio_codec: "DTS.5.1.DDP"
     release_group: "yiiha"
 
 - input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.Dolby-Vision.mkv"
@@ -101,7 +101,7 @@
     quality: "Remux"
     resolution: "1080p"
     video_codec: "H264"
-    audio_codec: "TrueHD 5.1"
+    audio_codec: "TrueHD.5.1"
 
 - input: "Doraemon.Nobitas.Art.World.Tales.2025.1080p.BluRay.Remux.AVC.TrueHD.7.1.Atmos-Nest@ADE.mkv"
   expected:
@@ -114,7 +114,7 @@
     quality: "Remux"
     resolution: "1080p"
     video_codec: "H264"
-    audio_codec: "TrueHD 7.1"
+    audio_codec: "TrueHD.7.1.Atmos"
     release_group: "Nest@ADE"
 
 - input: "惊涛飓浪 1080p remux (2018).mkv"
@@ -138,7 +138,7 @@
     year: 2008
     quality: "Remux"
     resolution: "1080p"
-    audio_codec: "DTS-HD 5.1"
+    audio_codec: "DTS-HD.5.1"
 
 - input: "The Super Mario Bros. Movie 2023 2160p REMUX HEVC HDR10 TrueHD 7.1-samhyde@torrentgalaxy.mkv"
   expected:
@@ -151,6 +151,32 @@
     quality: "Remux"
     resolution: "2160p"
     video_codec: "H265"
-    audio_codec: "TrueHD 7.1"
+    audio_codec: "TrueHD.7.1"
     hdr: "HDR10"
     release_group: "samhyde@torrentgalaxy"
+
+- input: "沙丘.2021.2160p.UHD.DV.HDR.HEVC.TrueHD.Atmos.7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "沙丘"
+        language: "zh"
+    year: 2021
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "TrueHD.Atmos.7.1"
+    hdr: "DV"
+
+- input: "坏蛋联盟.2022.2160p.SDR.H.265.10-bit.24fps.DDP.5.1 Atmos.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "坏蛋联盟"
+        language: "zh"
+    year: 2022
+    resolution: "2160p"
+    frame_rate: "24fps"
+    video_codec: "H265"
+    audio_codec: "DDP.5.1.Atmos"

@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
 	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/library"
 	"github.com/thunderfury-org/bigbrother/internal/openlist"
@@ -31,6 +32,7 @@ func Run(dataDir string) {
 	manager := library.NewManager(
 		openlist.NewClient(conf.OpenList.BaseURL, conf.OpenList.Token),
 		tmdb.NewClient(conf.Tmdb.ApiKey),
+		telegram.NewClient(conf.Telegram.Token, conf.Telegram.ChatId),
 	)
 
 	for _, lib := range conf.Libraries {

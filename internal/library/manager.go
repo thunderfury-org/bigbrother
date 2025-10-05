@@ -6,6 +6,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
 	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/openlist"
 	"github.com/thunderfury-org/bigbrother/internal/tmdb"
@@ -14,14 +15,16 @@ import (
 type Manager struct {
 	openlist *openlist.Client
 	meta     *metadataFetcher
+	telegram *telegram.Client
 
 	watchers map[string]*innerWatcher
 }
 
-func NewManager(openlist *openlist.Client, tmdb *tmdb.Client) *Manager {
+func NewManager(openlist *openlist.Client, tmdb *tmdb.Client, telegram *telegram.Client) *Manager {
 	return &Manager{
 		openlist: openlist,
 		meta:     &metadataFetcher{tmdb: tmdb},
+		telegram: telegram,
 		watchers: map[string]*innerWatcher{},
 	}
 }
@@ -52,6 +55,7 @@ func (m *Manager) AddLibrary(lib config.LibraryConfig) error {
 	m.watchers[lib.Name] = &innerWatcher{
 		openlist: m.openlist,
 		meta:     m.meta,
+		telegram: m.telegram,
 		library: innerLibrary{
 			Name:        lib.Name,
 			Path:        lib.Path,
@@ -72,7 +76,7 @@ func (m *Manager) Start() error {
 				slog.Error(fmt.Sprintf("Failed to start watcher for library %s: %s", name, err))
 			}
 		}
-		time.Sleep(time.Minute * 2)
+		time.Sleep(time.Minute)
 	}
 }
 
