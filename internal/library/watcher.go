@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
 	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
 	"github.com/thunderfury-org/bigbrother/internal/media"
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
 )
 
 type innerWatcher struct {

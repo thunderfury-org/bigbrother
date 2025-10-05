@@ -6,11 +6,11 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
 	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
+	"github.com/thunderfury-org/bigbrother/internal/client/tmdb"
 	"github.com/thunderfury-org/bigbrother/internal/config"
 	"github.com/thunderfury-org/bigbrother/internal/library"
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
-	"github.com/thunderfury-org/bigbrother/internal/tmdb"
 )
 
 func Run(dataDir string) {
@@ -36,7 +36,7 @@ func Run(dataDir string) {
 	)
 
 	for _, lib := range conf.Libraries {
-		if err := manager.AddLibrary(*lib); err != nil {
+		if err = manager.AddLibrary(*lib); err != nil {
 			slog.Error("Failed to add library", slog.String("name", lib.Name), slog.Any("err", err))
 			return
 		}

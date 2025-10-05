@@ -6,10 +6,10 @@ import (
 	"path"
 	"time"
 
+	"github.com/thunderfury-org/bigbrother/internal/client/openlist"
 	"github.com/thunderfury-org/bigbrother/internal/client/telegram"
+	"github.com/thunderfury-org/bigbrother/internal/client/tmdb"
 	"github.com/thunderfury-org/bigbrother/internal/config"
-	"github.com/thunderfury-org/bigbrother/internal/openlist"
-	"github.com/thunderfury-org/bigbrother/internal/tmdb"
 )
 
 type Manager struct {
