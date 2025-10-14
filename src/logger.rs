@@ -1,14 +1,14 @@
 use std::{num::NonZeroU8, panic, thread};
 
 use time::{
+    UtcOffset,
     format_description::well_known::{
         self,
         iso8601::{Config, EncodedConfig, TimePrecision},
     },
-    UtcOffset,
 };
 use tracing::{error, level_filters::LevelFilter, warn};
-use tracing_subscriber::fmt::{time::OffsetTime, MakeWriter};
+use tracing_subscriber::fmt::{MakeWriter, time::OffsetTime};
 
 const MAX_LEVEL: LevelFilter = LevelFilter::INFO;
 const CONFIG: EncodedConfig = Config::DEFAULT
