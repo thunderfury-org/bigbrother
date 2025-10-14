@@ -118,9 +118,14 @@ func (w *innerWatcher) processOneMovieFile(currentDir string, f *mediaFile) erro
 		return err
 	}
 
+	newFile, err := w.openlist.GetFile(filePathInLib)
+	if err != nil {
+		return fmt.Errorf("failed to get file from openlist: %w", err)
+	}
+
 	switch f.Info.FileType {
 	case media.FileTypeVideo:
-		err = w.generateStrm(filePathInLib, f.File.Sign)
+		err = w.generateStrm(filePathInLib, newFile.Sign)
 	case media.FileTypeSubtitle:
 		err = w.downloadFile(filePathInLib)
 	}
