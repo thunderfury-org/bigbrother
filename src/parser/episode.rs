@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use regex::{Captures, Regex};
 
-use super::{lang, EpisodeInfo, FileType, Title};
+use super::{EpisodeInfo, FileType, Title, lang};
 
 impl From<&str> for EpisodeInfo {
     fn from(filename: &str) -> Self {
