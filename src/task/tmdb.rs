@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use reqwest::{IntoUrl, StatusCode};
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize, de::DeserializeOwned};
 
 use crate::common::{
     error::{Error, Result},

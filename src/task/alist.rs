@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::common::{
     error::{Error, Result},
