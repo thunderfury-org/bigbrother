@@ -7,6 +7,7 @@ use task::push;
 mod cli;
 mod common;
 mod logger;
+mod media;
 mod parser;
 mod task;
 

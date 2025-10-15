@@ -1,0 +1,16 @@
+openlist:
+  base_url:
+  token:
+
+tmdb:
+  api_key:
+
+telegram:
+  token:
+  chat_id:
+
+libraries:
+  - name:
+    path:
+    watch_path:
+    local_path:
