@@ -1,6 +1,18 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+mod normalize;
+mod parser;
+
+pub use parser::parse;
+
+pub const LANGUAGE_CHINESE: &str = "zh";
+pub const LANGUAGE_JAPANESE: &str = "jp";
+pub const LANGUAGE_ENGLISH: &str = "en";
+
+pub const LANGUAGE_CHINESE_SIMPLIFIED: &str = "zh-CN";
+pub const LANGUAGE_CHINESE_TRADITIONAL: &str = "zh-TW";
+
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaFileType {
     Video,
@@ -8,7 +20,7 @@ pub enum MediaFileType {
 }
 
 /// Represents a media title with language information
-#[derive(Debug, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct MediaTitle {
     /// The title text
@@ -19,7 +31,7 @@ pub struct MediaTitle {
 }
 
 /// Contains metadata information about media files
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct MediaInfo {
     /// File type based on file extension
@@ -69,32 +81,4 @@ pub struct MediaInfo {
 
     /// Subtitle language (e.g: en, fr, es)
     pub subtitles: Option<Vec<String>>,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use serde::Deserialize;
-
-    use super::*;
-
-    #[derive(Deserialize)]
-    struct TestCase {
-        input: String,
-        expected: MediaInfo,
-    }
-
-    #[test]
-    fn test_parse_media() {
-        let base_path = std::path::Path::new(file!()).parent().unwrap();
-        let content = fs::read_to_string(format!("{}/testdata/tv_episode.yaml", base_path.display())).unwrap();
-
-        let cases: Vec<TestCase> = serde_yaml::from_str(&content).unwrap();
-
-        for case in &cases {
-            println!("{:?}", case.input);
-            println!("{:?}", case.expected);
-        }
-    }
 }

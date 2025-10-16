@@ -9,6 +9,7 @@ use crate::{
         error::{Error, Result},
         state::AppState,
     },
+    media::MediaInfo,
     parser::{EpisodeInfo, FileType},
 };
 
@@ -236,19 +237,15 @@ impl TvProcessor<'_> {
         })
     }
 
-    fn parse_episodes(
-        &self,
-        files: &Vec<File>,
-        default_season: Option<i32>,
-    ) -> HashMap<i32, HashMap<i32, EpisodeFile>> {
-        let mut result: HashMap<i32, HashMap<i32, EpisodeFile>> = HashMap::new();
+    fn parse_episodes(&self, files: &Vec<File>, default_season: Option<i32>) -> HashMap<i32, HashMap<i32, MediaInfo>> {
+        let mut result: HashMap<i32, HashMap<i32, MediaInfo>> = HashMap::new();
 
         for file in files {
             if file.is_dir {
                 continue;
             }
 
-            let info = EpisodeInfo::from(file.name.as_str());
+            let info = MediaInfo::from(file.name.as_str());
             if info.file_type != FileType::Video {
                 continue;
             }
