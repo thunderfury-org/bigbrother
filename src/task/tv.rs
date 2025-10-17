@@ -9,8 +9,7 @@ use crate::{
         error::{Error, Result},
         state::AppState,
     },
-    media::MediaInfo,
-    parser::{EpisodeInfo, FileType},
+    media::{MediaFileType, MediaInfo},
 };
 
 use super::{
@@ -154,7 +153,7 @@ impl TvProcessor<'_> {
         &self,
         tv_name: &str,
         season_number: i32,
-        episode_map: &HashMap<i32, EpisodeFile>,
+        episode_map: &HashMap<i32, MediaInfo>,
         dest_path: &str,
     ) -> Result<()> {
         self.alist_client.mkdir(dest_path).await?;
@@ -246,7 +245,7 @@ impl TvProcessor<'_> {
             }
 
             let info = MediaInfo::from(file.name.as_str());
-            if info.file_type != FileType::Video {
+            if info.file_type != MediaFileType::Video {
                 continue;
             }
             if info.episode_number.is_none() {

@@ -8,9 +8,9 @@ static AUDIO_NORMALIZE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d\.\
 /// Normalizes a language to a standard format
 pub(super) fn normalize_language(l: Language) -> String {
     match l {
-        Language::Chinese => super::LANGUAGE_CHINESE.to_string(),
-        Language::Japanese => super::LANGUAGE_JAPANESE.to_string(),
-        Language::English => super::LANGUAGE_ENGLISH.to_string(),
+        Language::Chinese => super::LANGUAGE_CHINESE.to_owned(),
+        Language::Japanese => super::LANGUAGE_JAPANESE.to_owned(),
+        Language::English => super::LANGUAGE_ENGLISH.to_owned(),
     }
 }
 
@@ -18,15 +18,15 @@ pub(super) fn normalize_language(l: Language) -> String {
 pub(super) fn normalize_quality(quality: &str) -> String {
     let quality = quality.to_lowercase().replace(".", "");
     if quality.contains("remux") {
-        return "Remux".to_string();
+        return "Remux".to_owned();
     }
 
     match quality.as_str() {
-        "web-dl" | "webdl" => "WEB-DL".to_string(),
-        "web-rip" | "webrip" => "WEBRip".to_string(),
-        "bluray" | "blu-ray" => "BluRay".to_string(),
-        "bdrip" | "bd-rip" => "BDRip".to_string(),
-        "brrip" | "br-rip" => "BRRip".to_string(),
+        "web-dl" | "webdl" => "WEB-DL".to_owned(),
+        "web-rip" | "webrip" => "WEBRip".to_owned(),
+        "bluray" | "blu-ray" => "BluRay".to_owned(),
+        "bdrip" | "bd-rip" => "BDRip".to_owned(),
+        "brrip" | "br-rip" => "BRRip".to_owned(),
         _ => quality,
     }
 }
@@ -35,8 +35,8 @@ pub(super) fn normalize_quality(quality: &str) -> String {
 pub(super) fn normalize_video_codec(codec: &str) -> String {
     let codec = codec.to_uppercase();
     match codec.as_str() {
-        "X264" | "H.264" | "AVC" => "H264".to_string(),
-        "X265" | "H.265" | "HEVC" => "H265".to_string(),
+        "X264" | "H.264" | "AVC" => "H264".to_owned(),
+        "X265" | "H.265" | "HEVC" => "H265".to_owned(),
         _ => codec,
     }
 }
@@ -47,7 +47,7 @@ pub(super) fn normalize_audio_codec(codec: &str) -> String {
     if let Some(m) = AUDIO_NORMALIZE_RE.find(&codec) {
         let mut parts = vec![
             parse_audio_codec(&codec[..m.start()]),
-            codec[m.start()..m.end()].to_string(),
+            codec[m.start()..m.end()].to_owned(),
         ];
 
         let left = parse_audio_codec(&codec[m.end()..]);
@@ -64,7 +64,7 @@ pub(super) fn normalize_audio_codec(codec: &str) -> String {
 /// Helper function to parse audio codec
 fn parse_audio_codec(codec: &str) -> String {
     if codec.is_empty() {
-        return codec.to_string();
+        return codec.to_owned();
     }
 
     let mut parts = Vec::new();
@@ -81,7 +81,7 @@ fn parse_audio_codec(codec: &str) -> String {
             "DTSHD" => "DTS-HD",
             _ => p,
         };
-        parts.push(p.to_string());
+        parts.push(p.to_owned());
     }
 
     parts.join(".")
@@ -91,7 +91,7 @@ fn parse_audio_codec(codec: &str) -> String {
 pub(super) fn normalize_hdr(hdr: &str) -> String {
     let hdr = hdr.to_uppercase().replace("-", "");
     if hdr.contains("DOLBY") || hdr == "DOVI" {
-        "DV".to_string()
+        "DV".to_owned()
     } else {
         hdr
     }

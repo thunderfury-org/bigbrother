@@ -5,10 +5,10 @@ use common::{config::Manager, state::AppState};
 use task::push;
 
 mod cli;
+mod cmd;
 mod common;
 mod logger;
 mod media;
-mod parser;
 mod task;
 
 fn main() {

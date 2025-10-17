@@ -3,8 +3,6 @@ use serde::Deserialize;
 mod normalize;
 mod parser;
 
-pub use parser::parse;
-
 pub const LANGUAGE_CHINESE: &str = "zh";
 pub const LANGUAGE_JAPANESE: &str = "jp";
 pub const LANGUAGE_ENGLISH: &str = "en";
@@ -81,4 +79,10 @@ pub struct MediaInfo {
 
     /// Subtitle language (e.g: en, fr, es)
     pub subtitles: Option<Vec<String>>,
+}
+
+impl From<&str> for MediaInfo {
+    fn from(value: &str) -> Self {
+        parser::parse(value)
+    }
 }
