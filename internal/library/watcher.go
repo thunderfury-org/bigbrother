@@ -175,7 +175,7 @@ func (w *innerWatcher) handleTvs(currentDir string, files []*mediaFile) error {
 			f.Info.Year = dirInfo.Year
 		}
 
-		if f.Info.SeasonNumber.IsNull() {
+		if f.Info.SeasonNumber.IsNull() && dirInfo != nil && !dirInfo.SeasonNumber.IsNull() {
 			f.Info.SeasonNumber = dirInfo.SeasonNumber
 		}
 
