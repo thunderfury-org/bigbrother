@@ -4,7 +4,7 @@ use std::{collections::HashSet, ops::Range};
 use lingua::{Language, LanguageDetector, LanguageDetectorBuilder};
 use regex::Regex;
 
-use super::{MediaFileType, MediaInfo, normalize::*};
+use super::{MediaInfo, normalize::*};
 
 const RE_BEGIN: &str = r"(?i)[\. \-\[\{\(@]\s*";
 const RE_END: &str = r"\s*[\. \-\]\}\)@]";
@@ -145,7 +145,7 @@ impl MediaInfoParser {
         self.update_title_index_end(start + 1);
     }
 
-    fn parse_value_from_name(&mut self, re: &Regex, normalizer: Option<fn(&str) -> String>) -> Option<String> {
+    fn parse_value_from_name(&mut self, re: &Regex, normalizer: Option<fn(&str) -> String>) -> String {
         if let Some(caps) = re.captures_iter(&self.name).last() {
             if let Some(value_match) = caps.name("value") {
                 let mut value = value_match.as_str().to_owned();
@@ -154,10 +154,10 @@ impl MediaInfoParser {
                     value = norm(&value);
                 }
 
-                return if value.is_empty() { None } else { Some(value) };
+                return value;
             }
         }
-        None
+        String::new()
     }
 
     fn parse(&mut self) {
@@ -193,21 +193,20 @@ impl MediaInfoParser {
     fn parse_resolution(&mut self) {
         if let Some(caps) = RESOLUTION_RE.captures_iter(&self.name).last() {
             if let Some(height_match) = caps.name("height") {
-                self.info.resolution = Some(format!("{}p", height_match.as_str()));
+                self.info.resolution = format!("{}p", height_match.as_str());
                 self.update_name_and_index(caps.get_match().range());
             } else if let Some(res_match) = caps.name("resolution") {
                 let mut res = res_match.as_str().to_lowercase();
                 if res == "4k" {
                     res = "2160p".to_owned();
                 }
-                self.info.resolution = Some(res);
+                self.info.resolution = res;
                 self.update_name_and_index(caps.get_match().range());
             }
         }
     }
 
     fn parse_year(&mut self) {
-        println!("name: {}", self.name);
         if let Some(caps) = YEAR_RE.captures_iter(&self.name).last() {
             if let Some(year_match) = caps.name("year") {
                 if !caps.get_match().as_str().ends_with(')') {
@@ -216,7 +215,7 @@ impl MediaInfoParser {
                     let new_name = &self.name[year_match.end() - 1..];
                     if let Some(caps2) = YEAR_RE.captures_iter(new_name).last() {
                         if let Some(year_match2) = caps2.name("year") {
-                            self.info.year = Some(year_match2.as_str().to_owned());
+                            self.info.year = year_match2.as_str().to_owned();
                             self.year_index_start = Some(year_match.end() - 1 + caps2.get_match().start());
                             self.update_name_and_index(Range {
                                 start: year_match.end() - 1 + caps2.get_match().start(),
@@ -229,7 +228,7 @@ impl MediaInfoParser {
                     // not matched, keep the original match
                 }
 
-                self.info.year = Some(year_match.as_str().to_owned());
+                self.info.year = year_match.as_str().to_owned();
                 self.year_index_start = Some(caps.get_match().start());
                 self.update_name_and_index(caps.get_match().range());
             }
@@ -284,14 +283,14 @@ impl MediaInfoParser {
             let ext = self.other[dot_idx..].trim().to_lowercase();
             if ext.len() > 1 {
                 if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = Some(MediaFileType::Video);
+                    self.info.file_type = super::FILE_TYPE_VIDEO.to_owned();
                 } else if SUBTITLE_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = Some(MediaFileType::Subtitle);
+                    self.info.file_type = super::FILE_TYPE_SUBTITLE.to_owned();
                 } else {
                     // unknown file type
                     return;
                 }
-                self.info.extension = Some(ext);
+                self.info.extension = ext;
                 self.other = self.other[..dot_idx].to_owned();
             }
         }
@@ -307,7 +306,7 @@ impl MediaInfoParser {
 
             let left = name.trim();
             if !left.is_empty() {
-                self.info.release_group = Some(self.name[..idx].replace('[', "").trim().to_owned());
+                self.info.release_group = self.name[..idx].replace('[', "").trim().to_owned();
                 self.name = left.to_owned();
             }
         }
@@ -339,7 +338,7 @@ impl MediaInfoParser {
         }
 
         if !titles.is_empty() {
-            self.info.titles = Some(titles);
+            self.info.titles = titles;
         }
     }
 
@@ -348,24 +347,19 @@ impl MediaInfoParser {
             return;
         }
 
-        let mut subtitles: Vec<String> = Vec::new();
         let name = self.other.to_lowercase();
         for (lang, keywords) in LANG_MAP.iter() {
             for kw in keywords {
                 if name.contains(kw) {
-                    subtitles.push((*lang).to_owned());
+                    self.info.subtitles.push((*lang).to_owned());
                     break;
                 }
             }
         }
-
-        if !subtitles.is_empty() {
-            self.info.subtitles = Some(subtitles);
-        }
     }
 
     fn parse_release_group(&mut self) {
-        if self.info.release_group.is_some() {
+        if !self.info.release_group.is_empty() {
             return;
         }
 
@@ -373,14 +367,14 @@ impl MediaInfoParser {
             if let Some(val_match) = caps.name("value") {
                 let value = val_match.as_str().trim();
                 if value.contains('-') {
-                    self.info.release_group = Some(value.to_owned());
+                    self.info.release_group = value.to_owned();
                     return;
                 }
             }
         }
 
         if let Some(idx) = self.other.rfind('-') {
-            self.info.release_group = Some(self.other[idx + 1..].trim().to_owned());
+            self.info.release_group = self.other[idx + 1..].trim().to_owned();
         }
     }
 }

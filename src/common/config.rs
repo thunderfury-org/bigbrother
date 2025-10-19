@@ -1,27 +1,25 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use serde::Deserialize;
 
 use crate::common::error::Error;
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
 pub struct AppConfig {
     pub alist_host: String,
     pub alist_api_token: String,
 
     pub tmdb_api_key: String,
 
-    #[serde(default)]
-    pub push: PushConfig,
+    pub telegram: TelegramConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct PushConfig {
-    #[serde(default)]
-    pub channel: String,
-
-    #[serde(default)]
-    pub params: HashMap<String, String>,
+#[serde(default, rename_all = "snake_case")]
+pub struct TelegramConfig {
+    pub token: String,
+    pub chat_id: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -66,7 +64,7 @@ impl TryFrom<&str> for Manager {
             return Err(Error::Internal("config dir is empty".to_string()));
         }
 
-        let config_file = format!("{data_dir}/config.yaml");
+        let config_file = format!("{data_dir}/config/config.yaml");
         if !std::fs::exists(config_file.as_str())? {
             return Ok(Self {
                 data_dir: Arc::new(data_dir.to_string()),

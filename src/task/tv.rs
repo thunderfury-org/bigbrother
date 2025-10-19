@@ -9,7 +9,7 @@ use crate::{
         error::{Error, Result},
         state::AppState,
     },
-    media::{MediaFileType, MediaInfo},
+    media::{MediaInfo},
 };
 
 use super::{
@@ -176,25 +176,25 @@ impl TvProcessor<'_> {
                 continue;
             }
 
-            let dest_file_name = format!(
-                "{}.S{:02}E{:02}.{}",
-                tv_name, season_number, episode_number, file.extension
-            );
-            if dest_file_name != file.file_name {
-                info!(
-                    "rename file: {} -> {}/{}",
-                    file.file_path, file.file_dir, dest_file_name
-                );
-                self.alist_client
-                    .rename(file.file_path.as_str(), dest_file_name.as_str())
-                    .await?;
-            }
+            // let dest_file_name = format!(
+            //     "{}.S{:02}E{:02}.{}",
+            //     tv_name, season_number, episode_number, file.extension
+            // );
+            // if dest_file_name != file.file_name {
+            //     info!(
+            //         "rename file: {} -> {}/{}",
+            //         file.file_path, file.file_dir, dest_file_name
+            //     );
+            //     self.alist_client
+            //         .rename(file.file_path.as_str(), dest_file_name.as_str())
+            //         .await?;
+            // }
 
-            info!("move file: {}/{} -> {}", file.file_dir, dest_file_name, dest_path);
-            // move file
-            self.alist_client
-                .move_file(&file.file_dir, dest_path, &dest_file_name)
-                .await?;
+            // info!("move file: {}/{} -> {}", file.file_dir, dest_file_name, dest_path);
+            // // move file
+            // self.alist_client
+            //     .move_file(&file.file_dir, dest_path, &dest_file_name)
+            //     .await?;
 
             moved_episodes.push(*episode_number);
         }
@@ -245,40 +245,40 @@ impl TvProcessor<'_> {
             }
 
             let info = MediaInfo::from(file.name.as_str());
-            if info.file_type != MediaFileType::Video {
-                continue;
-            }
-            if info.episode_number.is_none() {
-                info!("can not find episode number from file {}", file.name);
-                continue;
-            }
+            // if info.file_type != MediaFileType::Video {
+            //     continue;
+            // }
+            // if info.episode_number.is_none() {
+            //     info!("can not find episode number from file {}", file.name);
+            //     continue;
+            // }
 
-            let season_number = match info.season_number {
-                Some(n) => n,
-                None => match default_season {
-                    Some(s) => s,
-                    None => {
-                        info!("can not find season number from file {}", file.name);
-                        continue;
-                    }
-                },
-            };
+            // let season_number = match info.season_number {
+            //     Some(n) => n,
+            //     None => match default_season {
+            //         Some(s) => s,
+            //         None => {
+            //             info!("can not find season number from file {}", file.name);
+            //             continue;
+            //         }
+            //     },
+            // };
 
-            result.entry(season_number).or_default().insert(
-                info.episode_number.unwrap(),
-                EpisodeFile {
-                    file_dir: Path::new(file.path.as_str())
-                        .parent()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string(),
-                    file_path: file.path.clone(),
-                    file_name: file.name.clone(),
-                    extension: info.extension.unwrap(),
-                    // size: file.size,
-                },
-            );
+            // result.entry(season_number).or_default().insert(
+            //     info.episode_number.unwrap(),
+            //     EpisodeFile {
+            //         file_dir: Path::new(file.path.as_str())
+            //             .parent()
+            //             .unwrap()
+            //             .to_str()
+            //             .unwrap()
+            //             .to_string(),
+            //         file_path: file.path.clone(),
+            //         file_name: file.name.clone(),
+            //         extension: info.extension.unwrap(),
+            //         // size: file.size,
+            //     },
+            // );
         }
 
         result

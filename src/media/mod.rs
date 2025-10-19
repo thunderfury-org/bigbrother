@@ -10,12 +10,8 @@ pub const LANGUAGE_ENGLISH: &str = "en";
 pub const LANGUAGE_CHINESE_SIMPLIFIED: &str = "zh-CN";
 pub const LANGUAGE_CHINESE_TRADITIONAL: &str = "zh-TW";
 
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaFileType {
-    Video,
-    Subtitle,
-}
+pub const FILE_TYPE_VIDEO: &str = "video";
+pub const FILE_TYPE_SUBTITLE: &str = "subtitle";
 
 /// Represents a media title with language information
 #[derive(Debug, PartialEq, Deserialize)]
@@ -30,22 +26,22 @@ pub struct MediaTitle {
 
 /// Contains metadata information about media files
 #[derive(Debug, Default, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(default, rename_all = "lowercase")]
 pub struct MediaInfo {
     /// File type based on file extension
-    pub file_type: Option<MediaFileType>,
+    pub file_type: String,
 
     /// File extension (e.g: .mkv, .mp4, .srt)
-    pub extension: Option<String>,
+    pub extension: String,
 
     /// TMDB ID for the media
-    pub tmdb_id: Option<String>,
+    pub tmdb_id: String,
 
     /// Movie or TV Show titles
-    pub titles: Option<Vec<MediaTitle>>,
+    pub titles: Vec<MediaTitle>,
 
     /// Release year
-    pub year: Option<String>,
+    pub year: String,
 
     /// Season number for TV shows
     pub season_number: Option<u32>,
@@ -57,28 +53,28 @@ pub struct MediaInfo {
     pub second_episode_number: Option<u32>,
 
     /// Video resolution (e.g: 2160p, 1080p, 720p)
-    pub resolution: Option<String>,
+    pub resolution: String,
 
     /// Frame rate (e.g: 24fps, 30fps, 60fps)
-    pub frame_rate: Option<String>,
+    pub frame_rate: String,
 
     /// Quality of the media (e.g: BluRay, WEB-DL)
-    pub quality: Option<String>,
+    pub quality: String,
 
     /// HDR type (e.g: HDR10, HDR10+, DV, HLG)
-    pub hdr: Option<String>,
+    pub hdr: String,
 
     /// Video codec (e.g: H264, H265)
-    pub video_codec: Option<String>,
+    pub video_codec: String,
 
     /// Audio codec (e.g: AAC, DTS)
-    pub audio_codec: Option<String>,
+    pub audio_codec: String,
 
     /// Release group name
-    pub release_group: Option<String>,
+    pub release_group: String,
 
     /// Subtitle language (e.g: en, fr, es)
-    pub subtitles: Option<Vec<String>>,
+    pub subtitles: Vec<String>,
 }
 
 impl From<&str> for MediaInfo {
