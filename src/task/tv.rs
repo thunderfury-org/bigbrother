@@ -9,12 +9,12 @@ use crate::{
         error::{Error, Result},
         state::AppState,
     },
-    media::{MediaInfo},
+    media::MediaInfo,
 };
 
 use super::{
     alist::{self, File},
-    push, tmdb,
+    push,
 };
 
 #[derive(Debug)]

@@ -4,7 +4,6 @@ use crate::common::state::AppState;
 
 mod alist;
 pub mod push;
-mod tmdb;
 mod tv;
 
 pub async fn run_tasks(state: &AppState) {

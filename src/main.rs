@@ -2,11 +2,10 @@ use clap::Parser;
 
 use cli::{Cli, Commands};
 use common::{config::Manager, state::AppState};
-use futures::StreamExt;
-use teloxide::{net::Download, prelude::*};
 
+mod bot;
 mod cli;
-mod cmd;
+mod client;
 mod common;
 mod logger;
 mod media;
@@ -37,17 +36,5 @@ async fn run_server(data_dir: &str) {
     logger::init(std::io::stdout);
     let state = init_state(data_dir);
 
-    let bot = Bot::new(state.config.get_app_config().telegram.token.as_str());
-    teloxide::repl(bot, |bot: Bot, msg: Message| async move {
-        if let Some(text) = msg.text() {
-            bot.send_message(msg.chat.id, text).await?;
-        } else if let Some(doc) = msg.document() {
-            let file = bot.get_file(doc.file.id.to_owned()).await?;
-            let mut content = Vec::new();
-            bot.download_file(&file.path, &mut content).await?;
-            bot.send_message(msg.chat.id, format!("document: {}", String::from_utf8_lossy(&content))).await?;
-        }
-        Ok(())
-    })
-    .await;
+    bot::run_bot(state.config.get_app_config().telegram.token.as_str()).await;
 }
