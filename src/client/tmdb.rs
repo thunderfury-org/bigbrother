@@ -1,7 +1,6 @@
-use std::fmt::Display;
-
-use reqwest::{IntoUrl, StatusCode};
 use serde::{Deserialize, de::DeserializeOwned};
+
+use super::{RequestError, RequestResult};
 
 const TMDB_HOST: &str = "https://api.themoviedb.org/3";
 
@@ -10,6 +9,33 @@ const TMDB_HOST: &str = "https://api.themoviedb.org/3";
 pub struct Genre {
     pub id: u32,
     pub name: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct MovieDetail {
+    pub id: u32,
+    pub title: String,
+    pub adult: bool,
+    pub genres: Vec<Genre>,
+    pub original_language: String,
+    pub original_title: String,
+    pub overview: String,
+    pub origin_country: Vec<String>,
+    pub release_date: String,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct SearchMovieResult {
+    pub id: u32,
+    pub title: String,
+    pub original_title: String,
+    pub original_language: String,
+    pub release_date: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SearchMovieResponse {
+    pub results: Vec<SearchMovieResult>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -38,7 +64,7 @@ pub struct TvDetail {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SearchTvResponse {
+struct SearchTvResponse {
     pub results: Vec<SearchTvResult>,
 }
 
@@ -49,19 +75,12 @@ pub struct SearchTvResult {
     pub first_air_date: String,
 }
 
-pub struct Error(String);
-
 pub struct Client {
-    client: reqwest::Client,
     api_key: String,
 }
 
 impl Client {
-    async fn get<U: IntoUrl + Display, T: DeserializeOwned>(
-        &self,
-        url: U,
-        query: Option<Vec<(&str, &str)>>,
-    ) -> Result<Option<T>, Error> {
+    async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
         let mut request_query = vec![
             ("language", "zh-CN"),
             ("include_adult", "true"),
@@ -71,51 +90,44 @@ impl Client {
             request_query.extend(q);
         }
 
-        let result = self
-            .client
-            .get(format!("{}{}", TMDB_HOST, url))
-            .query(&request_query)
-            .send()
-            .await;
-        if result.is_err() {
-            return Err(Error(format!("http get {} failed, {}", url, result.err().unwrap())));
-        }
-
-        let response = result.unwrap();
-        let status = response.status();
-        let body = response.text().await?;
-
-        if status.is_success() {
-            return serde_json::from_str(&body)
-                .map_err(|e| Error(format!("http get {url} failed, decode body failed, {e}, body: {body}")));
-        }
-
-        match status {
-            StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(Error(format!("http get {url} failed, status: {status}, body: {body}"))),
-        }
+        super::http::get(url, Some(request_query)).await
     }
 
-    pub async fn get_tv_detail(&self, tv_id: u32) -> Result<TvDetail> {
-        match self.get(format!("/tv/{}", tv_id), None).await {
-            Ok(Some(detail)) => Ok(detail),
-            Ok(None) => Err(Error(format!("can not find tv {} in tmdb", tv_id))),
+    pub async fn search_movie(&self, query: &str, year: &str) -> RequestResult<Vec<SearchMovieResult>> {
+        self.get::<SearchMovieResponse>(
+            self.build_url("/search/movie"),
+            Some(vec![("query", query), ("primary_release_year", year)]),
+        )
+        .await
+        .map(|resp| resp.results)
+    }
+
+    pub async fn get_movie_detail(&self, id: u32) -> RequestResult<Option<MovieDetail>> {
+        match self.get(self.build_url(&format!("/movie/{}", id)), None).await {
+            Ok(detail) => Ok(Some(detail)),
+            Err(RequestError::NotFound) => Ok(None),
             Err(e) => Err(e),
         }
     }
 
-    pub async fn search_tv(&self, query: &str, year: Option<u32>) -> Result<Vec<SearchTvResult>> {
-        let response: SearchTvResponse = self
-            .get(
-                "/search/tv",
-                Some(vec![
-                    ("query", query),
-                    ("include_adult", "true"),
-                    ("page", "1"),
-                    ("first_air_date_year", &year.map(|y| y.to_string()).unwrap_or_default()),
-                ]),
-            )
-            .await?;
-        Ok(response.results)
+    pub async fn search_tv(&self, query: &str, year: &str) -> RequestResult<Vec<SearchTvResult>> {
+        self.get::<SearchTvResponse>(
+            self.build_url("/search/tv"),
+            Some(vec![("query", query), ("first_air_date_year", year)]),
+        )
+        .await
+        .map(|resp| resp.results)
+    }
+
+    pub async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
+        match self.get(self.build_url(&format!("/tv/{}", id)), None).await {
+            Ok(detail) => Ok(Some(detail)),
+            Err(RequestError::NotFound) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn build_url(&self, path: &str) -> String {
+        format!("{TMDB_HOST}{path}")
     }
 }
