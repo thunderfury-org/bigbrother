@@ -80,7 +80,7 @@ pub struct Client {
 }
 
 impl Client {
-    async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
+    async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
         let mut request_query = vec![
             ("language", "zh-CN"),
             ("include_adult", "true"),
@@ -90,12 +90,12 @@ impl Client {
             request_query.extend(q);
         }
 
-        super::http::get(url, Some(request_query)).await
+        super::http::get(format!("{TMDB_HOST}{url}"), Some(request_query), None).await
     }
 
     pub async fn search_movie(&self, query: &str, year: &str) -> RequestResult<Vec<SearchMovieResult>> {
         self.get::<SearchMovieResponse>(
-            self.build_url("/search/movie"),
+            "/search/movie",
             Some(vec![("query", query), ("primary_release_year", year)]),
         )
         .await
@@ -103,7 +103,7 @@ impl Client {
     }
 
     pub async fn get_movie_detail(&self, id: u32) -> RequestResult<Option<MovieDetail>> {
-        match self.get(self.build_url(&format!("/movie/{}", id)), None).await {
+        match self.get(&format!("/movie/{}", id), None).await {
             Ok(detail) => Ok(Some(detail)),
             Err(RequestError::NotFound) => Ok(None),
             Err(e) => Err(e),
@@ -112,7 +112,7 @@ impl Client {
 
     pub async fn search_tv(&self, query: &str, year: &str) -> RequestResult<Vec<SearchTvResult>> {
         self.get::<SearchTvResponse>(
-            self.build_url("/search/tv"),
+            "/search/tv",
             Some(vec![("query", query), ("first_air_date_year", year)]),
         )
         .await
@@ -120,14 +120,10 @@ impl Client {
     }
 
     pub async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
-        match self.get(self.build_url(&format!("/tv/{}", id)), None).await {
+        match self.get(&format!("/tv/{}", id), None).await {
             Ok(detail) => Ok(Some(detail)),
             Err(RequestError::NotFound) => Ok(None),
             Err(e) => Err(e),
         }
-    }
-
-    fn build_url(&self, path: &str) -> String {
-        format!("{TMDB_HOST}{path}")
     }
 }

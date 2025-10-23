@@ -21,7 +21,7 @@ tracing-subscriber = { version = "0.3", features = [
 tracing-appender = "0.2"
 backtrace = "0.3"
 clap = { version = "4.5", features = ["derive"] }
-time = { version = "0.3" }
+time = { version = "0.3", features = ["serde"] }
 reqwest = { version = "0.12", features = [
   "rustls-tls",
   "json",
@@ -35,5 +35,9 @@ lingua = { version = "1.7.2", default-features = false, features = [
   "chinese",
   "japanese",
 ] }
-teloxide = { version = "0.17.0", default-features = false, features = ["ctrlc_handler", "rustls", "macros"] }
+teloxide = { version = "0.17.0", default-features = false, features = [
+  "ctrlc_handler",
+  "rustls",
+  "macros",
+] }
 futures = "0.3"

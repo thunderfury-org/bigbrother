@@ -1,10 +1,13 @@
-pub mod p123;
+pub mod pan123;
 pub mod tmdb;
 
 mod http;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RequestError {
+    #[error("unauthorized")]
+    Unauthorized,
+
     #[error("not found")]
     NotFound,
 

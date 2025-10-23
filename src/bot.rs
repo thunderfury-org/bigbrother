@@ -13,7 +13,7 @@ pub async fn run_bot(token: &str) {
         .await;
 }
 
-async fn handle_channel_post(bot: Bot, msg: Message) -> ResponseResult<()> {
+async fn handle_channel_post(msg: Message) -> ResponseResult<()> {
     println!("handle_channel_post");
     println!("channel post: {:#?}", msg);
     Ok(())
