@@ -10,9 +10,15 @@ pub struct AppConfig {
     pub alist_host: String,
     pub alist_api_token: String,
 
-    pub tmdb_api_key: String,
-
+    pub pan123: Pan123Config,
     pub telegram: TelegramConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct Pan123Config {
+    pub client_id: String,
+    pub client_secret: String,
 }
 
 #[derive(Debug, Default, Deserialize)]

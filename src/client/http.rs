@@ -15,7 +15,7 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 pub async fn get<U: IntoUrl, T: DeserializeOwned>(
     url: U,
     query: Option<Vec<(&str, &str)>>,
-    headers: Option<HashMap<String, String>>,
+    headers: Option<Vec<(&str, &str)>>,
 ) -> RequestResult<T> {
     let mut request = HTTP_CLIENT.get(url);
     if let Some(q) = query {

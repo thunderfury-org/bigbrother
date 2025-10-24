@@ -11,6 +11,9 @@ pub enum RequestError {
     #[error("not found")]
     NotFound,
 
+    #[error("too many requests")]
+    TooManyRequests,
+
     #[error("error, {0}")]
     Error(String),
 }
