@@ -1,30 +1,24 @@
 use std::io;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum AppError {
     #[error("not found, message: {0}")]
     NotFound(String),
 
-    #[error("internal error, {0}")]
-    Internal(String),
+    #[error("{0}")]
+    Error(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type AppResult<T> = std::result::Result<T, AppError>;
 
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Error::Internal(format!("reqwest error: {e}"))
-    }
-}
-
-impl From<io::Error> for Error {
+impl From<io::Error> for AppError {
     fn from(e: io::Error) -> Self {
-        Error::Internal(format!("io error: {e}"))
+        Self::Error(format!("io error, {e}"))
     }
 }
 
-impl From<serde_json::Error> for Error {
+impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
-        Self::Internal(format!("serde_json error: {e}"))
+        Self::Error(format!("deserialize json error, {e}"))
     }
 }

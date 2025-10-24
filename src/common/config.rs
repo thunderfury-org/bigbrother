@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::common::error::Error;
+use super::error::AppError;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
-pub struct AppConfig {
-    pub alist_host: String,
-    pub alist_api_token: String,
-
+struct AppConfig {
     pub pan123: Pan123Config,
+    pub tmdb: TmdbConfig,
     pub telegram: TelegramConfig,
+    pub library: LibraryConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -23,51 +22,66 @@ pub struct Pan123Config {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
-pub struct TelegramConfig {
-    pub token: String,
-    pub chat_id: String,
+pub struct LibraryConfig {
+    pub remote_path: String,
+    pub local_path: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct TaskConfig {
-    pub src_dir: String,
-    pub dest_dir: String,
+#[serde(default, rename_all = "snake_case")]
+pub struct TelegramConfig {
+    pub bot_token: String,
+    pub user_id: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct TmdbConfig {
+    pub api_key: String,
 }
 
 #[derive(Clone)]
 pub struct Manager {
     data_dir: Arc<String>,
     app_config: Arc<AppConfig>,
-    tasks: Arc<Vec<TaskConfig>>,
 }
 
 impl Manager {
-    pub fn get_data_dir(&self) -> &str {
-        self.data_dir.as_str()
+    pub fn get_log_dir(&self) -> String {
+        format!("{}/log", self.data_dir.as_str())
     }
 
-    pub fn get_app_config(&self) -> &AppConfig {
-        self.app_config.as_ref()
+    pub fn get_cache_dir(&self) -> String {
+        format!("{}/cache", self.data_dir.as_str())
     }
 
-    pub fn get_tasks(&self) -> &Vec<TaskConfig> {
-        self.tasks.as_ref()
+    pub fn get_db_dir(&self) -> String {
+        format!("{}/db", self.data_dir.as_str())
     }
-}
 
-fn read_string(file: &str) -> Result<String, Error> {
-    match std::fs::read_to_string(file) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(Error::Internal(format!("read file {} error, {}", file, e))),
+    pub fn get_pan123_config(&self) -> &Pan123Config {
+        &self.app_config.pan123
+    }
+
+    pub fn get_tmdb_config(&self) -> &TmdbConfig {
+        &self.app_config.tmdb
+    }
+
+    pub fn get_telegram_config(&self) -> &TelegramConfig {
+        &self.app_config.telegram
+    }
+
+    pub fn get_library_config(&self) -> &LibraryConfig {
+        &self.app_config.library
     }
 }
 
 impl TryFrom<&str> for Manager {
-    type Error = Error;
+    type Error = AppError;
 
     fn try_from(data_dir: &str) -> Result<Self, Self::Error> {
         if data_dir.is_empty() {
-            return Err(Error::Internal("config dir is empty".to_string()));
+            return Err(AppError::Error("config dir is empty".to_string()));
         }
 
         let config_file = format!("{data_dir}/config/config.yaml");
@@ -75,44 +89,17 @@ impl TryFrom<&str> for Manager {
             return Ok(Self {
                 data_dir: Arc::new(data_dir.to_string()),
                 app_config: Arc::new(AppConfig::default()),
-                tasks: Arc::new(vec![]),
             });
         }
 
-        match serde_yaml::from_str(read_string(config_file.as_str())?.as_str()) {
+        match serde_yaml::from_str(std::fs::read_to_string(config_file.as_str())?.as_str()) {
             Ok(config) => {
-                let m = Self {
+                return Ok(Self {
                     data_dir: Arc::new(data_dir.to_string()),
                     app_config: Arc::new(config),
-                    tasks: Arc::new(vec![]),
-                };
-
-                let task_file = format!("{data_dir}/tasks.yaml");
-                if !std::fs::exists(task_file.as_str())? {
-                    return Ok(m);
-                }
-
-                match serde_yaml::from_str(read_string(task_file.as_str())?.as_str()) {
-                    Ok(tasks) => Ok(Self {
-                        tasks: Arc::new(tasks),
-                        ..m
-                    }),
-                    Err(e) => Err(Error::Internal(format!("parse tasks file error, {}", e))),
-                }
+                });
             }
-            Err(e) => Err(Error::Internal(format!("parse config file error, {}", e))),
-        }
-    }
-}
-
-impl From<AppConfig> for Manager {
-    // used for test
-
-    fn from(value: AppConfig) -> Self {
-        Self {
-            data_dir: Arc::new("".to_string()),
-            app_config: Arc::new(value),
-            tasks: Arc::new(vec![]),
+            Err(e) => Err(AppError::Error(format!("parse config file error, {}", e))),
         }
     }
 }
