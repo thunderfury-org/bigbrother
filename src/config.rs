@@ -18,6 +18,7 @@ struct AppConfig {
 pub struct Pan123Config {
     pub client_id: String,
     pub client_secret: String,
+    pub file_id: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]

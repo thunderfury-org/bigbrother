@@ -1,4 +1,4 @@
-use crate::common::state::AppState;
+use crate::state::AppState;
 
 mod tv;
 

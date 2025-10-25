@@ -198,7 +198,7 @@ impl Client {
             (AUTH_KEY, token.as_str()),
         ]);
 
-        let response: CommonResponse<T> = super::http::post(url, query, headers, payload).await?;
+        let response: CommonResponse<T> = super::http::post(url.as_str(), query, headers, payload).await?;
         self.process_response(response)
     }
 
@@ -208,6 +208,7 @@ impl Client {
                 Some(d) => Ok(d),
                 None => Err(RequestError::NotFound),
             },
+            1 => Err(RequestError::AlreadyExists),
             401 => Err(RequestError::Unauthorized),
             429 => Err(RequestError::TooManyRequests),
             _ => Err(RequestError::Error(format!(
@@ -339,7 +340,6 @@ impl Client {
     }
 
     async fn get_access_token(&self) -> RequestResult<AccessToken> {
-        println!("get access token");
         let response: CommonResponse<AccessToken> = super::http::post(
             self.build_open_api_url("/api/v1/access_token"),
             None,

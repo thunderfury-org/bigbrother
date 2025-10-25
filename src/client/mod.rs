@@ -5,6 +5,9 @@ mod http;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RequestError {
+    #[error("already exists")]
+    AlreadyExists,
+
     #[error("unauthorized")]
     Unauthorized,
 
