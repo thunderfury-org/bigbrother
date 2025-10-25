@@ -46,11 +46,9 @@ pub struct File {
     pub parent_file_id: i64,
     #[serde(rename = "DownloadUrl")]
     pub download_url: String,
-    #[serde(rename = "Trashed")]
-    pub trashed: bool,
-    #[serde(rename = "AbsPath")]
+    #[serde(default, rename = "AbsPath")]
     pub abs_path: String,
-    #[serde(rename = "NewParentName")]
+    #[serde(default, rename = "NewParentName")]
     pub new_parent_name: String,
 }
 
@@ -62,10 +60,6 @@ struct FileListResponse {
     pub len: i32,
     #[serde(rename = "IsFirst")]
     pub is_first: bool,
-    #[serde(rename = "Total")]
-    pub total: i32,
-    #[serde(rename = "SearchFileDesc")]
-    pub search_file_desc: String,
     #[serde(rename = "InfoList")]
     pub info_list: Vec<File>,
 }
@@ -171,6 +165,31 @@ impl Client {
         )
         .await
         .map(|r| r.file_id)
+    }
+
+    pub async fn list_share_file(
+        &self,
+        share_key: &str,
+        share_password: &str,
+        parent_file_id: i64,
+    ) -> RequestResult<Vec<File>> {
+        let file_id_str = parent_file_id.to_string();
+        let query = Some(vec![
+            ("ShareKey", share_key),
+            ("SharePwd", share_password),
+            ("limit", "99"),
+            ("next", "-1"),
+            ("orderBy", "file_name"),
+            ("orderDirection", "asc"),
+            ("Page", "0"),
+            ("parentFileId", file_id_str.as_str()),
+            ("event", "homeListFile"),
+        ]);
+        let headers = Some(vec![(UA_KEY, UA_VALUE)]);
+
+        let response: CommonResponse<FileListResponse> =
+            super::http::get(self.build_api_url("/api/share/get"), query, headers).await?;
+        self.process_response(response).map(|r| r.info_list)
     }
 
     async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
@@ -352,5 +371,19 @@ impl Client {
         .await?;
 
         self.process_response(response)
+    }
+}
+
+mod test {
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_access_token() {
+        let client = Client::new("client_id", "client_secret", "cache_dir");
+        let files = client.list_share_file("u9izjv-JESWv", "", 28812239).await.unwrap();
+        for f in files {
+            println!("{:#?}", f);
+        }
     }
 }
