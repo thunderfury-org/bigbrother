@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use clap::Parser;
 
 use cli::{Cli, Commands};
