@@ -19,15 +19,31 @@ pub async fn run_bot(state: AppState) {
 }
 
 async fn handle_channel_post(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    if msg
-        .caption()
-        .is_some_and(|c| c.contains("天地剑心") || c.contains("红石榴餐厅") || c.contains("暗河传"))
-    {
-        handle_message(state, bot, msg).await?;
+    const KEYWORDS: &[&str] = &["天地剑心", "红石榴餐厅", "暗河传"];
+
+    if let Some(caption) = msg.caption() {
+        for keyword in KEYWORDS {
+            if caption.contains(keyword) {
+                let processor = msg::MsgProcessor {
+                    state,
+                    bot,
+                    msg,
+                    matched_filter: Some(keyword),
+                };
+                return processor.process().await;
+            }
+        }
     }
+
     Ok(())
 }
 
 async fn handle_message(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    Ok(())
+    let processor = msg::MsgProcessor {
+        state,
+        bot,
+        msg,
+        matched_filter: None,
+    };
+    processor.process().await
 }
