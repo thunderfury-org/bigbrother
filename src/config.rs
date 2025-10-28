@@ -32,7 +32,7 @@ pub struct LibraryConfig {
 #[serde(default, rename_all = "snake_case")]
 pub struct TelegramConfig {
     pub bot_token: String,
-    pub user_id: String,
+    pub user_id: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]

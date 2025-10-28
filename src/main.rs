@@ -9,10 +9,10 @@ mod cli;
 mod client;
 mod config;
 mod error;
+mod library;
 mod logger;
 mod media;
 mod state;
-mod task;
 
 #[tokio::main]
 async fn main() {

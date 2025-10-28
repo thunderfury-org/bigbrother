@@ -33,7 +33,7 @@ async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResu
     if let Some(text) = msg.text() {
         if text == "/start" {
             bot.send_message(
-                msg.chat.id,
+                get_chat_id(&state),
                 "欢迎使用秒传链接转存机器人！\n\
                  请发送包含秒传链接的 JSON 文件，我将帮助您将文件转存到您的 pan123 账号中。",
             )
@@ -73,7 +73,7 @@ fn get_urls_from_msg(msg: &Message) -> Vec<Url> {
 }
 
 async fn handle_share_url(state: AppState, bot: Bot, url: &Url, msg: &Message) -> ResponseResult<()> {
-    bot.send_message(msg.chat.id, format!("开始处理分享链接: {}", url))
+    bot.send_message(get_chat_id(&state), format!("开始处理分享链接: {}", url))
         .await?;
 
     let share_key = url
@@ -89,18 +89,23 @@ async fn handle_share_url(state: AppState, bot: Bot, url: &Url, msg: &Message) -
     let files = state
         .pan123
         .list_share_file(share_key, share_password.as_str(), 0)
-        .await?;
+        .await
+        .unwrap_or_default();
+
+    for file in files {
+        println!("Processing file: {:?}", file);
+    }
 
     Ok(())
 }
 
 async fn handle_document(state: AppState, bot: Bot, doc: &Document, msg: &Message) -> ResponseResult<()> {
     if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
-        bot.send_message(msg.chat.id, "不是 json 文件，忽略").await?;
+        bot.send_message(get_chat_id(&state), "不是 json 文件，忽略").await?;
         return Ok(());
     }
 
-    bot.send_message(msg.chat.id, "开始处理").await?;
+    bot.send_message(get_chat_id(&state), "开始处理").await?;
     let file = bot.get_file(doc.file.id.to_owned()).await?;
     let mut content = Vec::new();
     bot.download_file(&file.path, &mut content).await?;
@@ -137,22 +142,26 @@ async fn handle_document(state: AppState, bot: Bot, doc: &Document, msg: &Messag
                     }
                     Err(e) => {
                         result.failed += 1;
-                        bot.send_message(msg.chat.id, format!("上传文件 {} 失败: {}", path, e))
-                            .reply_to(msg.id)
+                        bot.send_message(get_chat_id(&state), format!("上传文件 {} 失败: {}", path, e))
                             .await?;
                     }
                 }
             }
 
             result.cost = start.elapsed();
-            bot.send_message(msg.chat.id, result.to_string()).await?;
+            bot.send_message(get_chat_id(&state), result.to_string()).await?;
         }
         Err(e) => {
-            bot.send_message(msg.chat.id, format!("json 解析错误: {}", e)).await?;
+            bot.send_message(get_chat_id(&state), format!("json 解析错误: {}", e))
+                .await?;
         }
     }
 
     Ok(())
+}
+
+fn get_chat_id(state: &AppState) -> ChatId {
+    ChatId(state.config.get_telegram_config().user_id)
 }
 
 #[derive(Debug, Default)]

@@ -183,7 +183,7 @@ impl Client {
         let query = Some(vec![
             ("ShareKey", share_key),
             ("SharePwd", share_password),
-            ("limit", "99"),
+            ("limit", "100"),
             ("next", "-1"),
             ("orderBy", "file_name"),
             ("orderDirection", "asc"),

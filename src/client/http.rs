@@ -65,8 +65,6 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
     let url = response.url().to_string();
     let payload = response.text().await?;
 
-    println!("http request to {url} with status {status}, payload: {payload}");
-
     if status.is_success() {
         return match serde_json::from_str::<T>(&payload) {
             Ok(data) => Ok(data),
