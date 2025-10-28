@@ -52,6 +52,12 @@ pub struct File {
     pub new_parent_name: String,
 }
 
+impl File {
+    pub fn is_dir(&self) -> bool {
+        self.file_type == 1
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct FileListResponse {
     #[serde(rename = "Next")]
@@ -237,10 +243,12 @@ impl Client {
         }
     }
 
+    #[inline]
     fn build_api_url(&self, path: &str) -> String {
         format!("{}{}", API_BASE, path)
     }
 
+    #[inline]
     fn build_open_api_url(&self, path: &str) -> String {
         format!("{}{}", OPEN_API_BASE, path)
     }
@@ -371,19 +379,5 @@ impl Client {
         .await?;
 
         self.process_response(response)
-    }
-}
-
-mod test {
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_access_token() {
-        let client = Client::new("client_id", "client_secret", "cache_dir");
-        let files = client.list_share_file("u9izjv-JESWv", "", 28812239).await.unwrap();
-        for f in files {
-            println!("{:#?}", f);
-        }
     }
 }

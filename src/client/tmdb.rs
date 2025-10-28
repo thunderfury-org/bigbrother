@@ -80,6 +80,12 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn new(api_key: &str) -> Self {
+        Client {
+            api_key: api_key.to_owned(),
+        }
+    }
+
     async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
         let mut request_query = vec![
             ("language", "zh-CN"),

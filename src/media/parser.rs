@@ -4,7 +4,7 @@ use std::{collections::HashSet, ops::Range};
 use lingua::{Language, LanguageDetector, LanguageDetectorBuilder};
 use regex::Regex;
 
-use super::{MediaInfo, normalize::*};
+use super::{Metadata, normalize::*};
 
 const RE_BEGIN: &str = r"(?i)[\. \-\[\{\(@]\s*";
 const RE_END: &str = r"\s*[\. \-\]\}\)@]";
@@ -109,24 +109,24 @@ static LANG_DETECTOR: LazyLock<LanguageDetector> = LazyLock::new(|| {
     LanguageDetectorBuilder::from_languages(&languages).build()
 });
 
-struct MediaInfoParser {
+struct MetadataParser {
     name: String,
     other: String,
 
     title_index_end: Option<usize>,
     year_index_start: Option<usize>,
 
-    info: MediaInfo,
+    info: Metadata,
 }
 
-impl MediaInfoParser {
+impl MetadataParser {
     fn new(name: &str) -> Self {
         Self {
             name: name.to_owned(),
             other: String::new(),
             title_index_end: None,
             year_index_start: None,
-            info: MediaInfo::default(),
+            info: Metadata::default(),
         }
     }
 
@@ -322,7 +322,7 @@ impl MediaInfoParser {
                 continue;
             }
             if DIGIT_RE.is_match(part) {
-                titles.push(super::MediaTitle {
+                titles.push(super::Title {
                     language: super::LANGUAGE_ENGLISH.to_owned(),
                     title: part.to_owned(),
                 });
@@ -330,7 +330,7 @@ impl MediaInfoParser {
             }
 
             for r in LANG_DETECTOR.detect_multiple_languages_of(part) {
-                titles.push(super::MediaTitle {
+                titles.push(super::Title {
                     language: normalize_language(r.language()),
                     title: part[r.start_index()..r.end_index()].trim().to_owned(),
                 });
@@ -379,8 +379,8 @@ impl MediaInfoParser {
     }
 }
 
-pub fn parse(name: &str) -> MediaInfo {
-    let mut parser = MediaInfoParser::new(name);
+pub fn parse(name: &str) -> Metadata {
+    let mut parser = MetadataParser::new(name);
     parser.parse();
     parser.info
 }
@@ -396,7 +396,7 @@ mod tests {
     #[derive(Deserialize)]
     struct TestCase {
         input: String,
-        expected: MediaInfo,
+        expected: Metadata,
     }
 
     #[test]

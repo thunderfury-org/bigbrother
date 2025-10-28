@@ -1,8 +1,9 @@
+use reqwest::Url;
 use serde::Deserialize;
+use teloxide::types::{Document, MessageEntityKind};
 use teloxide::{net::Download, prelude::*, sugar::request::RequestReplyExt};
 
-use super::client::RequestError;
-use super::state::AppState;
+use crate::{client::RequestError, state::AppState};
 
 pub async fn run_bot(state: AppState) {
     let bot = Bot::new(state.config.get_telegram_config().bot_token.as_str());
@@ -18,75 +19,139 @@ pub async fn run_bot(state: AppState) {
         .await;
 }
 
-async fn handle_channel_post(msg: Message) -> ResponseResult<()> {
+async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
+    if msg
+        .caption()
+        .is_some_and(|c| c.contains("天地剑心") || c.contains("红石榴餐厅") || c.contains("暗河传"))
+    {
+        handle_message(state, bot, msg).await?;
+    }
     Ok(())
 }
 
 async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    if let Some(doc) = msg.document() {
-        if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
-            bot.send_message(msg.chat.id, "不是 json 文件，忽略")
-                .reply_to(msg.id)
-                .await?;
-            return Ok(());
+    if let Some(text) = msg.text() {
+        if text == "/start" {
+            bot.send_message(
+                msg.chat.id,
+                "欢迎使用秒传链接转存机器人！\n\
+                 请发送包含秒传链接的 JSON 文件，我将帮助您将文件转存到您的 pan123 账号中。",
+            )
+            .await?;
         }
+    } else if let Some(doc) = msg.document() {
+        handle_document(state, bot, doc, &msg).await?;
+    } else {
+        let urls = get_urls_from_msg(&msg);
+        if let Some(url) = urls.first() {
+            handle_share_url(state, bot, url, &msg).await?;
+        }
+    }
 
-        bot.send_message(msg.chat.id, "开始处理").reply_to(msg.id).await?;
-        let file = bot.get_file(doc.file.id.to_owned()).await?;
-        let mut content = Vec::new();
-        bot.download_file(&file.path, &mut content).await?;
+    Ok(())
+}
 
-        match serde_json::from_slice::<ResourceExportJson>(&content) {
-            Ok(export) => {
-                let start = std::time::Instant::now();
-                let mut result = ProcessResult::default();
-
-                for f in export.files {
-                    result.total += 1;
-                    let path = std::path::Path::new(f.path.as_str())
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    let r = state
-                        .pan123
-                        .fast_upload(
-                            state.config.get_pan123_config().file_id,
-                            path.as_str(),
-                            f.etag.as_str(),
-                            f.size,
-                        )
-                        .await;
-                    match r {
-                        Ok(_) => {
-                            result.success += 1;
-                            result.total_size += f.size;
-                        }
-                        Err(RequestError::AlreadyExists) => {
-                            result.skipped += 1;
-                        }
-                        Err(e) => {
-                            result.failed += 1;
-                            bot.send_message(msg.chat.id, format!("上传文件 {} 失败: {}", path, e))
-                                .reply_to(msg.id)
-                                .await?;
-                        }
+fn get_urls_from_msg(msg: &Message) -> Vec<Url> {
+    let mut urls = Vec::new();
+    if let Some(entities) = msg.caption_entities() {
+        for entity in entities {
+            match &entity.kind {
+                MessageEntityKind::TextLink { url } => {
+                    if url
+                        .host_str()
+                        .is_some_and(|h| h.starts_with("www.123") && h.ends_with(".com"))
+                        && url.path().starts_with("/s/")
+                    {
+                        urls.push(url.clone());
                     }
                 }
-
-                result.cost = start.elapsed();
-                bot.send_message(msg.chat.id, result.to_string())
-                    .reply_to(msg.id)
-                    .await?;
-            }
-            Err(e) => {
-                bot.send_message(msg.chat.id, format!("json 解析错误: {}", e))
-                    .reply_to(msg.id)
-                    .await?;
+                _ => {}
             }
         }
     }
+    urls
+}
+
+async fn handle_share_url(state: AppState, bot: Bot, url: &Url, msg: &Message) -> ResponseResult<()> {
+    bot.send_message(msg.chat.id, format!("开始处理分享链接: {}", url))
+        .await?;
+
+    let share_key = url
+        .path_segments()
+        .map(|s| s.last().unwrap_or_default())
+        .unwrap_or_default();
+    let share_password = url
+        .query_pairs()
+        .find(|(k, _)| k == "pwd")
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_default();
+
+    let files = state
+        .pan123
+        .list_share_file(share_key, share_password.as_str(), 0)
+        .await?;
+
+    Ok(())
+}
+
+async fn handle_document(state: AppState, bot: Bot, doc: &Document, msg: &Message) -> ResponseResult<()> {
+    if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
+        bot.send_message(msg.chat.id, "不是 json 文件，忽略").await?;
+        return Ok(());
+    }
+
+    bot.send_message(msg.chat.id, "开始处理").await?;
+    let file = bot.get_file(doc.file.id.to_owned()).await?;
+    let mut content = Vec::new();
+    bot.download_file(&file.path, &mut content).await?;
+
+    match serde_json::from_slice::<ResourceExportJson>(&content) {
+        Ok(export) => {
+            let start = std::time::Instant::now();
+            let mut result = ProcessResult::default();
+
+            for f in export.files {
+                result.total += 1;
+                let path = std::path::Path::new(f.path.as_str())
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                let r = state
+                    .pan123
+                    .fast_upload(
+                        state.config.get_pan123_config().file_id,
+                        path.as_str(),
+                        f.etag.as_str(),
+                        f.size,
+                    )
+                    .await;
+                match r {
+                    Ok(_) => {
+                        result.success += 1;
+                        result.total_size += f.size;
+                    }
+                    Err(RequestError::AlreadyExists) => {
+                        result.skipped += 1;
+                    }
+                    Err(e) => {
+                        result.failed += 1;
+                        bot.send_message(msg.chat.id, format!("上传文件 {} 失败: {}", path, e))
+                            .reply_to(msg.id)
+                            .await?;
+                    }
+                }
+            }
+
+            result.cost = start.elapsed();
+            bot.send_message(msg.chat.id, result.to_string()).await?;
+        }
+        Err(e) => {
+            bot.send_message(msg.chat.id, format!("json 解析错误: {}", e)).await?;
+        }
+    }
+
     Ok(())
 }
 

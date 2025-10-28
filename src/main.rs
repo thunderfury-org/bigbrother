@@ -4,6 +4,8 @@ use clap::Parser;
 
 use cli::{Cli, Commands};
 
+use crate::state::AppState;
+
 mod bot;
 mod cli;
 mod client;
@@ -25,21 +27,9 @@ async fn main() {
     }
 }
 
-fn init_state(data_dir: &str) -> state::AppState {
-    let config = config::Manager::try_from(data_dir.trim()).unwrap();
-    state::AppState {
-        pan123: Arc::new(client::pan123::Client::new(
-            &config.get_pan123_config().client_id,
-            &config.get_pan123_config().client_secret,
-            &format!("{}/pan123", config.get_cache_dir()),
-        )),
-        config,
-    }
-}
-
 async fn run_server(data_dir: &str) {
     logger::init(std::io::stdout);
-    let state = init_state(data_dir);
+    let state = AppState::try_from(data_dir).expect("Failed to initialize application state");
 
     bot::run_bot(state).await;
 }

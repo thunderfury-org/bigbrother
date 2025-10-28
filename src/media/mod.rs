@@ -16,7 +16,7 @@ pub const FILE_TYPE_SUBTITLE: &str = "subtitle";
 /// Represents a media title with language information
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub struct MediaTitle {
+pub struct Title {
     /// The title text
     pub title: String,
 
@@ -27,7 +27,7 @@ pub struct MediaTitle {
 /// Contains metadata information about media files
 #[derive(Debug, Default, PartialEq, Deserialize)]
 #[serde(default, rename_all = "lowercase")]
-pub struct MediaInfo {
+pub struct Metadata {
     /// File type based on file extension
     pub file_type: String,
 
@@ -38,7 +38,7 @@ pub struct MediaInfo {
     pub tmdb_id: String,
 
     /// Movie or TV Show titles
-    pub titles: Vec<MediaTitle>,
+    pub titles: Vec<Title>,
 
     /// Release year
     pub year: String,
@@ -77,7 +77,7 @@ pub struct MediaInfo {
     pub subtitles: Vec<String>,
 }
 
-impl From<&str> for MediaInfo {
+impl From<&str> for Metadata {
     fn from(value: &str) -> Self {
         parser::parse(value)
     }
