@@ -1,6 +1,39 @@
-use teloxide::prelude::*;
+use std::sync::LazyLock;
+
+use reqwest::Url;
+use serde::Deserialize;
+use teloxide::{
+    net::Download,
+    prelude::*,
+    sugar::request::RequestReplyExt,
+    types::{Document, MessageEntity, MessageEntityKind},
+};
 
 use crate::state::AppState;
+
+const FS_LINK_PREFIX: &str = "123FSLinkV2$";
+
+static URL_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"https?://[^\s/$.?#].[^\s]*").expect("Failed to compile URL regex"));
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ResourceExportJson {
+    #[serde(rename = "usesBase62EtagsInExport")]
+    pub uses_base62_etags_in_export: bool,
+    #[serde(rename = "etagEncrypted")]
+    pub etag_encrypted: bool,
+    #[serde(rename = "commonPath")]
+    pub common_path: String,
+    pub files: Vec<ResourceExportFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResourceExportFile {
+    pub path: String,
+    pub etag: String,
+    pub size: u64,
+}
 
 pub(super) struct MsgProcessor<'a> {
     pub state: &'a AppState,
@@ -11,25 +44,128 @@ pub(super) struct MsgProcessor<'a> {
 
 impl MsgProcessor<'_> {
     pub(super) async fn process(&self) -> ResponseResult<()> {
-        if let Some(text) = self.msg.text() {
-            if text == "/start" {
-                self.bot
-                    .send_message(
-                        get_chat_id(&state),
-                        "欢迎使用秒传链接转存机器人！\n\
-                 请发送包含秒传链接的 JSON 文件，我将帮助您将文件转存到您的 pan123 账号中。",
-                    )
-                    .await?;
+        if let Some(doc) = self.msg.document() {
+            return self.handle_document(doc).await;
+        }
+
+        let urls = self.extract_urls();
+        if let Some(url) = urls.first() {
+            return self.handle_share_url(url).await;
+        }
+
+        let fslinks = self.extract_fslink();
+        for fslink in fslinks {
+            self.handle_fslink(fslink).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_document(&self, doc: &Document) -> ResponseResult<()> {
+        if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
+            return self.send_message("不是 JSON 文件，忽略").await;
+        }
+
+        self.send_message("开始处理 JSON 文件").await?;
+
+        let file = self.bot.get_file(doc.file.id.to_owned()).await?;
+        let mut content = Vec::new();
+        self.bot.download_file(&file.path, &mut content).await?;
+
+        match serde_json::from_slice::<ResourceExportJson>(&content) {
+            Ok(export) => {
+                let reply = format!("成功解析 JSON 文件，共包含 {} 个资源文件", export.files.len());
+                self.send_message(reply).await?;
             }
-        } else if let Some(doc) = self.msg.document() {
-            handle_document(state, bot, doc, &msg).await?;
-        } else {
-            let urls = get_urls_from_msg(&msg);
-            if let Some(url) = urls.first() {
-                handle_share_url(state, bot, url, &msg).await?;
+            Err(e) => {
+                self.send_message(format!("JSON 解析错误: {}", e)).await?;
             }
         }
 
         Ok(())
+    }
+
+    async fn handle_share_url(&self, url: &Url) -> ResponseResult<()> {
+        let reply = format!("Received URL: {}", url);
+        self.send_message(&reply).await
+    }
+
+    async fn handle_fslink(&self, fslink: &str) -> ResponseResult<()> {
+        let reply = format!("Received FSLink: {}", fslink);
+        self.send_message(&reply).await
+    }
+
+    fn extract_fslink(&self) -> Vec<&str> {
+        let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
+        text.split_whitespace()
+            .filter(|word| word.starts_with(FS_LINK_PREFIX))
+            .map(|word| word.trim_start_matches(FS_LINK_PREFIX))
+            .collect()
+    }
+
+    fn extract_urls(&self) -> Vec<Url> {
+        let mut urls = Vec::new();
+
+        let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
+        self.extract_urls_from_text(text, &mut urls);
+
+        // Check caption entities
+        if let Some(entities) = self.msg.caption_entities() {
+            self.extract_urls_from_entities(entities, &mut urls);
+        }
+
+        urls
+    }
+
+    fn extract_urls_from_text(&self, text: &str, urls: &mut Vec<Url>) {
+        if text.is_empty() {
+            return;
+        }
+
+        for cap in URL_RE.captures_iter(text) {
+            if let Some(matched_url) = cap.get(0) {
+                if let Ok(url) = Url::parse(matched_url.as_str()) {
+                    if self.is_valid_url(&url) {
+                        urls.push(url);
+                    }
+                }
+            }
+        }
+    }
+
+    fn extract_urls_from_entities(&self, entities: &[MessageEntity], urls: &mut Vec<Url>) {
+        for entity in entities {
+            match &entity.kind {
+                MessageEntityKind::TextLink { url } => {
+                    if self.is_valid_url(url) {
+                        urls.push(url.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn is_valid_url(&self, url: &Url) -> bool {
+        url.host_str()
+            .is_some_and(|h| h.starts_with("www.123") && h.ends_with(".com"))
+            && url.path().starts_with("/s/")
+    }
+
+    async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<()> {
+        if self.msg.from.is_none() {
+            self.bot.send_message(self.get_chat_id(), text).await.map(|_| ())
+        } else {
+            self.bot
+                .send_message(self.get_chat_id(), text)
+                .reply_to(self.msg.id)
+                .await
+                .map(|_| ())
+        }
+    }
+
+    #[inline]
+    fn get_chat_id(&self) -> ChatId {
+        ChatId(self.state.config.get_telegram_config().user_id)
     }
 }

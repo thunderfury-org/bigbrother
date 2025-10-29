@@ -18,31 +18,36 @@ pub async fn run_bot(state: AppState) {
         .await;
 }
 
-async fn handle_channel_post(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
+async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
     const KEYWORDS: &[&str] = &["天地剑心", "红石榴餐厅", "暗河传"];
 
-    if let Some(caption) = msg.caption() {
-        for keyword in KEYWORDS {
-            if caption.contains(keyword) {
-                let processor = msg::MsgProcessor {
-                    state,
-                    bot,
-                    msg,
-                    matched_filter: Some(keyword),
-                };
-                return processor.process().await;
-            }
+    let text = msg.text().or(msg.caption()).unwrap_or_default();
+    for keyword in KEYWORDS {
+        if text.contains(keyword) {
+            let processor = msg::MsgProcessor {
+                state: &state,
+                bot: &bot,
+                msg: &msg,
+                matched_filter: Some(keyword),
+            };
+            return processor.process().await;
         }
     }
 
     Ok(())
 }
 
-async fn handle_message(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
+async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
+    let user_id = UserId(state.config.get_telegram_config().user_id.try_into().unwrap());
+    if msg.from.as_ref().is_none_or(|u| u.id != user_id) {
+        // Ignore messages not from the specified user
+        return Ok(());
+    }
+
     let processor = msg::MsgProcessor {
-        state,
-        bot,
-        msg,
+        state: &state,
+        bot: &bot,
+        msg: &msg,
         matched_filter: None,
     };
     processor.process().await
