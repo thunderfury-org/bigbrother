@@ -4,7 +4,7 @@ use tokio::signal::{
 };
 use tower_http::{
     LatencyUnit,
-    trace::{DefaultOnResponse, TraceLayer},
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
 use tracing::{Level, info};
 
@@ -24,11 +24,13 @@ pub async fn run(state: AppState) {
     info!("Starting file server at http://{}:{}", host, port);
 
     let app = file::new_router(state.clone()).layer(
-        TraceLayer::new_for_http().on_response(
-            DefaultOnResponse::new()
-                .level(Level::INFO)
-                .latency_unit(LatencyUnit::Millis),
-        ),
+        TraceLayer::new_for_http()
+            .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+            .on_response(
+                DefaultOnResponse::new()
+                    .level(Level::INFO)
+                    .latency_unit(LatencyUnit::Millis),
+            ),
     );
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await.unwrap();
