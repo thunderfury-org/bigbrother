@@ -6,10 +6,13 @@ use teloxide::{
     net::Download,
     prelude::*,
     sugar::request::RequestReplyExt,
-    types::{Document, MessageEntity, MessageEntityKind},
+    types::{Document, MessageEntity, MessageEntityKind, MessageId},
 };
 
-use crate::state::AppState;
+use crate::{
+    library::import::{self, ImportSummary},
+    state::AppState,
+};
 
 const FS_LINK_PREFIX: &str = "123FSLinkV2$";
 
@@ -63,7 +66,8 @@ impl MsgProcessor<'_> {
 
     async fn handle_document(&self, doc: &Document) -> ResponseResult<()> {
         if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
-            return self.send_message("不是 JSON 文件，忽略").await;
+            self.send_message("不是 JSON 文件，忽略").await?;
+            return Ok(());
         }
 
         self.send_message("开始处理 JSON 文件").await?;
@@ -87,12 +91,26 @@ impl MsgProcessor<'_> {
 
     async fn handle_share_url(&self, url: &Url) -> ResponseResult<()> {
         let reply = format!("Received URL: {}", url);
-        self.send_message(&reply).await
+        let msg = self.send_message(&reply).await?;
+
+        match import::import_from_share_url(self.state, url).await {
+            Ok(summary) => {
+                let formatted: String = self.format_import_summary(&summary);
+                self.send_message_with_reply(formatted, msg.id).await?;
+            }
+            Err(e) => {
+                self.send_message_with_reply(format!("导入失败: {}", e), msg.id).await?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn handle_fslink(&self, fslink: &str) -> ResponseResult<()> {
         let reply = format!("Received FSLink: {}", fslink);
-        self.send_message(&reply).await
+        self.send_message(&reply).await?;
+
+        Ok(())
     }
 
     fn extract_fslink(&self) -> Vec<&str> {
@@ -152,20 +170,52 @@ impl MsgProcessor<'_> {
             && url.path().starts_with("/s/")
     }
 
-    async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<()> {
+    async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<Message> {
         if self.msg.from.is_none() {
-            self.bot.send_message(self.get_chat_id(), text).await.map(|_| ())
+            self.bot.send_message(self.get_chat_id(), text).await
         } else {
             self.bot
                 .send_message(self.get_chat_id(), text)
                 .reply_to(self.msg.id)
                 .await
-                .map(|_| ())
         }
+    }
+
+    async fn send_message_with_reply<T: Into<String>>(&self, text: T, reply_to: MessageId) -> ResponseResult<Message> {
+        self.bot.send_message(self.get_chat_id(), text).reply_to(reply_to).await
     }
 
     #[inline]
     fn get_chat_id(&self) -> ChatId {
         ChatId(self.state.config.get_telegram_config().user_id)
+    }
+
+    fn format_import_summary(&self, summary: &ImportSummary) -> String {
+        let total_size_gb = summary.total_size as f64 / 1_000_000_000.0;
+        let avg_size_gb = if summary.success > 0 {
+            summary.total_size as f64 / summary.success as f64 / 1_000_000_000.0
+        } else {
+            0.0
+        };
+        format!(
+            "{} {} ({}) 导入完成！\n\
+             📁 共 {} 个文件\n\
+             ✅ 成功: {}个\n\
+             ❌ 失败: {}个\n\
+             🔄 跳过重复文件: {}个\n\
+             📊 成功转存体积: {:.2} GB\n\
+             📊 平均文件大小: {:.2} GB\n\
+             ⏱️ 耗时: {:.2} 秒",
+            summary.catelog,
+            summary.title,
+            summary.year,
+            summary.total,
+            summary.success,
+            summary.failed,
+            summary.skipped,
+            total_size_gb,
+            avg_size_gb,
+            summary.cost.as_secs_f64()
+        )
     }
 }

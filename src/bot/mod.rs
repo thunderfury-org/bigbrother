@@ -4,7 +4,7 @@ use crate::state::AppState;
 
 mod msg;
 
-pub async fn run_bot(state: AppState) {
+pub async fn run(state: AppState) {
     let bot = Bot::new(state.config.get_telegram_config().bot_token.as_str());
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))

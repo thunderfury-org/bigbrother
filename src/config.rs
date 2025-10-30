@@ -7,10 +7,17 @@ use super::error::AppError;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 struct AppConfig {
+    pub file_server: FileServerConfig,
     pub pan123: Pan123Config,
     pub tmdb: TmdbConfig,
     pub telegram: TelegramConfig,
     pub library: LibraryConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct FileServerConfig {
+    pub host: Option<String>,
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -58,6 +65,10 @@ impl Manager {
 
     pub fn get_db_dir(&self) -> String {
         format!("{}/db", self.data_dir.as_str())
+    }
+
+    pub fn get_file_server_config(&self) -> &FileServerConfig {
+        &self.app_config.file_server
     }
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
