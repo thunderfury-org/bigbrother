@@ -1,4 +1,4 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -44,12 +44,8 @@ pub struct File {
     pub etag: String,
     #[serde(rename = "ParentFileId")]
     pub parent_file_id: i64,
-    #[serde(rename = "DownloadUrl")]
-    pub download_url: String,
     #[serde(default, rename = "AbsPath")]
     pub abs_path: String,
-    #[serde(default, rename = "NewParentName")]
-    pub new_parent_name: String,
 }
 
 impl File {
@@ -76,6 +72,23 @@ struct FastUploadResponse {
     file_id: Option<i64>,
     #[serde(rename = "reuse")]
     reuse: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FileDetail {
+    #[serde(rename = "fileId")]
+    pub file_id: i64,
+    #[serde(rename = "filename")]
+    pub file_name: String,
+    /// 0: file, 1: folder
+    #[serde(rename = "type")]
+    pub file_type: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct MultiGetResponse {
+    #[serde(rename = "fileList")]
+    file_list: Vec<FileDetail>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,7 +147,7 @@ impl Client {
             self.build_api_url("/api/file/list/new"),
             Some(vec![
                 ("driveId", "0"),
-                ("limit", "100"),
+                ("limit", "10"),
                 ("next", "0"),
                 ("orderDirection", "desc"),
                 ("parentFileId", "0"),
@@ -196,6 +209,63 @@ impl Client {
         let response: CommonResponse<FileListResponse> =
             super::http::get(self.build_api_url("/api/share/get"), query, headers).await?;
         self.process_response(response).map(|r| r.info_list)
+    }
+
+    pub async fn get_file_id_by_path(&self, path: &str) -> RequestResult<Option<i64>> {
+        if path.is_empty() {
+            return Ok(None);
+        }
+
+        let parts = path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        println!("{:#?}", parts);
+        let last_part = parts.last().unwrap();
+        let search_results = self.search(last_part).await?;
+
+        for search_result in &search_results {
+            println!("{:#?}", search_result);
+            if search_result.file_name != *last_part {
+                continue;
+            }
+
+            let file_ids = search_result
+                .abs_path
+                .split('/')
+                .filter_map(|s| s.parse::<i64>().ok())
+                .collect::<Vec<_>>();
+            println!("{:#?}", file_ids);
+            if file_ids.len() != parts.len() {
+                continue;
+            }
+
+            let files = self.mutli_get(&file_ids).await?;
+            println!("{:#?}", files);
+
+            if files.len() != file_ids.len() {
+                continue;
+            }
+
+            for i in 0..file_ids.len() {
+                if files.get(&file_ids[i]).unwrap().file_name != parts[i] {
+                    continue;
+                }
+            }
+            return Ok(Some(search_result.file_id));
+        }
+        Ok(None)
+    }
+
+    async fn mutli_get(&self, file_ids: &[i64]) -> RequestResult<HashMap<i64, FileDetail>> {
+        self.post::<_, MultiGetResponse>(
+            self.build_open_api_url("/api/v1/file/infos"),
+            None,
+            Some(&json!(
+                {
+                    "fileIds": file_ids,
+                }
+            )),
+        )
+        .await
+        .map(|r| r.file_list.into_iter().map(|f| (f.file_id, f)).collect())
     }
 
     async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {

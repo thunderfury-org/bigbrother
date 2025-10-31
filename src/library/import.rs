@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use reqwest::Url;
+use tracing::info;
 
+use super::{ImportSummary, category};
 use crate::{
     client::{
         pan123::File,
-        tmdb::{self, Genre},
+        tmdb::{self},
     },
     error::AppResult,
     media::{Metadata, Title},
@@ -26,64 +28,38 @@ struct MediaFile {
     raw: RawFile,
 }
 
-#[derive(Default)]
-struct GroupedMediaFiles<'a> {
-    is_tv: bool,
-    tmdb_id: String,
-    title: String,
-    year: String,
-    genres: Vec<Genre>,
-    origin_country: Vec<String>,
-
-    movie_files: Vec<&'a MediaFile>,
-    // (season, episode) -> files[]
-    episode_files: HashMap<(u32, u32), Vec<&'a MediaFile>>,
+enum Media<'a> {
+    Movie {
+        detail: tmdb::MovieDetail,
+        files: Vec<&'a MediaFile>,
+    },
+    Tv {
+        detail: tmdb::TvDetail,
+        // (season, episode) -> files[]
+        files: HashMap<u32, HashMap<u32, Vec<&'a MediaFile>>>,
+    },
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct ImportSummary {
-    pub success: u32,
-    pub failed: u32,
-    pub skipped: u32,
-    pub total: u32,
-    pub total_size: u64,
-    pub cost: std::time::Duration,
-    pub unknown_files: Vec<String>,
-}
-
-pub async fn import_from_share_url(state: &AppState, url: &Url) -> AppResult<ImportSummary> {
-    Importer::new(state.clone()).import_from_share_url(url).await
-}
-
-pub async fn import_from_fslink(state: &AppState, files: Vec<RawFile>) -> AppResult<ImportSummary> {
-    // Placeholder implementation
-    Ok(ImportSummary::default())
-}
-
-pub async fn import_from_remote_dir(state: &AppState, dir: &str) -> AppResult<ImportSummary> {
-    // Placeholder implementation
-    Ok(ImportSummary::default())
-}
-
-struct Importer {
+pub(super) struct Importer {
     state: AppState,
     tv_info_cache: HashMap<String, Option<tmdb::TvDetail>>,
     movie_info_cache: HashMap<String, Option<tmdb::MovieDetail>>,
     summary: ImportSummary,
+    start_time: std::time::Instant,
 }
 
 impl Importer {
-    // add new for importer
     pub fn new(state: AppState) -> Self {
         Self {
             state,
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             summary: ImportSummary::default(),
+            start_time: std::time::Instant::now(),
         }
     }
 
-    async fn import_from_share_url(&mut self, url: &Url) -> AppResult<ImportSummary> {
+    pub(super) async fn import_from_share_url(&mut self, url: &Url) -> AppResult<ImportSummary> {
         let share_key = url
             .path_segments()
             .map(|s| s.last().unwrap_or_default())
@@ -94,26 +70,56 @@ impl Importer {
             .map(|(_, v)| v.to_string())
             .unwrap_or_default();
 
-        let media_files = self.list_files_in_share(share_key, &share_password).await?;
-        let grouped_media_files = self.group_share_files(&media_files).await?;
-        for grouped_file in grouped_media_files {
-            if grouped_file.is_tv {
-                // tv
-                self.import_tv_show(&grouped_file).await?;
-            } else {
-                // movie
+        let media_files = self.list_files_from_share(share_key, &share_password).await?;
+        self.import_media_files(&media_files).await
+    }
+
+    async fn import_media_files(&mut self, media_files: &[MediaFile]) -> AppResult<ImportSummary> {
+        let medias = self.group_media_files(media_files).await?;
+        for media in &medias {
+            match media {
+                Media::Movie { detail, files } => {
+                    self.import_movie(detail, files).await?;
+                }
+                Media::Tv { detail, files } => {
+                    self.import_tv(detail, files).await?;
+                }
             }
         }
 
+        self.summary.cost = self.start_time.elapsed();
         Ok(self.summary.clone())
     }
 
-    async fn import_tv_show(&mut self, grouped_file: &GroupedMediaFiles<'_>) -> AppResult<()> {
-        // list existing episodes in library
+    async fn import_movie(&mut self, detail: &tmdb::MovieDetail, files: &[&MediaFile]) -> AppResult<()> {
+        // list existing movies in library
         Ok(())
     }
 
-    async fn group_share_files<'a>(&mut self, files: &'a [MediaFile]) -> AppResult<Vec<GroupedMediaFiles<'a>>> {
+    async fn import_tv(
+        &mut self,
+        detail: &tmdb::TvDetail,
+        files: &HashMap<u32, HashMap<u32, Vec<&MediaFile>>>,
+    ) -> AppResult<()> {
+        // list existing episodes in library
+        let path = self.get_tv_path_in_library(detail);
+        let file_id = self.state.pan123.get_file_id_by_path(path.as_str()).await?;
+        if file_id.is_none() {
+            info!("tv series {} not found in library, path: {}", detail.name, path);
+            self.summary.skipped += 1;
+            self.summary.unknown_files.push(path);
+            return Ok(());
+        }
+        info!(
+            "tv series {} found in library, file_id: {}, path: {}",
+            detail.name,
+            file_id.unwrap(),
+            path
+        );
+        Ok(())
+    }
+
+    async fn group_media_files<'a>(&mut self, files: &'a [MediaFile]) -> AppResult<Vec<Media<'a>>> {
         // group files by tmdb_id
         let mut grouped_files = HashMap::new();
         for file in files {
@@ -131,32 +137,50 @@ impl Importer {
     async fn group_tv_file<'a>(
         &mut self,
         file: &'a MediaFile,
-        grouped_files: &mut HashMap<String, GroupedMediaFiles<'a>>,
+        grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
         let tv_info = self
             .get_tv_info_from_tmdb(&file.metadata.titles, &file.metadata.year)
             .await?;
         match tv_info {
             Some(tv_info) => {
-                grouped_files
-                    .entry(tv_info.id.to_string())
-                    .or_insert_with(|| GroupedMediaFiles {
-                        is_tv: true,
-                        tmdb_id: tv_info.id.to_string(),
-                        title: tv_info.name.to_owned(),
-                        year: tv_info.first_air_date.split('-').next().unwrap_or_default().to_owned(),
-                        genres: tv_info.genres,
-                        origin_country: tv_info.original_country,
-                        movie_files: Vec::new(),
-                        episode_files: HashMap::new(),
-                    })
-                    .episode_files
-                    .entry((
-                        file.metadata.season_number.unwrap_or_default(),
-                        file.metadata.episode_number.unwrap_or_default(),
-                    ))
-                    .or_insert_with(Vec::new)
-                    .push(file);
+                let season_number = match file.metadata.season_number {
+                    Some(s) => s,
+                    None => {
+                        if tv_info.number_of_seasons == 1 {
+                            1
+                        } else {
+                            // multi season, but no season number found in file metadata
+                            self.summary.skipped += 1;
+                            self.summary.unknown_files.push(file.raw.path.to_owned());
+                            return Ok(());
+                        }
+                    }
+                };
+                let episode_number = match file.metadata.episode_number {
+                    Some(e) => e,
+                    None => {
+                        // episode number not found in file metadata
+                        self.summary.skipped += 1;
+                        self.summary.unknown_files.push(file.raw.path.to_owned());
+                        return Ok(());
+                    }
+                };
+                let entry = grouped_files.entry(tv_info.id).or_insert_with(|| Media::Tv {
+                    detail: tv_info,
+                    files: HashMap::new(),
+                });
+                match entry {
+                    Media::Tv { files, .. } => {
+                        files
+                            .entry(season_number)
+                            .or_insert_with(HashMap::new)
+                            .entry(episode_number)
+                            .or_insert_with(Vec::new)
+                            .push(file);
+                    }
+                    _ => {}
+                }
             }
             None => {
                 self.summary.skipped += 1;
@@ -170,27 +194,23 @@ impl Importer {
     async fn group_movie_file<'a>(
         &mut self,
         file: &'a MediaFile,
-        grouped_files: &mut HashMap<String, GroupedMediaFiles<'a>>,
+        grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
         let movie_info = self
             .get_movie_info_from_tmdb(&file.metadata.titles, &file.metadata.year)
             .await?;
         match movie_info {
             Some(movie_info) => {
-                grouped_files
-                    .entry(movie_info.id.to_string())
-                    .or_insert_with(|| GroupedMediaFiles {
-                        is_tv: false,
-                        tmdb_id: movie_info.id.to_string(),
-                        title: movie_info.title.to_owned(),
-                        year: movie_info.release_date.split('-').next().unwrap_or_default().to_owned(),
-                        genres: movie_info.genres,
-                        origin_country: movie_info.origin_country,
-                        movie_files: Vec::new(),
-                        episode_files: HashMap::new(),
-                    })
-                    .movie_files
-                    .push(file);
+                let entry = grouped_files.entry(movie_info.id).or_insert_with(|| Media::Movie {
+                    detail: movie_info,
+                    files: Vec::new(),
+                });
+                match entry {
+                    Media::Movie { files, .. } => {
+                        files.push(file);
+                    }
+                    _ => {}
+                }
             }
             None => {
                 self.summary.skipped += 1;
@@ -201,7 +221,7 @@ impl Importer {
         Ok(())
     }
 
-    async fn list_files_in_share(&mut self, share_key: &str, share_password: &str) -> AppResult<Vec<MediaFile>> {
+    async fn list_files_from_share(&mut self, share_key: &str, share_password: &str) -> AppResult<Vec<MediaFile>> {
         let mut all_files = Vec::new();
         let mut stack = vec![(0, String::new())];
 
@@ -350,5 +370,33 @@ impl Importer {
             }
         }
         Ok(None)
+    }
+
+    fn get_tv_path_in_library(&self, tv: &tmdb::TvDetail) -> String {
+        format!(
+            "{}/{}/{}/{} ({}) {{tmdb-{}}}",
+            self.state.config.get_library_config().remote_path,
+            category::get_tv_category(&tv.genres),
+            category::get_subcategory(&tv.origin_country),
+            tv.name,
+            self.get_year_from_date(tv.first_air_date.as_str()),
+            tv.id
+        )
+    }
+
+    fn get_movie_path_in_library(&self, movie: &tmdb::MovieDetail) -> String {
+        format!(
+            "{}/{}/{}/{} ({}) {{tmdb-{}}}",
+            self.state.config.get_library_config().remote_path,
+            category::CATEGORY_MOVIE,
+            category::get_subcategory(&movie.origin_country),
+            movie.title,
+            self.get_year_from_date(movie.release_date.as_str()),
+            movie.id
+        )
+    }
+
+    fn get_year_from_date<'a>(&self, date: &'a str) -> &'a str {
+        date.split('-').nth(0).unwrap_or_default()
     }
 }

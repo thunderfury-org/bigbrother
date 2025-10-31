@@ -20,7 +20,6 @@ pub struct MovieDetail {
     pub genres: Vec<Genre>,
     pub original_language: String,
     pub original_title: String,
-    pub overview: String,
     pub origin_country: Vec<String>,
     pub release_date: String,
 }
@@ -56,7 +55,7 @@ pub struct TvDetail {
     pub first_air_date: String,
     pub number_of_episodes: u32,
     pub number_of_seasons: u32,
-    pub original_country: Vec<String>,
+    pub origin_country: Vec<String>,
     pub original_language: String,
     pub original_name: String,
     pub genres: Vec<Genre>,

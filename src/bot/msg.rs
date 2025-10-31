@@ -8,9 +8,10 @@ use teloxide::{
     sugar::request::RequestReplyExt,
     types::{Document, MessageEntity, MessageEntityKind},
 };
+use tracing::error;
 
 use crate::{
-    library::import::{self, ImportSummary},
+    library::{self, ImportSummary},
     state::AppState,
 };
 
@@ -92,12 +93,13 @@ impl MsgProcessor<'_> {
         let reply = format!("Received URL: {}", url);
         self.send_message(&reply).await?;
 
-        match import::import_from_share_url(self.state, url).await {
+        match library::import_from_share_url(self.state, url).await {
             Ok(summary) => {
                 let formatted: String = self.format_import_summary(&summary);
                 self.send_message(formatted).await?;
             }
             Err(e) => {
+                error!("import from share url {} failed: {}", url, e);
                 self.send_message(format!("导入失败: {}", e)).await?;
             }
         }
@@ -196,8 +198,8 @@ impl MsgProcessor<'_> {
             "📁 共 {} 个文件\n\
              ✅ 成功: {}个\n\
              ❌ 失败: {}个\n\
-             🔄 跳过重复文件: {}个\n\
-             📊 成功转存体积: {:.2} GB\n\
+             🔄 跳过文件: {}个\n\
+             📊 成功转存大小: {:.2} GB\n\
              📊 平均文件大小: {:.2} GB\n\
              ⏱️ 耗时: {:.2} 秒",
             summary.total,
