@@ -6,7 +6,7 @@ use teloxide::{
     net::Download,
     prelude::*,
     sugar::request::RequestReplyExt,
-    types::{Document, MessageEntity, MessageEntityKind, MessageId},
+    types::{Document, MessageEntity, MessageEntityKind},
 };
 
 use crate::{
@@ -42,7 +42,6 @@ pub(super) struct MsgProcessor<'a> {
     pub state: &'a AppState,
     pub bot: &'a Bot,
     pub msg: &'a Message,
-    pub matched_filter: Option<&'a str>,
 }
 
 impl MsgProcessor<'_> {
@@ -91,15 +90,15 @@ impl MsgProcessor<'_> {
 
     async fn handle_share_url(&self, url: &Url) -> ResponseResult<()> {
         let reply = format!("Received URL: {}", url);
-        let msg = self.send_message(&reply).await?;
+        self.send_message(&reply).await?;
 
         match import::import_from_share_url(self.state, url).await {
             Ok(summary) => {
                 let formatted: String = self.format_import_summary(&summary);
-                self.send_message_with_reply(formatted, msg.id).await?;
+                self.send_message(formatted).await?;
             }
             Err(e) => {
-                self.send_message_with_reply(format!("导入失败: {}", e), msg.id).await?;
+                self.send_message(format!("导入失败: {}", e)).await?;
             }
         }
 
@@ -181,10 +180,6 @@ impl MsgProcessor<'_> {
         }
     }
 
-    async fn send_message_with_reply<T: Into<String>>(&self, text: T, reply_to: MessageId) -> ResponseResult<Message> {
-        self.bot.send_message(self.get_chat_id(), text).reply_to(reply_to).await
-    }
-
     #[inline]
     fn get_chat_id(&self) -> ChatId {
         ChatId(self.state.config.get_telegram_config().user_id)
@@ -198,17 +193,13 @@ impl MsgProcessor<'_> {
             0.0
         };
         format!(
-            "{} {} ({}) 导入完成！\n\
-             📁 共 {} 个文件\n\
+            "📁 共 {} 个文件\n\
              ✅ 成功: {}个\n\
              ❌ 失败: {}个\n\
              🔄 跳过重复文件: {}个\n\
              📊 成功转存体积: {:.2} GB\n\
              📊 平均文件大小: {:.2} GB\n\
              ⏱️ 耗时: {:.2} 秒",
-            summary.catelog,
-            summary.title,
-            summary.year,
             summary.total,
             summary.success,
             summary.failed,

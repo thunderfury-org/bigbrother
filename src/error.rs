@@ -1,5 +1,7 @@
 use std::io;
 
+use crate::client::RequestError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("not found, message: {0}")]
@@ -20,5 +22,11 @@ impl From<io::Error> for AppError {
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
         Self::Error(format!("deserialize json error, {e}"))
+    }
+}
+
+impl From<RequestError> for AppError {
+    fn from(e: RequestError) -> Self {
+        Self::Error(format!("request error, {e}"))
     }
 }

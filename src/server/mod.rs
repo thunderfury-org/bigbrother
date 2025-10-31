@@ -10,20 +10,13 @@ use tracing::{Level, info};
 
 use crate::state::AppState;
 
-mod file;
+mod media;
 
 pub async fn run(state: AppState) {
-    let host = state
-        .config
-        .get_file_server_config()
-        .host
-        .as_ref()
-        .map_or_else(|| "0.0.0.0", |h| h.as_str());
-    let port = state.config.get_file_server_config().port.unwrap_or(3100);
+    let addr = state.config.get_media_server_config().get_addr();
+    info!("Starting media server at {}", addr);
 
-    info!("Starting file server at http://{}:{}", host, port);
-
-    let app = file::new_router(state.clone()).layer(
+    let app = media::new_router(state.clone()).layer(
         TraceLayer::new_for_http()
             .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
             .on_response(
@@ -33,12 +26,12 @@ pub async fn run(state: AppState) {
             ),
     );
 
-    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
-    info!("File server has shutdown gracefully.");
+    info!("Media server has shutdown gracefully.");
 }
 
 async fn shutdown_signal() {

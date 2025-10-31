@@ -7,7 +7,7 @@ use super::error::AppError;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 struct AppConfig {
-    pub file_server: FileServerConfig,
+    pub media_server: MediaServerConfig,
     pub pan123: Pan123Config,
     pub tmdb: TmdbConfig,
     pub telegram: TelegramConfig,
@@ -15,9 +15,10 @@ struct AppConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct FileServerConfig {
+pub struct MediaServerConfig {
     pub host: Option<String>,
     pub port: Option<u16>,
+    pub advertise_base_url: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -67,8 +68,8 @@ impl Manager {
         format!("{}/db", self.data_dir.as_str())
     }
 
-    pub fn get_file_server_config(&self) -> &FileServerConfig {
-        &self.app_config.file_server
+    pub fn get_media_server_config(&self) -> &MediaServerConfig {
+        &self.app_config.media_server
     }
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
@@ -113,5 +114,27 @@ impl TryFrom<&str> for Manager {
             }
             Err(e) => Err(AppError::Error(format!("parse config file error, {}", e))),
         }
+    }
+}
+
+impl MediaServerConfig {
+    #[inline]
+    fn get_host(&self) -> &str {
+        self.host.as_deref().unwrap_or("0.0.0.0")
+    }
+
+    #[inline]
+    fn get_port(&self) -> u16 {
+        self.port.unwrap_or(3100)
+    }
+
+    pub fn get_addr(&self) -> String {
+        format!("{}:{}", self.get_host(), self.get_port())
+    }
+
+    pub fn get_advertise_base_url(&self) -> String {
+        self.advertise_base_url
+            .as_ref()
+            .map_or_else(|| format!("http://{}", self.get_addr()), |u| u.to_owned())
     }
 }

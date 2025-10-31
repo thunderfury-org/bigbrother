@@ -4,14 +4,14 @@ use super::{RequestError, RequestResult};
 
 const TMDB_HOST: &str = "https://api.themoviedb.org/3";
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct Genre {
     pub id: u32,
     pub name: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct MovieDetail {
     pub id: u32,
@@ -38,7 +38,7 @@ struct SearchMovieResponse {
     pub results: Vec<SearchMovieResult>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct Season {
     pub id: u32,
@@ -48,7 +48,7 @@ pub struct Season {
     pub season_number: u32,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct TvDetail {
     pub id: u32,
@@ -73,6 +73,7 @@ pub struct SearchTvResult {
     pub id: u32,
     pub name: String,
     pub first_air_date: String,
+    pub original_name: String,
 }
 
 pub struct Client {
