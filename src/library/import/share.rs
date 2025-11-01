@@ -8,7 +8,7 @@ impl Importer {
     pub async fn import_from_share_url(&mut self, url: &Url) -> AppResult<ImportSummary> {
         let share_key = url
             .path_segments()
-            .map(|s| s.last().unwrap_or_default())
+            .map(|mut s| s.next_back().unwrap_or_default())
             .unwrap_or_default();
         let share_password = url
             .query_pairs()

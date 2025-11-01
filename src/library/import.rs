@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 
-use tracing::info;
-
 use super::category;
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
-    error::AppResult,
     media::Metadata,
     state::AppState,
 };

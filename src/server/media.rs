@@ -26,7 +26,7 @@ async fn redirect(
     }
 
     match file_id.unwrap().parse::<i64>() {
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
         Ok(id) => match state.pan123.get_download_url(id).await {
             Ok(url) => {
                 if url.is_empty() {
@@ -39,15 +39,15 @@ async fn redirect(
             Err(e) => match e {
                 RequestError::Unauthorized => {
                     error!("Unauthorized to get download url of file {}, id: {}", path, id);
-                    return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+                    (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
                 }
                 RequestError::NotFound(_) => {
                     error!("File {} not found, id: {}", path, id);
-                    return (StatusCode::NOT_FOUND, "File not found").into_response();
+                    (StatusCode::NOT_FOUND, "File not found").into_response()
                 }
                 _ => {
                     error!("Failed to get download url of file {}, id: {}, {}", path, id, e);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response()
                 }
             },
         },

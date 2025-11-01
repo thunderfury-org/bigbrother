@@ -106,12 +106,10 @@ impl TryFrom<&str> for Manager {
         }
 
         match serde_yaml::from_str(std::fs::read_to_string(config_file.as_str())?.as_str()) {
-            Ok(config) => {
-                return Ok(Self {
-                    data_dir: Arc::new(data_dir.to_string()),
-                    app_config: Arc::new(config),
-                });
-            }
+            Ok(config) => Ok(Self {
+                data_dir: Arc::new(data_dir.to_string()),
+                app_config: Arc::new(config),
+            }),
             Err(e) => Err(AppError::Error(format!("parse config file error, {}", e))),
         }
     }

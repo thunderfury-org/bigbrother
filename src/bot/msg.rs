@@ -142,25 +142,21 @@ impl MsgProcessor<'_> {
         }
 
         for cap in URL_RE.captures_iter(text) {
-            if let Some(matched_url) = cap.get(0) {
-                if let Ok(url) = Url::parse(matched_url.as_str()) {
-                    if self.is_valid_url(&url) {
-                        urls.push(url);
-                    }
-                }
+            if let Some(matched_url) = cap.get(0)
+                && let Ok(url) = Url::parse(matched_url.as_str())
+                && self.is_valid_url(&url)
+            {
+                urls.push(url);
             }
         }
     }
 
     fn extract_urls_from_entities(&self, entities: &[MessageEntity], urls: &mut Vec<Url>) {
         for entity in entities {
-            match &entity.kind {
-                MessageEntityKind::TextLink { url } => {
-                    if self.is_valid_url(url) {
-                        urls.push(url.clone());
-                    }
-                }
-                _ => {}
+            if let MessageEntityKind::TextLink { url } = &entity.kind
+                && self.is_valid_url(url)
+            {
+                urls.push(url.clone());
             }
         }
     }

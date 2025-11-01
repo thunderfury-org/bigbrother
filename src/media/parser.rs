@@ -131,9 +131,7 @@ impl MetadataParser {
     }
 
     fn update_title_index_end(&mut self, index: usize) {
-        if self.title_index_end.is_none() {
-            self.title_index_end = Some(index);
-        } else if index < self.title_index_end.unwrap() {
+        if self.title_index_end.is_none() || index < self.title_index_end.unwrap() {
             self.title_index_end = Some(index);
         }
     }
@@ -146,16 +144,16 @@ impl MetadataParser {
     }
 
     fn parse_value_from_name(&mut self, re: &Regex, normalizer: Option<fn(&str) -> String>) -> String {
-        if let Some(caps) = re.captures_iter(&self.name).last() {
-            if let Some(value_match) = caps.name("value") {
-                let mut value = value_match.as_str().to_owned();
-                self.update_name_and_index(caps.get_match().range());
-                if let Some(norm) = normalizer {
-                    value = norm(&value);
-                }
-
-                return value;
+        if let Some(caps) = re.captures_iter(&self.name).last()
+            && let Some(value_match) = caps.name("value")
+        {
+            let mut value = value_match.as_str().to_owned();
+            self.update_name_and_index(caps.get_match().range());
+            if let Some(norm) = normalizer {
+                value = norm(&value);
             }
+
+            return value;
         }
         String::new()
     }
@@ -207,31 +205,31 @@ impl MetadataParser {
     }
 
     fn parse_year(&mut self) {
-        if let Some(caps) = YEAR_RE.captures_iter(&self.name).last() {
-            if let Some(year_match) = caps.name("year") {
-                if !caps.get_match().as_str().ends_with(')') {
-                    // matched .year. but maybe it's part of the title, e.g. "Movie.Title.2020.2021"
-                    // try to match another year
-                    let new_name = &self.name[year_match.end() - 1..];
-                    if let Some(caps2) = YEAR_RE.captures_iter(new_name).last() {
-                        if let Some(year_match2) = caps2.name("year") {
-                            self.info.year = year_match2.as_str().to_owned();
-                            self.year_index_start = Some(year_match.end() - 1 + caps2.get_match().start());
-                            self.update_name_and_index(Range {
-                                start: year_match.end() - 1 + caps2.get_match().start(),
-                                end: year_match.end() - 1 + caps2.get_match().end(),
-                            });
-                            return;
-                        }
-                    }
-
-                    // not matched, keep the original match
+        if let Some(caps) = YEAR_RE.captures_iter(&self.name).last()
+            && let Some(year_match) = caps.name("year")
+        {
+            if !caps.get_match().as_str().ends_with(')') {
+                // matched .year. but maybe it's part of the title, e.g. "Movie.Title.2020.2021"
+                // try to match another year
+                let new_name = &self.name[year_match.end() - 1..];
+                if let Some(caps2) = YEAR_RE.captures_iter(new_name).last()
+                    && let Some(year_match2) = caps2.name("year")
+                {
+                    self.info.year = year_match2.as_str().to_owned();
+                    self.year_index_start = Some(year_match.end() - 1 + caps2.get_match().start());
+                    self.update_name_and_index(Range {
+                        start: year_match.end() - 1 + caps2.get_match().start(),
+                        end: year_match.end() - 1 + caps2.get_match().end(),
+                    });
+                    return;
                 }
 
-                self.info.year = year_match.as_str().to_owned();
-                self.year_index_start = Some(caps.get_match().start());
-                self.update_name_and_index(caps.get_match().range());
+                // not matched, keep the original match
             }
+
+            self.info.year = year_match.as_str().to_owned();
+            self.year_index_start = Some(caps.get_match().start());
+            self.update_name_and_index(caps.get_match().range());
         }
     }
 
@@ -363,13 +361,13 @@ impl MetadataParser {
             return;
         }
 
-        if let Some(caps) = RELEASE_GROUP_RE.captures_iter(&self.other).last() {
-            if let Some(val_match) = caps.name("value") {
-                let value = val_match.as_str().trim();
-                if value.contains('-') {
-                    self.info.release_group = value.to_owned();
-                    return;
-                }
+        if let Some(caps) = RELEASE_GROUP_RE.captures_iter(&self.other).last()
+            && let Some(val_match) = caps.name("value")
+        {
+            let value = val_match.as_str().trim();
+            if value.contains('-') {
+                self.info.release_group = value.to_owned();
+                return;
             }
         }
 

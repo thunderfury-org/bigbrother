@@ -399,11 +399,11 @@ impl Client {
         // --- 第一次检查（无锁）---
         {
             let token_guard = self.token.read().await;
-            if let Some(t) = token_guard.as_ref() {
-                if !self.is_expired(t) {
-                    // 缓存有效，快速返回（并发读）
-                    return Ok(t.token.to_owned());
-                }
+            if let Some(t) = token_guard.as_ref()
+                && !self.is_expired(t)
+            {
+                // 缓存有效，快速返回（并发读）
+                return Ok(t.token.to_owned());
             }
             // 读锁在此作用域结束时自动释放
             // 没有缓存或者缓存过期，需要刷新
@@ -424,12 +424,12 @@ impl Client {
             None => {
                 // 没有缓存，尝试从缓存文件读取
                 let token = self.read_token_from_cache_file()?;
-                if let Some(t) = token {
-                    if !self.is_expired(&t) {
-                        // 缓存文件中的token有效，快速返回（并发读）
-                        *token_guard = Some(t.clone());
-                        return Ok(t.token.to_owned());
-                    }
+                if let Some(t) = token
+                    && !self.is_expired(&t)
+                {
+                    // 缓存文件中的token有效，快速返回（并发读）
+                    *token_guard = Some(t.clone());
+                    return Ok(t.token.to_owned());
                 }
 
                 // 缓存文件不存在或者过期，需要刷新
@@ -461,19 +461,15 @@ impl Client {
         match fs::read_to_string(&path) {
             Ok(c) => match serde_json::from_str(&c) {
                 Ok(t) => Ok(Some(t)),
-                Err(e) => {
-                    return Err(RequestError::Error(format!(
-                        "deserialize token cache file [{}] failed, {}",
-                        path, e
-                    )));
-                }
-            },
-            Err(e) => {
-                return Err(RequestError::Error(format!(
-                    "read token cache file [{}] failed, {}",
+                Err(e) => Err(RequestError::Error(format!(
+                    "deserialize token cache file [{}] failed, {}",
                     path, e
-                )));
-            }
+                ))),
+            },
+            Err(e) => Err(RequestError::Error(format!(
+                "read token cache file [{}] failed, {}",
+                path, e
+            ))),
         }
     }
 
@@ -491,16 +487,12 @@ impl Client {
         match serde_json::to_string(token) {
             Ok(c) => match fs::write(&path, c) {
                 Ok(_) => Ok(()),
-                Err(e) => {
-                    return Err(RequestError::Error(format!(
-                        "write token to cache file [{}] failed, {}",
-                        path, e
-                    )));
-                }
+                Err(e) => Err(RequestError::Error(format!(
+                    "write token to cache file [{}] failed, {}",
+                    path, e
+                ))),
             },
-            Err(e) => {
-                return Err(RequestError::Error(format!("serialize token failed, {}", e)));
-            }
+            Err(e) => Err(RequestError::Error(format!("serialize token failed, {}", e))),
         }
     }
 

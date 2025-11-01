@@ -56,16 +56,13 @@ impl Importer {
                     detail: tv_info,
                     files: HashMap::new(),
                 });
-                match entry {
-                    Media::Tv { files, .. } => {
-                        files
-                            .entry(season_number)
-                            .or_insert_with(HashMap::new)
-                            .entry(episode_number)
-                            .or_insert_with(Vec::new)
-                            .push(file);
-                    }
-                    _ => {}
+                if let Media::Tv { files, .. } = entry {
+                    files
+                        .entry(season_number)
+                        .or_insert_with(HashMap::new)
+                        .entry(episode_number)
+                        .or_insert_with(Vec::new)
+                        .push(file);
                 }
             }
             None => {
@@ -91,11 +88,8 @@ impl Importer {
                     detail: movie_info,
                     files: Vec::new(),
                 });
-                match entry {
-                    Media::Movie { files, .. } => {
-                        files.push(file);
-                    }
-                    _ => {}
+                if let Media::Movie { files, .. } = entry {
+                    files.push(file);
                 }
             }
             None => {
