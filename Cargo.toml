@@ -7,16 +7,14 @@ edition = "2024"
 lto = true
 codegen-units = 1
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(test)'] }
-
 [dependencies]
+axum = "0.8"
+tower = "0"
+tower-http = { version = "0.6", features = ["trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0"
-
-tokio = { version = "1.0", features = ["full"] }
-
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
@@ -25,10 +23,8 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 tracing-appender = "0.2"
 backtrace = "0.3"
-
 clap = { version = "4.5", features = ["derive"] }
-time = { version = "0.3" }
-
+time = { version = "0.3", features = ["serde"] }
 reqwest = { version = "0.12", features = [
   "rustls-tls",
   "json",
@@ -36,11 +32,15 @@ reqwest = { version = "0.12", features = [
   "deflate",
 ], default-features = false }
 thiserror = "2"
-
 regex = "1"
 lingua = { version = "1.7.2", default-features = false, features = [
   "english",
   "chinese",
   "japanese",
 ] }
-unicode-segmentation = "1.12"
+teloxide = { version = "0.17.0", default-features = false, features = [
+  "ctrlc_handler",
+  "rustls",
+  "macros",
+] }
+futures = "0.3"
