@@ -111,7 +111,7 @@ impl Client {
     pub async fn get_movie_detail(&self, id: u32) -> RequestResult<Option<MovieDetail>> {
         match self.get(&format!("/movie/{}", id), None).await {
             Ok(detail) => Ok(Some(detail)),
-            Err(RequestError::NotFound) => Ok(None),
+            Err(RequestError::NotFound(_)) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -128,7 +128,7 @@ impl Client {
     pub async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
         match self.get(&format!("/tv/{}", id), None).await {
             Ok(detail) => Ok(Some(detail)),
-            Err(RequestError::NotFound) => Ok(None),
+            Err(RequestError::NotFound(_)) => Ok(None),
             Err(e) => Err(e),
         }
     }

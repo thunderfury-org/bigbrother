@@ -36,20 +36,19 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         }
     }
 
-    if let Some(doc) = msg.document() {
-        if let Some(text) = doc.file_name.as_ref() {
-            if text.ends_with(".json") {
-                for keyword in KEYWORDS {
-                    if text.contains(keyword) {
-                        let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
-                        let processor = msg::MsgProcessor {
-                            state: &state,
-                            bot: &bot,
-                            msg: &m,
-                        };
-                        return processor.process().await;
-                    }
-                }
+    if let Some(doc) = msg.document()
+        && let Some(text) = doc.file_name.as_ref()
+        && text.ends_with(".json")
+    {
+        for keyword in KEYWORDS {
+            if text.contains(keyword) {
+                let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
+                let processor = msg::MsgProcessor {
+                    state: &state,
+                    bot: &bot,
+                    msg: &m,
+                };
+                return processor.process().await;
             }
         }
     }

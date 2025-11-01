@@ -11,8 +11,8 @@ pub enum RequestError {
     #[error("unauthorized")]
     Unauthorized,
 
-    #[error("not found")]
-    NotFound,
+    #[error("not found, {0}")]
+    NotFound(String),
 
     #[error("too many requests")]
     TooManyRequests,
@@ -25,7 +25,7 @@ pub type RequestResult<T> = std::result::Result<T, RequestError>;
 
 impl From<reqwest::Error> for RequestError {
     fn from(e: reqwest::Error) -> Self {
-        let url = e.url().map(|u| u.to_string()).unwrap_or_else(|| "".to_string());
+        let url = e.url().map(|u| u.to_string()).unwrap_or_default();
         Self::Error(format!("http request to {url} error: {e}"))
     }
 }
