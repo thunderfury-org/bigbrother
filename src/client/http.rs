@@ -76,7 +76,7 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
 
     match status {
         StatusCode::UNAUTHORIZED => Err(RequestError::Unauthorized),
-        StatusCode::NOT_FOUND => Err(RequestError::NotFound),
+        StatusCode::NOT_FOUND => Err(RequestError::NotFound("resource not found".to_owned())),
         _ => Err(RequestError::Error(format!(
             "http request to {url} failed, status: {status}, payload: {payload}",
         ))),

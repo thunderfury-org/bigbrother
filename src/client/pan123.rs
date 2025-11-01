@@ -75,6 +75,12 @@ struct FastUploadResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct MkdirResponse {
+    #[serde(rename = "dirID")]
+    dir_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct FileDetail {
     #[serde(rename = "fileId")]
     pub file_id: i64,
@@ -116,6 +122,15 @@ impl Client {
         }
     }
 
+    pub async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
+        self.get::<HashMap<String, String>>(
+            self.build_open_api_url("/api/v1/file/download_info"),
+            Some(vec![("fileId", file_id.to_string().as_str())]),
+        )
+        .await
+        .map(|r| r.get("downloadUrl").map_or_else(|| "".to_owned(), |s| s.to_owned()))
+    }
+
     pub async fn list(&self, file_id: i64) -> RequestResult<Vec<File>> {
         let parent_file_id = file_id.to_string();
         self.get::<FileListResponse>(
@@ -140,6 +155,16 @@ impl Client {
         )
         .await
         .map(|r| r.info_list)
+    }
+
+    pub async fn list_dir_ids(&self, file_id: i64) -> RequestResult<HashMap<String, i64>> {
+        let files = self.list(file_id).await?;
+        let dir_ids = files
+            .into_iter()
+            .filter(|f| f.is_dir())
+            .map(|f| (f.file_name.clone(), f.file_id))
+            .collect::<HashMap<_, _>>();
+        Ok(dir_ids)
     }
 
     pub async fn search(&self, file_name: &str) -> RequestResult<Vec<File>> {
@@ -186,6 +211,54 @@ impl Client {
         .map(|r| r.file_id)
     }
 
+    pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
+        self.post::<_, MkdirResponse>(
+            self.build_open_api_url("/upload/v1/file/mkdir"),
+            None,
+            Some(&json!(
+                {
+                    "parentID": parent_file_id,
+                    "name": folder_name,
+                }
+            )),
+        )
+        .await
+        .map(|r| r.dir_id)
+    }
+
+    pub async fn mkdir_by_path(&self, folder_path: &str) -> RequestResult<i64> {
+        if folder_path.is_empty() || folder_path == "/" {
+            return Ok(0);
+        }
+
+        let parts = folder_path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        let mut current_file_id = 0;
+        for part in parts {
+            match self.mkdir(current_file_id, part).await {
+                Ok(dir_id) => current_file_id = dir_id,
+                Err(e) => match e {
+                    RequestError::AlreadyExists => {
+                        current_file_id = self.get_dir_id(current_file_id, part).await?;
+                    }
+                    _ => return Err(e),
+                },
+            }
+        }
+        Ok(current_file_id)
+    }
+
+    async fn get_dir_id(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
+        self.list(parent_file_id)
+            .await?
+            .into_iter()
+            .find(|f| f.is_dir() && f.file_name == folder_name)
+            .map(|f| f.file_id)
+            .ok_or(RequestError::NotFound(format!(
+                "folder {} not found in parent {}",
+                folder_name, parent_file_id
+            )))
+    }
+
     pub async fn list_share_file(
         &self,
         share_key: &str,
@@ -217,12 +290,10 @@ impl Client {
         }
 
         let parts = path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
-        println!("{:#?}", parts);
         let last_part = parts.last().unwrap();
         let search_results = self.search(last_part).await?;
 
         for search_result in &search_results {
-            println!("{:#?}", search_result);
             if search_result.file_name != *last_part {
                 continue;
             }
@@ -232,24 +303,25 @@ impl Client {
                 .split('/')
                 .filter_map(|s| s.parse::<i64>().ok())
                 .collect::<Vec<_>>();
-            println!("{:#?}", file_ids);
             if file_ids.len() != parts.len() {
                 continue;
             }
 
             let files = self.mutli_get(&file_ids).await?;
-            println!("{:#?}", files);
-
             if files.len() != file_ids.len() {
                 continue;
             }
 
+            let mut all_match = true;
             for i in 0..file_ids.len() {
                 if files.get(&file_ids[i]).unwrap().file_name != parts[i] {
-                    continue;
+                    all_match = false;
+                    break;
                 }
             }
-            return Ok(Some(search_result.file_id));
+            if all_match {
+                return Ok(Some(search_result.file_id));
+            }
         }
         Ok(None)
     }
@@ -301,7 +373,7 @@ impl Client {
         match resp.code {
             0 => match resp.data {
                 Some(d) => Ok(d),
-                None => Err(RequestError::NotFound),
+                None => Err(RequestError::NotFound(resp.message)),
             },
             1 => Err(RequestError::AlreadyExists),
             401 => Err(RequestError::Unauthorized),

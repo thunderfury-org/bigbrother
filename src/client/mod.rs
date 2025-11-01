@@ -11,8 +11,8 @@ pub enum RequestError {
     #[error("unauthorized")]
     Unauthorized,
 
-    #[error("not found")]
-    NotFound,
+    #[error("not found, {0}")]
+    NotFound(String),
 
     #[error("too many requests")]
     TooManyRequests,

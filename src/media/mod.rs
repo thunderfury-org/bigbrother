@@ -82,3 +82,17 @@ impl From<&str> for Metadata {
         parser::parse(value)
     }
 }
+
+impl Metadata {
+    pub fn is_subtitle(&self) -> bool {
+        self.file_type == FILE_TYPE_SUBTITLE
+    }
+
+    pub fn is_video(&self) -> bool {
+        self.file_type == FILE_TYPE_VIDEO
+    }
+
+    pub fn unknown_type(&self) -> bool {
+        self.file_type.is_empty()
+    }
+}
