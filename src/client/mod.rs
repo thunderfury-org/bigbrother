@@ -1,4 +1,5 @@
 pub mod pan123;
+pub mod pan189;
 pub mod tmdb;
 
 mod http;

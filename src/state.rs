@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    client::{pan123, tmdb},
+    client::{pan123, pan189, tmdb},
     config,
     error::AppError,
 };
@@ -10,6 +10,7 @@ use crate::{
 pub struct AppState {
     pub config: config::Manager,
     pub pan123: Arc<pan123::Client>,
+    pub pan189: Arc<pan189::Client>,
     pub tmdb: Arc<tmdb::Client>,
 }
 
@@ -24,6 +25,7 @@ impl TryFrom<&str> for AppState {
                 &config.get_pan123_config().client_secret,
                 &format!("{}/pan123", config.get_cache_dir()),
             )),
+            pan189: Arc::new(pan189::Client::new()),
             tmdb: Arc::new(tmdb::Client::new(&config.get_tmdb_config().api_key)),
             config,
         })

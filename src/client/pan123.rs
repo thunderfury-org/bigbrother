@@ -4,15 +4,12 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use tokio::sync::RwLock;
 
-use super::{RequestError, RequestResult};
+use super::{RequestError, RequestResult, http};
 
 const API_BASE: &str = "https://www.123pan.com/b";
 const OPEN_API_BASE: &str = "https://open-api.123pan.com";
 const PLATFORM_KEY: &str = "Platform";
 const PLATFORM_VALUE: &str = "open_platform";
-const UA_KEY: &str = "User-Agent";
-const UA_VALUE: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
-const AUTH_KEY: &str = "Authorization";
 
 const TOKEN_CACHE_FILE: &str = "token.json";
 
@@ -208,7 +205,7 @@ impl Client {
             )),
         )
         .await
-        .map(|r| r.file_id)
+        .map(|r| if r.reuse { r.file_id } else { None })
     }
 
     pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
@@ -259,7 +256,7 @@ impl Client {
             )))
     }
 
-    pub async fn list_share_file(
+    pub async fn list_share_files(
         &self,
         share_key: &str,
         share_password: &str,
@@ -277,10 +274,8 @@ impl Client {
             ("parentFileId", file_id_str.as_str()),
             ("event", "homeListFile"),
         ]);
-        let headers = Some(vec![(UA_KEY, UA_VALUE)]);
-
         let response: CommonResponse<FileListResponse> =
-            super::http::get(self.build_api_url("/api/share/get"), query, headers).await?;
+            http::get(self.build_api_url("/api/share/get"), query, None).await?;
         self.process_response(response).map(|r| r.info_list)
     }
 
@@ -342,13 +337,8 @@ impl Client {
 
     async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
-        let headers = Some(vec![
-            (PLATFORM_KEY, PLATFORM_VALUE),
-            (UA_KEY, UA_VALUE),
-            (AUTH_KEY, token.as_str()),
-        ]);
-
-        let response: CommonResponse<T> = super::http::get(url, query, headers).await?;
+        let headers = Some(vec![(PLATFORM_KEY, PLATFORM_VALUE), (http::AUTH_KEY, token.as_str())]);
+        let response: CommonResponse<T> = http::get(url, query, headers).await?;
         self.process_response(response)
     }
 
@@ -359,13 +349,8 @@ impl Client {
         payload: Option<&P>,
     ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
-        let headers = Some(vec![
-            (PLATFORM_KEY, PLATFORM_VALUE),
-            (UA_KEY, UA_VALUE),
-            (AUTH_KEY, token.as_str()),
-        ]);
-
-        let response: CommonResponse<T> = super::http::post(url.as_str(), query, headers, payload).await?;
+        let headers = Some(vec![(PLATFORM_KEY, PLATFORM_VALUE), (http::AUTH_KEY, token.as_str())]);
+        let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
         self.process_response(response)
     }
 
@@ -501,10 +486,10 @@ impl Client {
     }
 
     async fn get_access_token(&self) -> RequestResult<AccessToken> {
-        let response: CommonResponse<AccessToken> = super::http::post(
+        let response: CommonResponse<AccessToken> = http::post(
             self.build_open_api_url("/api/v1/access_token"),
             None,
-            Some(vec![(PLATFORM_KEY, PLATFORM_VALUE), (UA_KEY, UA_VALUE)]),
+            Some(vec![(PLATFORM_KEY, PLATFORM_VALUE)]),
             Some(&json!({
                 "clientID": self.client_id,
                 "clientSecret": self.client_secret,
