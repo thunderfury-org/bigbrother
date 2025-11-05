@@ -54,11 +54,11 @@ impl MsgProcessor<'_> {
         let mut processed_urls = HashSet::new();
         let urls = self.extract_urls();
         for url in &urls {
-            if let Some(share_url) = ShareUrl::from(url) {
-                if processed_urls.insert(share_url.get_url().to_string()) {
-                    // 避免重复处理相同的 URL
-                    self.handle_share_url(&share_url).await?;
-                }
+            if let Some(share_url) = ShareUrl::from(url)
+                && processed_urls.insert(share_url.get_url().to_string())
+            {
+                // 避免重复处理相同的 URL
+                self.handle_share_url(&share_url).await?;
             }
         }
 
@@ -145,11 +145,8 @@ impl MsgProcessor<'_> {
         if let Some(reply_markup) = self.msg.reply_markup() {
             for buttons in &reply_markup.inline_keyboard {
                 for button in buttons {
-                    match &button.kind {
-                        InlineKeyboardButtonKind::Url(url) => {
-                            urls.push(url.clone());
-                        }
-                        _ => {}
+                    if let InlineKeyboardButtonKind::Url(url) = &button.kind {
+                        urls.push(url.clone());
                     }
                 }
             }

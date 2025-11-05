@@ -14,8 +14,3 @@ pub async fn import_from_fslink(state: &AppState, fslink: &str) -> AppResult<Imp
     // Placeholder implementation
     Ok(ImportSummary::default())
 }
-
-pub async fn import_from_remote_dir(state: &AppState, dir: &str) -> AppResult<ImportSummary> {
-    // Placeholder implementation
-    Ok(ImportSummary::default())
-}

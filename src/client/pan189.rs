@@ -144,30 +144,3 @@ impl Client {
         format!("{API_URL}{path}")
     }
 }
-
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_share_info() {
-        let client = Client::new();
-        let info = client.get_share_info("B7b2i26bIj6r").await.unwrap();
-        println!("{:#?}", info);
-
-        let (folder_list, file_list) = client
-            .list_share_files(info.share_id, info.share_mode, &info.file_id)
-            .await
-            .unwrap();
-        println!("{:#?}", folder_list);
-        println!("{:#?}", file_list);
-
-        for folder in folder_list {
-            let (sub_folder_list, sub_file_list) = client
-                .list_share_files(info.share_id, info.share_mode, &folder.id)
-                .await
-                .unwrap();
-            println!("{:#?}", sub_folder_list);
-            println!("{:#?}", sub_file_list);
-        }
-    }
-}
