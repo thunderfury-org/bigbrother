@@ -7,8 +7,9 @@ use time::{
         iso8601::{Config, EncodedConfig, TimePrecision},
     },
 };
-use tracing::{error, level_filters::LevelFilter, warn};
-use tracing_subscriber::fmt::{MakeWriter, time::OffsetTime};
+use tracing::{error, level_filters::LevelFilter};
+use tracing_appender::rolling::Rotation;
+use tracing_subscriber::fmt::time::OffsetTime;
 
 const MAX_LEVEL: LevelFilter = LevelFilter::INFO;
 const CONFIG: EncodedConfig = Config::DEFAULT
@@ -17,16 +18,17 @@ const CONFIG: EncodedConfig = Config::DEFAULT
     })
     .encode();
 
-pub fn init<W>(writer: W)
-where
-    W: for<'writer> MakeWriter<'writer> + Sync + Send + 'static,
-{
+pub fn init(log_dir: &str) {
+    let writer = tracing_appender::rolling::Builder::new()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("bigbrother")
+        .filename_suffix("log")
+        .build(log_dir)
+        .expect("Failed to initialize rolling file appender");
+
     let offset = match UtcOffset::current_local_offset() {
         Ok(o) => o,
-        Err(e) => {
-            warn!("can not get local offset, use UTC instead, {}", e);
-            UtcOffset::UTC
-        }
+        Err(_) => UtcOffset::UTC,
     };
 
     tracing_subscriber::fmt()

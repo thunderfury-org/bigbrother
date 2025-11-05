@@ -27,8 +27,7 @@ async fn main() {
 }
 
 async fn run_server(data_dir: &str) {
-    logger::init(std::io::stdout);
     let state = AppState::try_from(data_dir).expect("Failed to initialize application state");
-
+    logger::init(state.config.get_log_dir().as_str());
     tokio::join!(server::run(state.clone()), bot::run(state.clone()));
 }

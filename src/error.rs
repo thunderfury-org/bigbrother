@@ -4,9 +4,6 @@ use crate::client::RequestError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("not found, message: {0}")]
-    NotFound(String),
-
     #[error("{0}")]
     Error(String),
 }
