@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{collections::HashSet, sync::LazyLock};
 
 use reqwest::Url;
 use serde::Deserialize;
@@ -6,12 +6,12 @@ use teloxide::{
     net::Download,
     prelude::*,
     sugar::request::RequestReplyExt,
-    types::{Document, MessageEntity, MessageEntityKind},
+    types::{Document, InlineKeyboardButtonKind, MessageEntityKind},
 };
 use tracing::error;
 
 use crate::{
-    library::{self, ImportSummary},
+    library::{self, ImportSummary, ShareUrl},
     state::AppState,
 };
 
@@ -51,9 +51,15 @@ impl MsgProcessor<'_> {
             return self.handle_document(doc).await;
         }
 
+        let mut processed_urls = HashSet::new();
         let urls = self.extract_urls();
-        if let Some(url) = urls.first() {
-            return self.handle_share_url(url).await;
+        for url in &urls {
+            if let Some(share_url) = ShareUrl::from(url) {
+                if processed_urls.insert(share_url.get_url().to_string()) {
+                    // 避免重复处理相同的 URL
+                    self.handle_share_url(&share_url).await?;
+                }
+            }
         }
 
         let fslinks = self.extract_fslink();
@@ -89,8 +95,8 @@ impl MsgProcessor<'_> {
         Ok(())
     }
 
-    async fn handle_share_url(&self, url: &Url) -> ResponseResult<()> {
-        let reply = format!("Received URL: {}", url);
+    async fn handle_share_url(&self, url: &ShareUrl<'_>) -> ResponseResult<()> {
+        let reply = format!("Received URL: {}", url.get_url());
         self.send_message(&reply).await?;
 
         match library::import_from_share_url(self.state, url).await {
@@ -99,7 +105,7 @@ impl MsgProcessor<'_> {
                 self.send_message(formatted).await?;
             }
             Err(e) => {
-                error!("import from share url {} failed: {}", url, e);
+                error!("import from share url {} failed: {}", url.get_url(), e);
                 self.send_message(format!("导入失败: {}", e)).await?;
             }
         }
@@ -128,9 +134,25 @@ impl MsgProcessor<'_> {
         let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
         self.extract_urls_from_text(text, &mut urls);
 
-        // Check caption entities
         if let Some(entities) = self.msg.caption_entities() {
-            self.extract_urls_from_entities(entities, &mut urls);
+            for entity in entities {
+                if let MessageEntityKind::TextLink { url } = &entity.kind {
+                    urls.push(url.clone());
+                }
+            }
+        }
+
+        if let Some(reply_markup) = self.msg.reply_markup() {
+            for buttons in &reply_markup.inline_keyboard {
+                for button in buttons {
+                    match &button.kind {
+                        InlineKeyboardButtonKind::Url(url) => {
+                            urls.push(url.clone());
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
 
         urls
@@ -144,27 +166,10 @@ impl MsgProcessor<'_> {
         for cap in URL_RE.captures_iter(text) {
             if let Some(matched_url) = cap.get(0)
                 && let Ok(url) = Url::parse(matched_url.as_str())
-                && self.is_valid_url(&url)
             {
                 urls.push(url);
             }
         }
-    }
-
-    fn extract_urls_from_entities(&self, entities: &[MessageEntity], urls: &mut Vec<Url>) {
-        for entity in entities {
-            if let MessageEntityKind::TextLink { url } = &entity.kind
-                && self.is_valid_url(url)
-            {
-                urls.push(url.clone());
-            }
-        }
-    }
-
-    fn is_valid_url(&self, url: &Url) -> bool {
-        url.host_str()
-            .is_some_and(|h| h.starts_with("www.123") && h.ends_with(".com"))
-            && url.path().starts_with("/s/")
     }
 
     async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<Message> {

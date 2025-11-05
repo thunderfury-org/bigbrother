@@ -5,6 +5,9 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::{RequestError, RequestResult};
 
+const UA_VALUE: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+pub const AUTH_KEY: &str = "Authorization";
+
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -20,6 +23,9 @@ pub async fn get<U: IntoUrl, T: DeserializeOwned>(
     let mut request = HTTP_CLIENT.get(url);
     if let Some(q) = query {
         request = request.query(&q);
+    }
+    for (k, v) in default_headers() {
+        request = request.header(k, v);
     }
     if let Some(h) = headers {
         for (k, v) in h {
@@ -43,6 +49,9 @@ pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
     let mut request = HTTP_CLIENT.post(url);
     if let Some(q) = query {
         request = request.query(&q);
+    }
+    for (k, v) in default_headers() {
+        request = request.header(k, v);
     }
     if let Some(h) = headers {
         for (k, v) in h {
@@ -81,4 +90,12 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
             "http request to {url} failed, status: {status}, payload: {payload}",
         ))),
     }
+}
+
+fn default_headers() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("user-agent", UA_VALUE),
+        ("accept", "application/json;charset=UTF-8"),
+        ("accept-encoding", "gzip, deflate, br"),
+    ]
 }
