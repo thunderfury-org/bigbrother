@@ -10,11 +10,19 @@ pub const LANGUAGE_ENGLISH: &str = "en";
 pub const LANGUAGE_CHINESE_SIMPLIFIED: &str = "zh-CN";
 pub const LANGUAGE_CHINESE_TRADITIONAL: &str = "zh-TW";
 
-pub const FILE_TYPE_VIDEO: &str = "video";
-pub const FILE_TYPE_SUBTITLE: &str = "subtitle";
+/// Represents the type of media file (video or subtitle)
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileType {
+    Video,
+    Subtitle,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
 
 /// Represents a media title with language information
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct Title {
     /// The title text
@@ -25,11 +33,11 @@ pub struct Title {
 }
 
 /// Contains metadata information about media files
-#[derive(Debug, Default, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(default, rename_all = "lowercase")]
 pub struct Metadata {
     /// File type based on file extension
-    pub file_type: String,
+    pub file_type: FileType,
 
     /// File extension (e.g: .mkv, .mp4, .srt)
     pub extension: String,
@@ -77,22 +85,18 @@ pub struct Metadata {
     pub subtitles: Vec<String>,
 }
 
-impl From<&str> for Metadata {
-    fn from(value: &str) -> Self {
+impl Metadata {
+    pub fn parse(value: &str) -> Box<Self> {
         parser::parse(value)
     }
 }
 
 impl Metadata {
-    pub fn is_subtitle(&self) -> bool {
-        self.file_type == FILE_TYPE_SUBTITLE
-    }
-
     pub fn is_video(&self) -> bool {
-        self.file_type == FILE_TYPE_VIDEO
+        self.file_type == FileType::Video
     }
 
     pub fn unknown_type(&self) -> bool {
-        self.file_type.is_empty()
+        self.file_type == FileType::Unknown
     }
 }

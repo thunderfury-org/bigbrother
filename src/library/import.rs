@@ -3,52 +3,25 @@ use std::collections::HashMap;
 use super::category;
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
-    media::Metadata,
     state::AppState,
 };
 
 mod group;
+mod inner;
 mod library;
 mod metadata;
 pub(super) mod share;
 mod tmdb_info;
 mod transfer;
 
-#[derive(Debug)]
-struct RawFile {
-    pub id: Option<i64>,
-    pub name: String,
-    pub etag: String,
-    pub size: u64,
-    pub path: String,
-}
-
-struct MediaFile {
-    metadata: Metadata,
-    raw: RawFile,
-}
-
-enum Media<'a> {
-    Movie {
-        detail: MovieDetail,
-        files: Vec<&'a MediaFile>,
-    },
-    Tv {
-        detail: TvDetail,
-        // (season, episode) -> files[]
-        files: HashMap<u32, HashMap<u32, Vec<&'a MediaFile>>>,
-    },
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct ImportSummary {
-    pub success: u32,
-    pub failed: u32,
-    pub skipped: u32,
-    pub total: u32,
+    pub success: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    pub total: usize,
     pub total_size: u64,
     pub cost: std::time::Duration,
-    pub unknown_files: Vec<String>,
 }
 
 pub(super) struct Importer {

@@ -281,9 +281,9 @@ impl MetadataParser {
             let ext = self.other[dot_idx..].trim().to_lowercase();
             if ext.len() > 1 {
                 if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = super::FILE_TYPE_VIDEO.to_owned();
+                    self.info.file_type = super::FileType::Video;
                 } else if SUBTITLE_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = super::FILE_TYPE_SUBTITLE.to_owned();
+                    self.info.file_type = super::FileType::Subtitle;
                 } else {
                     // unknown file type
                     return;
@@ -377,10 +377,10 @@ impl MetadataParser {
     }
 }
 
-pub fn parse(name: &str) -> Metadata {
+pub fn parse(name: &str) -> Box<Metadata> {
     let mut parser = MetadataParser::new(name);
     parser.parse();
-    parser.info
+    Box::new(parser.info)
 }
 
 #[cfg(test)]
@@ -414,7 +414,7 @@ mod tests {
             let cases: Vec<TestCase> = serde_yaml::from_str(&content).unwrap();
             for case in &cases {
                 let info = parse(case.input.as_str());
-                assert_eq!(case.expected, info, "input: {}", case.input);
+                assert_eq!(case.expected, *info, "input: {}", case.input);
             }
         }
     }

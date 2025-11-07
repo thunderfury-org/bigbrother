@@ -23,6 +23,7 @@ pub fn init(log_dir: &str) {
         .rotation(Rotation::DAILY)
         .filename_prefix("bigbrother")
         .filename_suffix("log")
+        .max_log_files(7)
         .build(log_dir)
         .expect("Failed to initialize rolling file appender");
 

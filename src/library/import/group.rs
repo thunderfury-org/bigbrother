@@ -1,10 +1,70 @@
 use std::collections::HashMap;
 
-use crate::error::AppResult;
-
-use super::{Importer, Media, MediaFile};
+use super::{
+    Importer,
+    inner::{Media, MediaFile, RawFile},
+};
+use crate::{error::AppResult, media::Metadata};
 
 impl Importer {
+    /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
+    pub(super) fn group_video_and_subtitle_files(
+        &self,
+        raw_files: Vec<(Box<Metadata>, Box<RawFile>)>,
+    ) -> Vec<MediaFile> {
+        if raw_files.is_empty() {
+            return Vec::new();
+        }
+
+        let (video_files, subtitle_files): (Vec<_>, Vec<_>) =
+            raw_files.into_iter().partition(|(metadata, _)| metadata.is_video());
+
+        if video_files.is_empty() {
+            // 没有视频文件
+            return Vec::new();
+        } else if subtitle_files.is_empty() {
+            // 没有字幕文件
+            return video_files
+                .into_iter()
+                .map(|(metadata, raw_file)| MediaFile {
+                    metadata: metadata,
+                    video: raw_file,
+                    subtitles: Vec::new(),
+                })
+                .collect();
+        }
+
+        // 有多个视频文件，按照视频文件名（移除扩展名后）匹配字幕文件
+        let mut media_files_map: HashMap<String, MediaFile> = video_files
+            .into_iter()
+            .map(|(metadata, raw_file)| {
+                let file_stem = match raw_file.name.rfind('.') {
+                    Some(i) => raw_file.name[..i].to_owned(),
+                    None => raw_file.name.to_owned(),
+                };
+                (
+                    file_stem,
+                    MediaFile {
+                        metadata: metadata,
+                        video: raw_file,
+                        subtitles: Vec::new(),
+                    },
+                )
+            })
+            .collect();
+
+        for (_, subtitle_file) in subtitle_files {
+            for (file_stem, media_file) in &mut media_files_map {
+                if subtitle_file.name.starts_with(file_stem) {
+                    media_file.subtitles.push(subtitle_file);
+                    break;
+                }
+            }
+        }
+
+        media_files_map.into_values().collect()
+    }
+
     pub(super) async fn group_media_files<'a>(&mut self, files: &'a [MediaFile]) -> AppResult<Vec<Media<'a>>> {
         // group files by tmdb_id
         let mut grouped_files = HashMap::new();
@@ -38,7 +98,6 @@ impl Importer {
                         } else {
                             // multi season, but no season number found in file metadata
                             self.summary.skipped += 1;
-                            self.summary.unknown_files.push(file.raw.path.to_owned());
                             return Ok(());
                         }
                     }
@@ -48,7 +107,6 @@ impl Importer {
                     None => {
                         // episode number not found in file metadata
                         self.summary.skipped += 1;
-                        self.summary.unknown_files.push(file.raw.path.to_owned());
                         return Ok(());
                     }
                 };
@@ -67,7 +125,6 @@ impl Importer {
             }
             None => {
                 self.summary.skipped += 1;
-                self.summary.unknown_files.push(file.raw.path.to_owned());
             }
         }
 
@@ -94,7 +151,6 @@ impl Importer {
             }
             None => {
                 self.summary.skipped += 1;
-                self.summary.unknown_files.push(file.raw.path.to_owned());
             }
         }
 
