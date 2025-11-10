@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{path::Path, sync::LazyLock};
 
 use reqwest::{IntoUrl, StatusCode};
 use serde::{Serialize, de::DeserializeOwned};
@@ -14,6 +14,31 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("failed to create http client")
 });
+
+pub async fn download_file(url: &str, path: &str) -> RequestResult<()> {
+    let response = HTTP_CLIENT.get(url).send().await?;
+    let status = response.status();
+    let url = response.url().to_string();
+    let payload = response.bytes().await?;
+
+    if status.is_success() {
+        // write payload to file
+        tokio::fs::create_dir_all(Path::new(path).parent().unwrap())
+            .await
+            .map_err(|e| RequestError::Error(format!("create dir failed, {}", e)))?;
+        tokio::fs::write(path, payload)
+            .await
+            .map_err(|e| RequestError::Error(format!("write file failed, {}", e)))?;
+        return Ok(());
+    }
+
+    match status {
+        StatusCode::NOT_FOUND => Err(RequestError::NotFound(url)),
+        _ => Err(RequestError::Error(format!(
+            "http request to {url} failed, status: {status}, payload: {payload:?}",
+        ))),
+    }
+}
 
 pub async fn get<U: IntoUrl, T: DeserializeOwned>(
     url: U,

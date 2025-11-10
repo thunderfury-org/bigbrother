@@ -78,6 +78,9 @@ struct MkdirResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct TrashResponse {}
+
+#[derive(Debug, Deserialize)]
 pub struct FileDetail {
     #[serde(rename = "fileId")]
     pub file_id: i64,
@@ -126,6 +129,11 @@ impl Client {
         )
         .await
         .map(|r| r.get("downloadUrl").map_or_else(|| "".to_owned(), |s| s.to_owned()))
+    }
+
+    pub async fn download_file(&self, file_id: i64, local_file_path: &str) -> RequestResult<()> {
+        let download_url = self.get_download_url(file_id).await?;
+        http::download_file(download_url.as_str(), local_file_path).await
     }
 
     pub async fn list(&self, file_id: i64) -> RequestResult<Vec<File>> {
@@ -221,6 +229,24 @@ impl Client {
         )
         .await
         .map(|r| r.dir_id)
+    }
+
+    pub async fn trash_files(&self, file_ids: &[i64]) -> RequestResult<()> {
+        for chunk in file_ids.chunks(100) {
+            self.post::<_, TrashResponse>(
+                self.build_open_api_url("/api/v1/file/trash"),
+                None,
+                Some(&json!(
+                    {
+                        "fileIDs": chunk,
+                    }
+                )),
+            )
+            .await
+            .map(|_| ())?;
+        }
+
+        Ok(())
     }
 
     pub async fn mkdir_by_path(&self, folder_path: &str) -> RequestResult<i64> {
@@ -358,11 +384,15 @@ impl Client {
         match resp.code {
             0 => match resp.data {
                 Some(d) => Ok(d),
-                None => Err(RequestError::NotFound(resp.message)),
+                None => {
+                    // Return empty JSON object so caller can deserialize to Option<T> or ignore
+                    Ok(serde_json::from_str("{}").unwrap())
+                }
             },
             1 => Err(RequestError::AlreadyExists),
             401 => Err(RequestError::Unauthorized),
             429 => Err(RequestError::TooManyRequests),
+            5066 => Err(RequestError::NotFound(resp.message)),
             _ => Err(RequestError::Error(format!(
                 "api error, code: {}, message: {}",
                 resp.code, resp.message

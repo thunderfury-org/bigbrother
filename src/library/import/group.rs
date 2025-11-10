@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::{
     Importer,
@@ -112,12 +112,12 @@ impl Importer {
                 };
                 let entry = grouped_files.entry(tv_info.id).or_insert_with(|| Media::Tv {
                     detail: tv_info,
-                    files: HashMap::new(),
+                    files: BTreeMap::new(),
                 });
                 if let Media::Tv { files, .. } = entry {
                     files
                         .entry(season_number)
-                        .or_insert_with(HashMap::new)
+                        .or_insert_with(BTreeMap::new)
                         .entry(episode_number)
                         .or_insert_with(Vec::new)
                         .push(file);

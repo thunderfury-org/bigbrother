@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    io,
+    path::Path,
+};
 
 use tracing::info;
 
@@ -44,6 +48,7 @@ impl Importer {
                 // existing file size is smaller than new file, need overwrite
                 // delete existing files
                 self.delete_files_in_library(&existing_files).await?;
+                self.delete_files_in_local(&movie_path, &existing_files).await?;
             } else {
                 // do not need overwrite existing files, skip
                 self.summary.skipped += media_files.iter().map(|f| f.file_count()).sum::<usize>();
@@ -64,7 +69,7 @@ impl Importer {
     async fn transfer_tv(
         &mut self,
         detail: &TvDetail,
-        files: &HashMap<u32, HashMap<u32, Vec<&MediaFile>>>,
+        files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
     ) -> AppResult<()> {
         let tv_path = self.get_tv_path_in_library(detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
@@ -103,6 +108,7 @@ impl Importer {
                             // existing file size is smaller than new file, need overwrite
                             // delete existing files
                             self.delete_files_in_library(existing_files).await?;
+                            self.delete_files_in_local(&season_full_path, existing_files).await?;
                         } else {
                             // existing file size is larger than new file, skip
                             self.summary.skipped += files.iter().map(|f| f.file_count()).sum::<usize>();
@@ -127,7 +133,61 @@ impl Importer {
         Ok(())
     }
 
-    async fn delete_files_in_library(&mut self, _files: &[MediaFile]) -> AppResult<()> {
+    async fn delete_files_in_library(&self, files: &[MediaFile]) -> AppResult<()> {
+        let mut file_ids = Vec::new();
+        for f in files {
+            info!("Deleting file {} from library, file id: {:?}", f.video.name, f.video.id);
+            if let Some(id) = f.video.id {
+                file_ids.push(id);
+            }
+            for s in &f.subtitles {
+                info!("Deleting file {} from library, file id: {:?}", s.name, s.id);
+                if let Some(id) = s.id {
+                    file_ids.push(id);
+                }
+            }
+        }
+
+        self.state.pan123.trash_files(file_ids.as_slice()).await?;
+        Ok(())
+    }
+
+    async fn delete_files_in_local(&self, remote_parent_path: &str, files: &[MediaFile]) -> AppResult<()> {
+        let local_parent_path = remote_parent_path.replace(
+            self.state.config.get_library_config().remote_path.as_str(),
+            self.state.config.get_library_config().local_path.as_str(),
+        );
+
+        for f in files {
+            let local_file_path = format!(
+                "{}/{}.strm",
+                local_parent_path,
+                f.video.name.trim_end_matches(f.metadata.extension.as_str())
+            );
+            info!("Deleting local file {}", local_file_path);
+            match tokio::fs::remove_file(local_file_path.as_str()).await {
+                Err(e) => {
+                    if e.kind() != io::ErrorKind::NotFound {
+                        return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
+                    }
+                }
+                Ok(_) => {}
+            }
+
+            for s in &f.subtitles {
+                let local_file_path = format!("{}/{}", local_parent_path, s.name);
+                info!("Deleting local file {}", local_file_path);
+                match tokio::fs::remove_file(local_file_path.as_str()).await {
+                    Err(e) => {
+                        if e.kind() != io::ErrorKind::NotFound {
+                            return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
+                        }
+                    }
+                    Ok(_) => {}
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -232,6 +292,12 @@ impl Importer {
                 self.summary.total_size += raw_file.size;
 
                 // download subtitle file
+                let local_file_path = format!("{}/{}", parent_path, file_name).replace(
+                    self.state.config.get_library_config().remote_path.as_str(),
+                    self.state.config.get_library_config().local_path.as_str(),
+                );
+                self.state.pan123.download_file(id, local_file_path.as_str()).await?;
+                info!("Subtitle file {} downloaded", local_file_path);
             }
             None => {
                 self.summary.failed += 1;

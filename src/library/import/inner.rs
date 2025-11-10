@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -34,6 +34,6 @@ pub(super) enum Media<'a> {
     Tv {
         detail: TvDetail,
         // (season, episode) -> files[]
-        files: HashMap<u32, HashMap<u32, Vec<&'a MediaFile>>>,
+        files: BTreeMap<u32, BTreeMap<u32, Vec<&'a MediaFile>>>,
     },
 }
