@@ -49,13 +49,12 @@ impl Importer {
 
             raw_files.push((
                 metadata,
-                Box::new(RawFile {
+                RawFile {
                     id: Some(file.file_id),
                     name: file.file_name.to_owned(),
                     etag: file.etag.to_owned(),
                     size: file.size,
-                    path: "".to_owned(),
-                }),
+                },
             ));
         }
 

@@ -8,6 +8,7 @@ use crate::{
 
 mod group;
 mod inner;
+pub(super) mod json;
 mod library;
 mod metadata;
 pub(super) mod share;
@@ -41,5 +42,11 @@ impl Importer {
             summary: ImportSummary::default(),
             start_time: std::time::Instant::now(),
         }
+    }
+}
+
+impl Default for Importer {
+    fn default() -> Self {
+        Self::new(AppState::default())
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     error::AppError,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AppState {
     pub config: config::Manager,
     pub pan123: Arc<pan123::Client>,

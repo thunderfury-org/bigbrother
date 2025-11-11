@@ -101,19 +101,19 @@ impl Importer {
                             detail.name, season_number, episode_number
                         ))
                     })?;
-                if let Some(existing_files) = existing_episode_files.get(episode_number) {
-                    if !existing_files.is_empty() {
-                        // episode file already exists in library
-                        if self.need_overwrite_existing_files(existing_files, media_file) {
-                            // existing file size is smaller than new file, need overwrite
-                            // delete existing files
-                            self.delete_files_in_library(existing_files).await?;
-                            self.delete_files_in_local(&season_full_path, existing_files).await?;
-                        } else {
-                            // existing file size is larger than new file, skip
-                            self.summary.skipped += files.iter().map(|f| f.file_count()).sum::<usize>();
-                            continue;
-                        }
+                if let Some(existing_files) = existing_episode_files.get(episode_number)
+                    && !existing_files.is_empty()
+                {
+                    // episode file already exists in library
+                    if self.need_overwrite_existing_files(existing_files, media_file) {
+                        // existing file size is smaller than new file, need overwrite
+                        // delete existing files
+                        self.delete_files_in_library(existing_files).await?;
+                        self.delete_files_in_local(&season_full_path, existing_files).await?;
+                    } else {
+                        // existing file size is larger than new file, skip
+                        self.summary.skipped += files.iter().map(|f| f.file_count()).sum::<usize>();
+                        continue;
                     }
                 }
 
@@ -165,25 +165,19 @@ impl Importer {
                 f.video.name.trim_end_matches(f.metadata.extension.as_str())
             );
             info!("Deleting local file {}", local_file_path);
-            match tokio::fs::remove_file(local_file_path.as_str()).await {
-                Err(e) => {
-                    if e.kind() != io::ErrorKind::NotFound {
-                        return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
-                    }
-                }
-                Ok(_) => {}
+            if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
+                && e.kind() != io::ErrorKind::NotFound
+            {
+                return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
             }
 
             for s in &f.subtitles {
                 let local_file_path = format!("{}/{}", local_parent_path, s.name);
                 info!("Deleting local file {}", local_file_path);
-                match tokio::fs::remove_file(local_file_path.as_str()).await {
-                    Err(e) => {
-                        if e.kind() != io::ErrorKind::NotFound {
-                            return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
-                        }
-                    }
-                    Ok(_) => {}
+                if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
+                    && e.kind() != io::ErrorKind::NotFound
+                {
+                    return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
                 }
             }
         }

@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
+use tracing::info;
+
 use super::{
     Importer,
     inner::{Media, MediaFile, RawFile},
@@ -7,11 +9,18 @@ use super::{
 use crate::{error::AppResult, media::Metadata};
 
 impl Importer {
-    /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
-    pub(super) fn group_video_and_subtitle_files(
-        &self,
-        raw_files: Vec<(Box<Metadata>, Box<RawFile>)>,
+    pub(super) fn convert_share_raw_file_to_media_file(
+        &mut self,
+        raw_files: Vec<(Box<Metadata>, RawFile)>,
     ) -> Vec<MediaFile> {
+        let new_file_count = raw_files.len();
+        let grouped_files = self.group_video_and_subtitle_files(raw_files);
+        self.summary.skipped += new_file_count - grouped_files.iter().map(|f| f.file_count()).sum::<usize>();
+        grouped_files
+    }
+
+    /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
+    pub(super) fn group_video_and_subtitle_files(&self, raw_files: Vec<(Box<Metadata>, RawFile)>) -> Vec<MediaFile> {
         if raw_files.is_empty() {
             return Vec::new();
         }
@@ -27,7 +36,7 @@ impl Importer {
             return video_files
                 .into_iter()
                 .map(|(metadata, raw_file)| MediaFile {
-                    metadata: metadata,
+                    metadata,
                     video: raw_file,
                     subtitles: Vec::new(),
                 })
@@ -45,7 +54,7 @@ impl Importer {
                 (
                     file_stem,
                     MediaFile {
-                        metadata: metadata,
+                        metadata,
                         video: raw_file,
                         subtitles: Vec::new(),
                     },
@@ -97,6 +106,10 @@ impl Importer {
                             1
                         } else {
                             // multi season, but no season number found in file metadata
+                            info!(
+                                "Multi season tv, but no season number found in file: {}",
+                                file.video.name
+                            );
                             self.summary.skipped += 1;
                             return Ok(());
                         }
@@ -106,6 +119,7 @@ impl Importer {
                     Some(e) => e,
                     None => {
                         // episode number not found in file metadata
+                        info!("No episode number found in file: {}", file.video.name);
                         self.summary.skipped += 1;
                         return Ok(());
                     }

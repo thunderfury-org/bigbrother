@@ -116,7 +116,7 @@ struct MetadataParser {
     title_index_end: Option<usize>,
     year_index_start: Option<usize>,
 
-    info: Metadata,
+    info: Box<Metadata>,
 }
 
 impl MetadataParser {
@@ -126,7 +126,7 @@ impl MetadataParser {
             other: String::new(),
             title_index_end: None,
             year_index_start: None,
-            info: Metadata::default(),
+            info: Box::new(Metadata::default()),
         }
     }
 
@@ -380,7 +380,7 @@ impl MetadataParser {
 pub fn parse(name: &str) -> Box<Metadata> {
     let mut parser = MetadataParser::new(name);
     parser.parse();
-    Box::new(parser.info)
+    parser.info
 }
 
 #[cfg(test)]

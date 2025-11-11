@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -11,13 +11,14 @@ pub(super) struct RawFile {
     pub name: String,
     pub etag: String,
     pub size: u64,
-    pub path: String,
 }
 
+/// 表示一个媒体文件，包含视频文件和字幕文件
+#[derive(Debug)]
 pub(super) struct MediaFile {
     pub metadata: Box<Metadata>,
-    pub video: Box<RawFile>,
-    pub subtitles: Vec<Box<RawFile>>,
+    pub video: RawFile,
+    pub subtitles: Vec<RawFile>,
 }
 
 impl MediaFile {
