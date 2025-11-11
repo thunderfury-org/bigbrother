@@ -4,6 +4,7 @@ mod category;
 mod import;
 
 pub use import::ImportSummary;
+pub use import::json::is_fslink;
 pub use import::share::ShareUrl;
 
 pub async fn import_from_share_url(state: &AppState, url: &ShareUrl<'_>) -> AppResult<ImportSummary> {
@@ -12,5 +13,9 @@ pub async fn import_from_share_url(state: &AppState, url: &ShareUrl<'_>) -> AppR
 
 pub async fn import_from_fslink(state: &AppState, fslink: &str) -> AppResult<ImportSummary> {
     // Placeholder implementation
-    Ok(ImportSummary::default())
+    import::Importer::new(state.clone()).import_from_fslink(fslink).await
+}
+
+pub async fn import_from_json(state: &AppState, json: Vec<u8>) -> AppResult<ImportSummary> {
+    import::Importer::new(state.clone()).import_from_json(json).await
 }

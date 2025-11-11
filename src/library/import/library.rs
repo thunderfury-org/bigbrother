@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use tracing::info;
 
-use super::{Importer, MediaFile, RawFile, category};
+use super::{
+    Importer, category,
+    inner::{MediaFile, RawFile},
+};
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
     error::AppResult,
@@ -13,9 +16,27 @@ impl Importer {
         &self,
         season_dir_id: i64,
     ) -> AppResult<HashMap<u32, Vec<MediaFile>>> {
-        let files = self.state.pan123.list(season_dir_id).await?;
-        let mut grouped_files = HashMap::new();
+        let media_files = self.list_media_files_in_library(season_dir_id).await?;
 
+        let grouped_files = media_files
+            .into_iter()
+            .map(|f| (f.metadata.episode_number.unwrap_or_default(), f))
+            .fold(HashMap::new(), |mut acc, (episode, file)| {
+                acc.entry(episode).or_insert_with(Vec::new).push(file);
+                acc
+            });
+
+        Ok(grouped_files)
+    }
+
+    pub(super) async fn list_movie_files_in_library(&self, movie_dir_id: i64) -> AppResult<Vec<MediaFile>> {
+        self.list_media_files_in_library(movie_dir_id).await
+    }
+
+    async fn list_media_files_in_library(&self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
+        let files = self.state.pan123.list(dir_id).await?;
+
+        let mut raw_files = Vec::new();
         for file in &files {
             if file.is_dir() {
                 continue;
@@ -26,22 +47,18 @@ impl Importer {
                 continue;
             }
 
-            grouped_files
-                .entry(metadata.episode_number.unwrap_or_default())
-                .or_insert_with(Vec::new)
-                .push(MediaFile {
-                    metadata,
-                    raw: RawFile {
-                        id: Some(file.file_id),
-                        name: file.file_name.to_owned(),
-                        etag: file.etag.to_owned(),
-                        size: file.size,
-                        path: "".to_owned(),
-                    },
-                });
+            raw_files.push((
+                metadata,
+                RawFile {
+                    id: Some(file.file_id),
+                    name: file.file_name.to_owned(),
+                    etag: file.etag.to_owned(),
+                    size: file.size,
+                },
+            ));
         }
 
-        Ok(grouped_files)
+        Ok(self.group_video_and_subtitle_files(raw_files))
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {

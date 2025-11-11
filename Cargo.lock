@@ -255,6 +255,7 @@ dependencies = [
  "tokio",
  "tower",
  "tower-http",
+ "trace_id",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -638,6 +639,12 @@ dependencies = [
  "autocfg",
  "scopeguard",
 ]
+
+[[package]]
+name = "fastrand"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "find-msvc-tools"
@@ -2486,6 +2493,19 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
+
+[[package]]
+name = "trace_id"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c43959a116aa2bd3599ff97b33f7cad9ac527798800a24fb8ea18a1638ade2bf"
+dependencies = [
+ "axum",
+ "fastrand",
+ "tokio",
+ "tower",
+ "tracing",
+]
 
 [[package]]
 name = "tracing"

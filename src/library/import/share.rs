@@ -1,8 +1,10 @@
 use reqwest::Url;
 
+use super::{
+    ImportSummary, Importer,
+    inner::{MediaFile, RawFile},
+};
 use crate::error::{AppError, AppResult};
-
-use super::{ImportSummary, Importer, MediaFile, RawFile};
 
 pub enum ShareUrl<'a> {
     Pan123(&'a Url),
@@ -95,6 +97,7 @@ impl Importer {
                 .list_share_files(share_key, share_password, parent_id)
                 .await?;
 
+            let mut media_files_in_dir = Vec::new();
             for file in &files {
                 if file.is_dir() {
                     // Directory
@@ -108,18 +111,19 @@ impl Importer {
                         continue;
                     }
 
-                    all_files.push(MediaFile {
+                    media_files_in_dir.push((
                         metadata,
-                        raw: RawFile {
+                        RawFile {
                             id: Some(file.file_id),
                             name: file.file_name.to_owned(),
                             etag: file.etag.to_owned(),
                             size: file.size,
-                            path: parent_path.to_owned(),
                         },
-                    });
+                    ));
                 }
             }
+
+            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
         }
 
         Ok(all_files)
@@ -142,6 +146,7 @@ impl Importer {
                 stack.push((folder.id.to_owned(), format!("{}/{}", parent_path, folder.name)));
             }
 
+            let mut media_files_in_dir = Vec::new();
             for file in &files {
                 // Regular file
                 self.summary.total += 1;
@@ -151,17 +156,17 @@ impl Importer {
                     continue;
                 }
 
-                all_files.push(MediaFile {
+                media_files_in_dir.push((
                     metadata,
-                    raw: RawFile {
+                    RawFile {
                         id: None,
                         name: file.name.to_owned(),
                         etag: file.md5.to_lowercase(),
                         size: file.size,
-                        path: parent_path.to_owned(),
                     },
-                });
+                ));
             }
+            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
         }
 
         Ok(all_files)

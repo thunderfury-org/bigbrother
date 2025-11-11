@@ -15,16 +15,10 @@ pub struct ShareInfo {
     pub file_id: String,
     #[serde(rename = "fileName")]
     pub file_name: String,
-    #[serde(rename = "fileSize")]
-    pub file_size: i64,
-    #[serde(rename = "isFolder")]
-    pub is_folder: bool,
     #[serde(rename = "shareId")]
     pub share_id: i64,
     #[serde(rename = "shareMode")]
     pub share_mode: i32,
-    #[serde(rename = "shareType")]
-    pub share_type: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +60,7 @@ struct ListShareFileResponse {
     file_list: FileListResponse,
 }
 
+#[derive(Debug, Default)]
 pub struct Client {}
 
 impl Client {

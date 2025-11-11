@@ -31,16 +31,12 @@ pub struct File {
     pub file_type: i32,
     #[serde(rename = "Size")]
     pub size: u64,
-    #[serde(rename = "S3KeyFlag")]
-    pub s3_key_flag: String,
     #[serde(rename = "CreateAt", with = "time::serde::rfc3339")]
-    pub created_at: time::OffsetDateTime,
+    pub _created_at: time::OffsetDateTime,
     #[serde(rename = "UpdateAt", with = "time::serde::rfc3339")]
-    pub updated_at: time::OffsetDateTime,
+    pub _updated_at: time::OffsetDateTime,
     #[serde(rename = "Etag")]
     pub etag: String,
-    #[serde(rename = "ParentFileId")]
-    pub parent_file_id: i64,
     #[serde(default, rename = "AbsPath")]
     pub abs_path: String,
 }
@@ -54,11 +50,11 @@ impl File {
 #[derive(Debug, Deserialize)]
 struct FileListResponse {
     #[serde(rename = "Next")]
-    pub next: String,
+    pub _next: String,
     #[serde(rename = "Len")]
-    pub len: i32,
+    pub _len: i32,
     #[serde(rename = "IsFirst")]
-    pub is_first: bool,
+    pub _is_first: bool,
     #[serde(rename = "InfoList")]
     pub info_list: Vec<File>,
 }
@@ -78,14 +74,14 @@ struct MkdirResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct TrashResponse {}
+
+#[derive(Debug, Deserialize)]
 pub struct FileDetail {
     #[serde(rename = "fileId")]
     pub file_id: i64,
     #[serde(rename = "filename")]
     pub file_name: String,
-    /// 0: file, 1: folder
-    #[serde(rename = "type")]
-    pub file_type: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +98,7 @@ struct AccessToken {
     expired_at: time::OffsetDateTime,
 }
 
+#[derive(Debug, Default)]
 pub struct Client {
     client_id: String,
     client_secret: String,
@@ -126,6 +123,11 @@ impl Client {
         )
         .await
         .map(|r| r.get("downloadUrl").map_or_else(|| "".to_owned(), |s| s.to_owned()))
+    }
+
+    pub async fn download_file(&self, file_id: i64, local_file_path: &str) -> RequestResult<()> {
+        let download_url = self.get_download_url(file_id).await?;
+        http::download_file(download_url.as_str(), local_file_path).await
     }
 
     pub async fn list(&self, file_id: i64) -> RequestResult<Vec<File>> {
@@ -221,6 +223,24 @@ impl Client {
         )
         .await
         .map(|r| r.dir_id)
+    }
+
+    pub async fn trash_files(&self, file_ids: &[i64]) -> RequestResult<()> {
+        for chunk in file_ids.chunks(100) {
+            self.post::<_, TrashResponse>(
+                self.build_open_api_url("/api/v1/file/trash"),
+                None,
+                Some(&json!(
+                    {
+                        "fileIDs": chunk,
+                    }
+                )),
+            )
+            .await
+            .map(|_| ())?;
+        }
+
+        Ok(())
     }
 
     pub async fn mkdir_by_path(&self, folder_path: &str) -> RequestResult<i64> {
@@ -358,11 +378,15 @@ impl Client {
         match resp.code {
             0 => match resp.data {
                 Some(d) => Ok(d),
-                None => Err(RequestError::NotFound(resp.message)),
+                None => {
+                    // Return empty JSON object so caller can deserialize to Option<T> or ignore
+                    Ok(serde_json::from_str("{}").unwrap())
+                }
             },
             1 => Err(RequestError::AlreadyExists),
             401 => Err(RequestError::Unauthorized),
             429 => Err(RequestError::TooManyRequests),
+            5066 => Err(RequestError::NotFound(resp.message)),
             _ => Err(RequestError::Error(format!(
                 "api error, code: {}, message: {}",
                 resp.code, resp.message

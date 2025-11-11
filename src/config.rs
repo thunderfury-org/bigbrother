@@ -49,7 +49,7 @@ pub struct TmdbConfig {
     pub api_key: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Manager {
     data_dir: Arc<String>,
     app_config: Arc<AppConfig>,
@@ -64,7 +64,7 @@ impl Manager {
         format!("{}/cache", self.data_dir.as_str())
     }
 
-    pub fn get_db_dir(&self) -> String {
+    pub fn _get_db_dir(&self) -> String {
         format!("{}/db", self.data_dir.as_str())
     }
 

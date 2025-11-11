@@ -51,3 +51,33 @@ pub fn get_subcategory(original_country: &Vec<String>) -> &'static str {
     }
     SUBCATEGORY_OTHER
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_tv_category() {
+        let genres = vec![
+            Genre {
+                id: GENRE_REALITY,
+                name: "Reality".to_string(),
+            },
+            Genre {
+                id: GENRE_DOCUMENTARY,
+                name: "Documentary".to_string(),
+            },
+            Genre {
+                id: GENRE_ANIMATION,
+                name: "Animation".to_string(),
+            },
+        ];
+        assert_eq!(get_tv_category(&genres), CATEGORY_VARIETY);
+    }
+
+    #[test]
+    fn test_get_subcategory() {
+        let original_country = vec!["CN".to_string(), "TW".to_string()];
+        assert_eq!(get_subcategory(&original_country), "国产");
+    }
+}

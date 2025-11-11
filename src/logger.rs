@@ -9,7 +9,7 @@ use time::{
 };
 use tracing::{error, level_filters::LevelFilter};
 use tracing_appender::rolling::Rotation;
-use tracing_subscriber::fmt::time::OffsetTime;
+use tracing_subscriber::fmt::{format::FmtSpan, time::OffsetTime};
 
 const MAX_LEVEL: LevelFilter = LevelFilter::INFO;
 const CONFIG: EncodedConfig = Config::DEFAULT
@@ -23,6 +23,7 @@ pub fn init(log_dir: &str) {
         .rotation(Rotation::DAILY)
         .filename_prefix("bigbrother")
         .filename_suffix("log")
+        .max_log_files(7)
         .build(log_dir)
         .expect("Failed to initialize rolling file appender");
 
@@ -35,6 +36,7 @@ pub fn init(log_dir: &str) {
         .with_writer(writer)
         .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
         .with_max_level(MAX_LEVEL)
+        .with_span_events(FmtSpan::FULL)
         .with_ansi(false)
         .init();
 

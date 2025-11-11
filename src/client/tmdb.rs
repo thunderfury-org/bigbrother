@@ -28,8 +28,6 @@ pub struct SearchMovieResult {
     pub id: u32,
     pub title: String,
     pub original_title: String,
-    pub original_language: String,
-    pub release_date: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -71,10 +69,10 @@ struct SearchTvResponse {
 pub struct SearchTvResult {
     pub id: u32,
     pub name: String,
-    pub first_air_date: String,
     pub original_name: String,
 }
 
+#[derive(Debug, Default)]
 pub struct Client {
     api_key: String,
 }

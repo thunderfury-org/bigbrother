@@ -1,7 +1,6 @@
 use std::{collections::HashSet, sync::LazyLock};
 
 use reqwest::Url;
-use serde::Deserialize;
 use teloxide::{
     net::Download,
     prelude::*,
@@ -15,29 +14,8 @@ use crate::{
     state::AppState,
 };
 
-const FS_LINK_PREFIX: &str = "123FSLinkV2$";
-
 static URL_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"https?://[^\s/$.?#].[^\s]*").expect("Failed to compile URL regex"));
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct ResourceExportJson {
-    #[serde(rename = "usesBase62EtagsInExport")]
-    pub uses_base62_etags_in_export: bool,
-    #[serde(rename = "etagEncrypted")]
-    pub etag_encrypted: bool,
-    #[serde(rename = "commonPath")]
-    pub common_path: String,
-    pub files: Vec<ResourceExportFile>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ResourceExportFile {
-    pub path: String,
-    pub etag: String,
-    pub size: u64,
-}
 
 pub(super) struct MsgProcessor<'a> {
     pub state: &'a AppState,
@@ -82,13 +60,14 @@ impl MsgProcessor<'_> {
         let mut content = Vec::new();
         self.bot.download_file(&file.path, &mut content).await?;
 
-        match serde_json::from_slice::<ResourceExportJson>(&content) {
-            Ok(export) => {
-                let reply = format!("成功解析 JSON 文件，共包含 {} 个资源文件", export.files.len());
-                self.send_message(reply).await?;
+        match library::import_from_json(self.state, content).await {
+            Ok(summary) => {
+                let formatted: String = self.format_import_summary(&summary);
+                self.send_message(formatted).await?;
             }
             Err(e) => {
-                self.send_message(format!("JSON 解析错误: {}", e)).await?;
+                error!("import from json failed: {}", e);
+                self.send_message(format!("JSON 文件处理失败: {}", e)).await?;
             }
         }
 
@@ -96,7 +75,7 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_share_url(&self, url: &ShareUrl<'_>) -> ResponseResult<()> {
-        let reply = format!("Received URL: {}", url.get_url());
+        let reply = format!("开始处理分享: {}", url.get_url());
         self.send_message(&reply).await?;
 
         match library::import_from_share_url(self.state, url).await {
@@ -106,7 +85,7 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from share url {} failed: {}", url.get_url(), e);
-                self.send_message(format!("导入失败: {}", e)).await?;
+                self.send_message(format!("分享处理失败: {}", e)).await?;
             }
         }
 
@@ -114,18 +93,25 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_fslink(&self, fslink: &str) -> ResponseResult<()> {
-        let reply = format!("Received FSLink: {}", fslink);
-        self.send_message(&reply).await?;
+        self.send_message("开始处理秒传").await?;
+
+        match library::import_from_fslink(self.state, fslink).await {
+            Ok(summary) => {
+                let formatted: String = self.format_import_summary(&summary);
+                self.send_message(formatted).await?;
+            }
+            Err(e) => {
+                error!("import from fslink {} failed: {}", fslink, e);
+                self.send_message(format!("秒传处理失败: {}", e)).await?;
+            }
+        }
 
         Ok(())
     }
 
     fn extract_fslink(&self) -> Vec<&str> {
         let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
-        text.split_whitespace()
-            .filter(|word| word.starts_with(FS_LINK_PREFIX))
-            .map(|word| word.trim_start_matches(FS_LINK_PREFIX))
-            .collect()
+        text.lines().filter(|line| library::is_fslink(line)).collect()
     }
 
     fn extract_urls(&self) -> Vec<Url> {
