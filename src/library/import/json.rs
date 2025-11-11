@@ -25,7 +25,7 @@ struct ResourceJson {
 }
 
 pub fn is_fslink(content: &str) -> bool {
-    let prefix = vec!["123FSLinkV2$", "123FLCPV2$"];
+    let prefix = ["123FSLinkV2$", "123FLCPV2$"];
     prefix.iter().any(|p| content.starts_with(p))
 }
 
