@@ -9,7 +9,7 @@ use crate::{
 use super::Importer;
 
 impl Importer {
-    pub(super) async fn get_movie_info_from_tmdb(&mut self, meta: &Box<Metadata>) -> AppResult<Option<MovieDetail>> {
+    pub(super) async fn get_movie_info_from_tmdb(&mut self, meta: &Metadata) -> AppResult<Option<MovieDetail>> {
         if !meta.tmdb_id.is_empty() {
             let cache_key = format!("movie:{}", meta.tmdb_id);
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
@@ -67,7 +67,7 @@ impl Importer {
         Ok(None)
     }
 
-    pub(super) async fn get_tv_info_from_tmdb(&mut self, meta: &Box<Metadata>) -> AppResult<Option<TvDetail>> {
+    pub(super) async fn get_tv_info_from_tmdb(&mut self, meta: &Metadata) -> AppResult<Option<TvDetail>> {
         if !meta.tmdb_id.is_empty() {
             let cache_key = format!("tv:{}", meta.tmdb_id);
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {

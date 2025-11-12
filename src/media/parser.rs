@@ -187,7 +187,7 @@ impl MetadataParser {
         for re in NAME_NORMALIZE_RE.iter() {
             self.name = re.replace_all(&self.name, ".").into_owned();
         }
-        self.name = format!(" {} ", self.name).into();
+        self.name = format!(" {} ", self.name);
     }
 
     fn parse_resolution(&mut self) {

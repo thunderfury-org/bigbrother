@@ -20,7 +20,7 @@ impl Importer {
         if !path_meta.tmdb_id.is_empty() {
             meta.tmdb_id = path_meta.tmdb_id;
         }
-        if meta.season_number.is_none() && !path_meta.season_number.is_none() {
+        if meta.season_number.is_none() && path_meta.season_number.is_some() {
             meta.season_number = path_meta.season_number;
         }
         if meta.resolution.is_empty() && !path_meta.resolution.is_empty() {
@@ -71,7 +71,7 @@ impl Importer {
         if meta.tmdb_id.is_empty() && !path_meta.tmdb_id.is_empty() {
             meta.tmdb_id = path_meta.tmdb_id;
         }
-        if meta.season_number.is_none() && !path_meta.season_number.is_none() {
+        if meta.season_number.is_none() && path_meta.season_number.is_some() {
             meta.season_number = path_meta.season_number;
         }
         if meta.resolution.is_empty() && !path_meta.resolution.is_empty() {
