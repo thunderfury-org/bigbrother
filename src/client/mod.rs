@@ -24,6 +24,13 @@ pub enum RequestError {
 
 pub type RequestResult<T> = std::result::Result<T, RequestError>;
 
+impl From<reqwest_middleware::Error> for RequestError {
+    fn from(e: reqwest_middleware::Error) -> Self {
+        let url = e.url().map(|u| u.to_string()).unwrap_or_default();
+        Self::Error(format!("http request to {url} error: {e}"))
+    }
+}
+
 impl From<reqwest::Error> for RequestError {
     fn from(e: reqwest::Error) -> Self {
         let url = e.url().map(|u| u.to_string()).unwrap_or_default();

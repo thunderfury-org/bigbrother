@@ -1,6 +1,8 @@
 use std::{path::Path, sync::LazyLock};
 
 use reqwest::{IntoUrl, StatusCode};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::{RequestError, RequestResult};
@@ -8,11 +10,17 @@ use super::{RequestError, RequestResult};
 const UA_VALUE: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 pub const AUTH_KEY: &str = "Authorization";
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+static HTTP_CLIENT: LazyLock<ClientWithMiddleware> = LazyLock::new(|| {
+    let req_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .expect("failed to create http client")
+        .expect("failed to create http client");
+
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+    ClientBuilder::new(req_client)
+        // Retry failed requests.
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build()
 });
 
 pub async fn download_file(url: &str, path: &str) -> RequestResult<()> {
@@ -84,7 +92,13 @@ pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
         }
     }
     if let Some(p) = payload {
-        request = request.json(p);
+        match serde_json::to_vec(p) {
+            Ok(body) => {
+                request = request.header("content-type", "application/json");
+                request = request.body(body);
+            }
+            Err(err) => return Err(RequestError::Error(format!("serialize http payload failed, {}", err))),
+        }
     }
 
     let result = request.send().await;
