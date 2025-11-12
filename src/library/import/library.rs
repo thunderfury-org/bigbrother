@@ -13,7 +13,7 @@ use crate::{
 
 impl Importer {
     pub(super) async fn list_episode_files_in_library(
-        &self,
+        &mut self,
         season_dir_id: i64,
     ) -> AppResult<HashMap<u32, Vec<MediaFile>>> {
         let media_files = self.list_media_files_in_library(season_dir_id).await?;
@@ -29,11 +29,11 @@ impl Importer {
         Ok(grouped_files)
     }
 
-    pub(super) async fn list_movie_files_in_library(&self, movie_dir_id: i64) -> AppResult<Vec<MediaFile>> {
+    pub(super) async fn list_movie_files_in_library(&mut self, movie_dir_id: i64) -> AppResult<Vec<MediaFile>> {
         self.list_media_files_in_library(movie_dir_id).await
     }
 
-    async fn list_media_files_in_library(&self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
+    async fn list_media_files_in_library(&mut self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
         let files = self.state.pan123.list(dir_id).await?;
 
         let mut raw_files = Vec::new();
@@ -54,6 +54,7 @@ impl Importer {
                     name: file.file_name.to_owned(),
                     etag: file.etag.to_owned(),
                     size: file.size,
+                    path: "".to_owned(),
                 },
             ));
         }
@@ -93,6 +94,24 @@ impl Importer {
             self.state.config.get_library_config().remote_path,
             category::CATEGORY_MOVIE,
             category::get_subcategory(&movie.origin_country),
+            movie.title,
+            self.get_year_from_date(movie.release_date.as_str()),
+            movie.id
+        )
+    }
+
+    pub(super) fn get_tv_base_name(&self, tv: &TvDetail) -> String {
+        format!(
+            "{} ({}) {{tmdb-{}}}",
+            tv.name,
+            self.get_year_from_date(tv.first_air_date.as_str()),
+            tv.id
+        )
+    }
+
+    pub(super) fn get_movie_base_name(&self, movie: &MovieDetail) -> String {
+        format!(
+            "{} ({}) {{tmdb-{}}}",
             movie.title,
             self.get_year_from_date(movie.release_date.as_str()),
             movie.id

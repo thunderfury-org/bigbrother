@@ -121,3 +121,18 @@
     resolution: "2160p"
     video_codec: "H265"
     audio_codec: "AAC.5.1"
+
+- input: "唐朝诡事录 - S03E11 - HDR - 第 11 集.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "唐朝诡事录"
+        language: "zh"
+    season_number: 3
+    episode_number: 11
+    quality: ""
+    resolution: ""
+    video_codec: ""
+    audio_codec: ""
+    hdr: "HDR"

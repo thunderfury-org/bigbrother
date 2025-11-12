@@ -118,6 +118,7 @@ impl Importer {
                             name: file.file_name.to_owned(),
                             etag: file.etag.to_owned(),
                             size: file.size,
+                            path: parent_path.to_owned(),
                         },
                     ));
                 }
@@ -163,6 +164,7 @@ impl Importer {
                         name: file.name.to_owned(),
                         etag: file.md5.to_lowercase(),
                         size: file.size,
+                        path: parent_path.to_owned(),
                     },
                 ));
             }

@@ -11,6 +11,7 @@ pub(super) struct RawFile {
     pub name: String,
     pub etag: String,
     pub size: u64,
+    pub path: String,
 }
 
 /// 表示一个媒体文件，包含视频文件和字幕文件

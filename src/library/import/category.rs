@@ -30,7 +30,7 @@ static SUB_CATALOG: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::ne
     m
 });
 
-pub fn get_tv_category(genres: &Vec<Genre>) -> &'static str {
+pub(super) fn get_tv_category(genres: &Vec<Genre>) -> &'static str {
     for g in genres {
         match g.id {
             GENRE_ANIMATION => return CATEGORY_ANIMATION,
@@ -42,7 +42,7 @@ pub fn get_tv_category(genres: &Vec<Genre>) -> &'static str {
     CATEGORY_TV
 }
 
-pub fn get_subcategory(original_country: &Vec<String>) -> &'static str {
+pub(super) fn get_subcategory(original_country: &Vec<String>) -> &'static str {
     for c in original_country {
         let c = c.to_uppercase();
         if let Some(k) = SUB_CATALOG.get(c.as_str()) {

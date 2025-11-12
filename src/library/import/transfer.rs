@@ -13,6 +13,7 @@ use super::{
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
     error::{AppError, AppResult},
+    log_time,
 };
 
 impl Importer {
@@ -34,6 +35,8 @@ impl Importer {
     }
 
     async fn transfer_movie(&mut self, detail: &MovieDetail, media_files: &[&MediaFile]) -> AppResult<()> {
+        log_time!(format!("transfer movie {}", self.get_movie_base_name(detail)));
+
         let movie_path = self.get_movie_path_in_library(detail);
         let movie_dir_id = self.get_or_create_dir_in_library(movie_path.as_str()).await?;
         let existing_files = self.list_movie_files_in_library(movie_dir_id).await?;
@@ -71,11 +74,19 @@ impl Importer {
         detail: &TvDetail,
         files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
     ) -> AppResult<()> {
+        log_time!(format!("transfer tv {}", self.get_tv_base_name(detail)));
+
         let tv_path = self.get_tv_path_in_library(detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
         let season_dir_ids = self.state.pan123.list_dir_ids(tv_dir_id).await?;
 
         for (season_number, season_files) in files {
+            log_time!(format!(
+                "transfer tv {} season {:02}",
+                self.get_tv_base_name(detail),
+                season_number
+            ));
+
             let season_dir = format!("Season {:02}", season_number);
             let season_full_path = format!("{}/{}", tv_path, season_dir);
             let (season_dir_id, existing_episode_files) = match season_dir_ids.get(&season_dir) {
@@ -236,6 +247,7 @@ impl Importer {
                 }
             }
             None => {
+                info!("File {} not saved in library", video_file_name);
                 self.summary.failed += media_file.file_count();
             }
         }

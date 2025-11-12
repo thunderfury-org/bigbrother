@@ -1,6 +1,5 @@
 use crate::{error::AppResult, state::AppState};
 
-mod category;
 mod import;
 
 pub use import::ImportSummary;
