@@ -111,6 +111,7 @@ impl Importer {
                     name: name.to_owned(),
                     etag: file.etag.to_owned(),
                     size: file.size,
+                    path: parent_path.to_owned(),
                 },
             ));
         }

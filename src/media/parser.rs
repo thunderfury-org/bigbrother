@@ -75,11 +75,13 @@ static NAME_NORMALIZE_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 });
 static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
-        (Regex::new(r"[.\[\]{}\(\)]").unwrap(), " "),
+        (Regex::new(r"[\.\[\]\{\}\(\)]").unwrap(), " "),
         (Regex::new(r"第[^.\[\]]+季").unwrap(), ""),
     ]
 });
 static DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
+
+static OTHER_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"第[^.\[\]]+集").unwrap());
 
 static VIDEO_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let extensions = [
@@ -328,10 +330,17 @@ impl MetadataParser {
             }
 
             for r in LANG_DETECTOR.detect_multiple_languages_of(part) {
-                titles.push(super::Title {
-                    language: normalize_language(r.language()),
-                    title: part[r.start_index()..r.end_index()].trim().to_owned(),
-                });
+                if r.language() == Language::Chinese {
+                    titles.push(super::Title {
+                        language: normalize_language(r.language()),
+                        title: part[r.start_index()..r.end_index()].replace("-", "").trim().to_owned(),
+                    });
+                } else {
+                    titles.push(super::Title {
+                        language: normalize_language(r.language()),
+                        title: part[r.start_index()..r.end_index()].trim().to_owned(),
+                    });
+                }
             }
         }
 
@@ -371,6 +380,7 @@ impl MetadataParser {
             }
         }
 
+        self.other = OTHER_REPLACE_RE.replace_all(&self.other, "").into_owned();
         if let Some(idx) = self.other.rfind('-') {
             self.info.release_group = self.other[idx + 1..].trim().to_owned();
         }

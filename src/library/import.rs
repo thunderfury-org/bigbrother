@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use super::category;
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
+    media::Metadata,
     state::AppState,
 };
 
+mod category;
 mod group;
 mod inner;
 pub(super) mod json;
@@ -29,6 +30,7 @@ pub(super) struct Importer {
     state: AppState,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
+    metadata_cache: HashMap<String, Box<Metadata>>,
     summary: ImportSummary,
     start_time: std::time::Instant,
 }
@@ -39,6 +41,7 @@ impl Importer {
             state,
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
+            metadata_cache: HashMap::new(),
             summary: ImportSummary::default(),
             start_time: std::time::Instant::now(),
         }

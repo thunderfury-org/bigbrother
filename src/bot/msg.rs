@@ -11,6 +11,7 @@ use tracing::error;
 
 use crate::{
     library::{self, ImportSummary, ShareUrl},
+    log_time,
     state::AppState,
 };
 
@@ -25,6 +26,8 @@ pub(super) struct MsgProcessor<'a> {
 
 impl MsgProcessor<'_> {
     pub(super) async fn process(&self) -> ResponseResult<()> {
+        log_time!("process telegram message");
+
         if let Some(doc) = self.msg.document() {
             return self.handle_document(doc).await;
         }

@@ -74,6 +74,7 @@ impl Importer {
         media_files_map.into_values().collect()
     }
 
+    /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
     pub(super) async fn group_media_files<'a>(&mut self, files: &'a [MediaFile]) -> AppResult<Vec<Media<'a>>> {
         // group files by tmdb_id
         let mut grouped_files = HashMap::new();
@@ -89,14 +90,14 @@ impl Importer {
         Ok(grouped_files.into_values().collect())
     }
 
+    /// 按 tmdb_id 分组 TV 文件
     async fn group_tv_file<'a>(
         &mut self,
         file: &'a MediaFile,
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
-        let tv_info = self
-            .get_tv_info_from_tmdb(&file.metadata.titles, &file.metadata.year)
-            .await?;
+        // 从 tmdb 获取 tv 详情
+        let tv_info = self.get_tv_info_from_tmdb(&file.metadata).await?;
         match tv_info {
             Some(tv_info) => {
                 let season_number = match file.metadata.season_number {
@@ -138,6 +139,11 @@ impl Importer {
                 }
             }
             None => {
+                // tv not found in tmdb
+                info!(
+                    "No tv found in tmdb for file: {}, path: {}",
+                    file.video.name, file.video.path
+                );
                 self.summary.skipped += 1;
             }
         }
@@ -145,14 +151,14 @@ impl Importer {
         Ok(())
     }
 
+    /// 按 tmdb_id 分组 Movie 文件
     async fn group_movie_file<'a>(
         &mut self,
         file: &'a MediaFile,
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
-        let movie_info = self
-            .get_movie_info_from_tmdb(&file.metadata.titles, &file.metadata.year)
-            .await?;
+        // 从 tmdb 获取 movie 详情
+        let movie_info = self.get_movie_info_from_tmdb(&file.metadata).await?;
         match movie_info {
             Some(movie_info) => {
                 let entry = grouped_files.entry(movie_info.id).or_insert_with(|| Media::Movie {
@@ -164,6 +170,11 @@ impl Importer {
                 }
             }
             None => {
+                // movie not found in tmdb
+                info!(
+                    "No movie found in tmdb for file: {}, path: {}",
+                    file.video.name, file.video.path
+                );
                 self.summary.skipped += 1;
             }
         }
