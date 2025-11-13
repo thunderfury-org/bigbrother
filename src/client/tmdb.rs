@@ -41,7 +41,6 @@ pub struct Season {
     pub id: u32,
     pub name: String,
     pub episode_count: u32,
-    pub air_date: String,
     pub season_number: u32,
 }
 

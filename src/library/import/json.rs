@@ -51,13 +51,16 @@ impl Importer {
         for s in split {
             let parts = s.split("#").collect::<Vec<_>>();
             if parts.len() != 3 {
-                return Err(AppError::Error(format!("invalid fslink: {}", s)));
+                return Err(AppError::InvalidParameter(format!("invalid fslink: {}", s)));
             }
 
             let size = match parts[1].parse::<u64>() {
                 Ok(size) => size,
                 Err(_) => {
-                    return Err(AppError::Error(format!("invalid fslink: {}, size is not u64", s)));
+                    return Err(AppError::InvalidParameter(format!(
+                        "invalid fslink: {}, size is not u64",
+                        s
+                    )));
                 }
             };
 

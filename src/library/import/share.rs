@@ -75,7 +75,10 @@ impl Importer {
                 }
             });
         if share_code.is_empty() {
-            return Err(AppError::Error(format!("Can not extract share code from URL: {}", url)));
+            return Err(AppError::NotFound(format!(
+                "Can not extract share code from URL: {}",
+                url
+            )));
         }
 
         let media_files = self.list_files_from_pan189_share(&share_code).await?;

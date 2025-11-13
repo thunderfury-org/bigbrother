@@ -89,9 +89,58 @@ impl Metadata {
     pub fn parse(value: &str) -> Box<Self> {
         parser::parse(value)
     }
-}
 
-impl Metadata {
+    pub fn merge_metadata(&mut self, other: &Metadata) {
+        // For titles, iterate through `other.titles` and only add a title if it doesn't already exist in `self.titles`.
+        for other_title in &other.titles {
+            if !self.titles.iter().any(|t| t.title == other_title.title) {
+                self.titles.push(other_title.clone());
+            }
+        }
+
+        // For year, always take `other.year` if it's not empty, overriding `self.year`.
+        if !other.year.is_empty() {
+            self.year = other.year.clone();
+        }
+
+        if self.tmdb_id.is_empty() && !other.tmdb_id.is_empty() {
+            self.tmdb_id = other.tmdb_id.clone();
+        }
+        if self.season_number.is_none() && other.season_number.is_some() {
+            self.season_number = other.season_number;
+        }
+        if self.episode_number.is_none() && other.episode_number.is_some() {
+            self.episode_number = other.episode_number;
+        }
+        if self.second_episode_number.is_none() && other.second_episode_number.is_some() {
+            self.second_episode_number = other.second_episode_number;
+        }
+        if self.resolution.is_empty() && !other.resolution.is_empty() {
+            self.resolution = other.resolution.clone();
+        }
+        if self.frame_rate.is_empty() && !other.frame_rate.is_empty() {
+            self.frame_rate = other.frame_rate.clone();
+        }
+        if self.quality.is_empty() && !other.quality.is_empty() {
+            self.quality = other.quality.clone();
+        }
+        if self.hdr.is_empty() && !other.hdr.is_empty() {
+            self.hdr = other.hdr.clone();
+        }
+        if self.video_codec.is_empty() && !other.video_codec.is_empty() {
+            self.video_codec = other.video_codec.clone();
+        }
+        if self.audio_codec.is_empty() && !other.audio_codec.is_empty() {
+            self.audio_codec = other.audio_codec.clone();
+        }
+        if self.release_group.is_empty() && !other.release_group.is_empty() {
+            self.release_group = other.release_group.clone();
+        }
+        if self.subtitles.is_empty() && !other.subtitles.is_empty() {
+            self.subtitles.extend(other.subtitles.clone());
+        }
+    }
+
     pub fn is_video(&self) -> bool {
         self.file_type == FileType::Video
     }
