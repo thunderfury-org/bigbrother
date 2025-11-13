@@ -256,7 +256,7 @@ impl Importer {
 
     async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
         let strm_file_content = format!(
-            "{}/{}?file_id={}",
+            "{}{}?file_id={}",
             self.state.config.get_media_server_config().get_strm_download_url(),
             remote_file_path,
             file_id

@@ -10,7 +10,7 @@ use crate::{
 
 #[derive(Clone, Default)]
 pub struct AppState {
-    pub db: DatabaseConnection,
+    pub _db: DatabaseConnection,
     pub config: Arc<config::Manager>,
     pub pan123: Arc<pan123::Client>,
     pub pan189: Arc<pan189::Client>,
@@ -21,11 +21,15 @@ impl AppState {
     pub async fn new(data_dir: &str) -> AppResult<Self> {
         let config = config::Manager::try_from(data_dir.trim())?;
 
-        let conn_str = format!("sqlite:/{}?mode=rwc", config.get_db_file_path());
+        let db_dir = config.get_db_dir();
+        if !std::fs::exists(db_dir.as_str())? {
+            std::fs::create_dir_all(db_dir.as_str())?;
+        }
+        let conn_str = format!("sqlite:{}/data.db?mode=rwc", db_dir);
         let db = Database::connect(conn_str.as_str()).await?;
 
         Ok(AppState {
-            db,
+            _db: db,
             pan123: Arc::new(pan123::Client::new(
                 &config.get_pan123_config().client_id,
                 &config.get_pan123_config().client_secret,

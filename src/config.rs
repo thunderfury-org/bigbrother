@@ -63,8 +63,8 @@ impl Manager {
         format!("{}/cache", self.data_dir.as_str())
     }
 
-    pub fn get_db_file_path(&self) -> String {
-        format!("{}/db/data.db", self.data_dir.as_str())
+    pub fn get_db_dir(&self) -> String {
+        format!("{}/db", self.data_dir.as_str())
     }
 
     pub fn get_media_server_config(&self) -> &MediaServerConfig {
