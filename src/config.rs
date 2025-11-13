@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use serde::Deserialize;
 
 use super::error::AppError;
@@ -19,6 +17,7 @@ pub struct MediaServerConfig {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub advertise_base_url: Option<String>,
+    pub strm_path_prefix: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -49,10 +48,10 @@ pub struct TmdbConfig {
     pub api_key: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct Manager {
-    data_dir: Arc<String>,
-    app_config: Arc<AppConfig>,
+    data_dir: String,
+    app_config: Box<AppConfig>,
 }
 
 impl Manager {
@@ -64,8 +63,8 @@ impl Manager {
         format!("{}/cache", self.data_dir.as_str())
     }
 
-    pub fn _get_db_dir(&self) -> String {
-        format!("{}/db", self.data_dir.as_str())
+    pub fn get_db_file_path(&self) -> String {
+        format!("{}/db/data.db", self.data_dir.as_str())
     }
 
     pub fn get_media_server_config(&self) -> &MediaServerConfig {
@@ -94,23 +93,23 @@ impl TryFrom<&str> for Manager {
 
     fn try_from(data_dir: &str) -> Result<Self, Self::Error> {
         if data_dir.is_empty() {
-            return Err(AppError::Error("config dir is empty".to_string()));
+            return Err(AppError::InvalidParameter("config dir is empty".to_string()));
         }
 
         let config_file = format!("{data_dir}/config/config.yaml");
         if !std::fs::exists(config_file.as_str())? {
             return Ok(Self {
-                data_dir: Arc::new(data_dir.to_string()),
-                app_config: Arc::new(AppConfig::default()),
+                data_dir: data_dir.to_owned(),
+                app_config: Box::new(AppConfig::default()),
             });
         }
 
         match serde_yaml::from_str(std::fs::read_to_string(config_file.as_str())?.as_str()) {
             Ok(config) => Ok(Self {
-                data_dir: Arc::new(data_dir.to_string()),
-                app_config: Arc::new(config),
+                data_dir: data_dir.to_owned(),
+                app_config: Box::new(config),
             }),
-            Err(e) => Err(AppError::Error(format!("parse config file error, {}", e))),
+            Err(e) => Err(AppError::InvalidParameter(format!("parse config file error, {}", e))),
         }
     }
 }
@@ -131,8 +130,17 @@ impl MediaServerConfig {
     }
 
     pub fn get_advertise_base_url(&self) -> String {
-        self.advertise_base_url
-            .as_ref()
-            .map_or_else(|| format!("http://{}", self.get_addr()), |u| u.to_owned())
+        self.advertise_base_url.as_ref().map_or_else(
+            || format!("http://{}", self.get_addr()),
+            |u| u.trim_end_matches('/').to_owned(),
+        )
+    }
+
+    pub fn get_strm_path_prefix(&self) -> &str {
+        self.strm_path_prefix.as_deref().unwrap_or("/d")
+    }
+
+    pub fn get_strm_download_url(&self) -> String {
+        format!("{}{}", self.get_advertise_base_url(), self.get_strm_path_prefix())
     }
 }

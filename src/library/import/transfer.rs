@@ -43,7 +43,7 @@ impl Importer {
         let media_file = media_files
             .iter()
             .max_by(|a, b| a.video.size.cmp(&b.video.size))
-            .ok_or_else(|| AppError::Error(format!("no video file found when transfer movie {}", detail.title)))?;
+            .ok_or_else(|| AppError::NotFound(format!("no video file found when transfer movie {}", detail.title)))?;
 
         if !existing_files.is_empty() {
             // existing files found, check if need overwrite
@@ -107,7 +107,7 @@ impl Importer {
                     .iter()
                     .max_by(|a, b| a.video.size.cmp(&b.video.size))
                     .ok_or_else(|| {
-                        AppError::Error(format!(
+                        AppError::NotFound(format!(
                             "no video file found when transfer tv series {} season {} episode {}",
                             detail.name, season_number, episode_number
                         ))
@@ -179,7 +179,7 @@ impl Importer {
             if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
                 && e.kind() != io::ErrorKind::NotFound
             {
-                return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
+                return Err(AppError::Internal(format!("Failed to delete local file, error: {}", e)));
             }
 
             for s in &f.subtitles {
@@ -188,7 +188,7 @@ impl Importer {
                 if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
                     && e.kind() != io::ErrorKind::NotFound
                 {
-                    return Err(AppError::Error(format!("Failed to delete local file, error: {}", e)));
+                    return Err(AppError::Internal(format!("Failed to delete local file, error: {}", e)));
                 }
             }
         }
@@ -256,8 +256,8 @@ impl Importer {
 
     async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
         let strm_file_content = format!(
-            "{}/d{}?file_id={}",
-            self.state.config.get_media_server_config().get_advertise_base_url(),
+            "{}/{}?file_id={}",
+            self.state.config.get_media_server_config().get_strm_download_url(),
             remote_file_path,
             file_id
         );
@@ -351,5 +351,50 @@ impl Importer {
 
     fn need_overwrite_existing_files(&self, existing_files: &[MediaFile], media_file: &MediaFile) -> bool {
         existing_files.iter().all(|f| f.video.size < media_file.video.size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media::Metadata;
+
+    fn create_mock_media_file(size: u64) -> MediaFile {
+        MediaFile {
+            metadata: Box::new(Metadata::default()),
+            video: RawFile {
+                id: None,
+                name: "test.mkv".to_string(),
+                etag: "etag".to_string(),
+                size,
+                path: "/path".to_string(),
+            },
+            subtitles: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_need_overwrite_existing_files() {
+        let importer = Importer::default();
+
+        // Case 1: New file is larger than all existing files
+        let existing_files_1 = vec![create_mock_media_file(100), create_mock_media_file(200)];
+        let new_file_1 = create_mock_media_file(300);
+        assert!(importer.need_overwrite_existing_files(&existing_files_1, &new_file_1));
+
+        // Case 2: New file is smaller than an existing file
+        let existing_files_2 = vec![create_mock_media_file(100), create_mock_media_file(200)];
+        let new_file_2 = create_mock_media_file(50);
+        assert!(!importer.need_overwrite_existing_files(&existing_files_2, &new_file_2));
+
+        // Case 3: New file is the same size as an existing file
+        let existing_files_3 = vec![create_mock_media_file(100), create_mock_media_file(200)];
+        let new_file_3 = create_mock_media_file(200);
+        assert!(!importer.need_overwrite_existing_files(&existing_files_3, &new_file_3));
+
+        // Case 4: No existing files
+        let existing_files_4 = vec![];
+        let new_file_4 = create_mock_media_file(100);
+        assert!(importer.need_overwrite_existing_files(&existing_files_4, &new_file_4));
     }
 }

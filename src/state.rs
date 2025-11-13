@@ -1,25 +1,31 @@
 use std::sync::Arc;
 
+use sea_orm::{Database, DatabaseConnection};
+
 use crate::{
     client::{pan123, pan189, tmdb},
     config,
-    error::AppError,
+    error::AppResult,
 };
 
 #[derive(Clone, Default)]
 pub struct AppState {
-    pub config: config::Manager,
+    pub db: DatabaseConnection,
+    pub config: Arc<config::Manager>,
     pub pan123: Arc<pan123::Client>,
     pub pan189: Arc<pan189::Client>,
     pub tmdb: Arc<tmdb::Client>,
 }
 
-impl TryFrom<&str> for AppState {
-    type Error = AppError;
-
-    fn try_from(data_dir: &str) -> Result<Self, Self::Error> {
+impl AppState {
+    pub async fn new(data_dir: &str) -> AppResult<Self> {
         let config = config::Manager::try_from(data_dir.trim())?;
+
+        let conn_str = format!("sqlite:/{}?mode=rwc", config.get_db_file_path());
+        let db = Database::connect(conn_str.as_str()).await?;
+
         Ok(AppState {
+            db,
             pan123: Arc::new(pan123::Client::new(
                 &config.get_pan123_config().client_id,
                 &config.get_pan123_config().client_secret,
@@ -27,7 +33,7 @@ impl TryFrom<&str> for AppState {
             )),
             pan189: Arc::new(pan189::Client::new()),
             tmdb: Arc::new(tmdb::Client::new(&config.get_tmdb_config().api_key)),
-            config,
+            config: Arc::new(config),
         })
     }
 }

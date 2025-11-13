@@ -12,7 +12,11 @@ use tracing::{error, info};
 use crate::{client::RequestError, state::AppState};
 
 pub(super) fn new_router(state: AppState) -> Router {
-    Router::new().route("/d/{*path}", get(redirect)).with_state(state)
+    let path = format!(
+        "{}/{{*path}}",
+        state.config.get_media_server_config().get_strm_path_prefix()
+    );
+    Router::new().route(path.as_str(), get(redirect)).with_state(state)
 }
 
 async fn redirect(
