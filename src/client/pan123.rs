@@ -61,10 +61,10 @@ struct FileListResponse {
 
 #[derive(Debug, Deserialize)]
 struct FastUploadResponse {
-    #[serde(rename = "fileID")]
-    file_id: Option<i64>,
-    #[serde(rename = "reuse")]
+    #[serde(rename = "Reuse")]
     reuse: bool,
+    #[serde(rename = "Info")]
+    info: Option<File>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,19 +195,30 @@ impl Client {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.post::<_, FastUploadResponse>(
-            self.build_open_api_url("/upload/v2/file/create"),
+            self.build_api_url("/api/file/upload_request"),
             None,
             Some(&json!(
                 {
-                    "parentFileID": parent_file_id,
-                    "filename": file_name,
+                    "driveId": 0,
+                    "parentFileId": parent_file_id,
+                    "fileName": file_name,
                     "etag": etag,
                     "size": size,
+                    "type": 0,
                 }
             )),
         )
         .await
-        .map(|r| if r.reuse { r.file_id } else { None })
+        .map(|r| {
+            if r.reuse {
+                match r.info {
+                    Some(info) => Some(info.file_id),
+                    None => None,
+                }
+            } else {
+                None
+            }
+        })
     }
 
     pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
@@ -369,7 +380,11 @@ impl Client {
         payload: Option<&P>,
     ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
-        let headers = Some(vec![(PLATFORM_KEY, PLATFORM_VALUE), (http::AUTH_KEY, token.as_str())]);
+        let headers = Some(vec![
+            ("App-Version", "3"),
+            (PLATFORM_KEY, PLATFORM_VALUE),
+            (http::AUTH_KEY, token.as_str()),
+        ]);
         let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
         self.process_response(response)
     }
