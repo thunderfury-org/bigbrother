@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use tracing::info;
+use tracing::{error, info};
 
 use super::{
     ImportSummary, Importer,
@@ -213,7 +213,10 @@ impl Importer {
                 media_file.video.etag.as_str(),
                 media_file.video.size,
             )
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!("Failed to transfer file {}, error: {}", media_file.video.name, e);
+            })?;
         match res {
             Some(id) => {
                 info!("File {} saved in library, file id: {}", video_file_name, id);
