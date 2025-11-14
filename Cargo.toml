@@ -43,9 +43,12 @@ teloxide = { version = "0.17.0", default-features = false, features = [
   "rustls",
   "macros",
 ] }
-futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
 sea-orm = { version = "2.0.0-rc", features = [
   "sqlx-sqlite",
   "runtime-tokio-rustls",
   "macros",
+  "with-chrono",
 ] }
+sea-orm-migration = "2.0.0-rc"
+dashmap = "6"

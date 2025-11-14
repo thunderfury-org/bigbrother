@@ -10,6 +10,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     Server(DataDirArgs),
+    Migrate(DataDirArgs),
 }
 
 #[derive(Args)]
