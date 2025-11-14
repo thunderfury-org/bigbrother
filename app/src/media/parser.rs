@@ -395,7 +395,7 @@ pub fn parse(name: &str) -> Box<Metadata> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::Path};
 
     use serde::Deserialize;
 
@@ -409,7 +409,10 @@ mod tests {
 
     #[test]
     fn test_parse_media() {
-        let base_path = std::path::Path::new(file!()).parent().unwrap();
+        let data_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("media")
+            .join("testdata");
 
         let files = vec![
             "anime.yaml",
@@ -420,7 +423,7 @@ mod tests {
         ];
 
         for file in files {
-            let content = fs::read_to_string(format!("{}/testdata/{}", base_path.display(), file)).unwrap();
+            let content = fs::read_to_string(data_path.join(file)).unwrap();
             let cases: Vec<TestCase> = serde_yaml::from_str(&content).unwrap();
             for case in &cases {
                 let info = parse(case.input.as_str());

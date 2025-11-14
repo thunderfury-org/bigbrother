@@ -1,13 +1,13 @@
-[package]
-name = "bigbrother"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = ["app"]
+default-members = ["app"]
 
 [profile.release]
 lto = true
 codegen-units = 1
 
-[dependencies]
+[workspace.dependencies]
 axum = "0.8"
 tower = "0"
 tower-http = { version = "0.6", features = ["trace"] }
