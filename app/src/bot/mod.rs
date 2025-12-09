@@ -19,12 +19,15 @@ pub async fn run(state: AppState) {
 }
 
 async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    const KEYWORDS: &[&str] = &["天地剑心", "红石榴餐厅", "暗河传"];
+    let filters = match &state.config.get_telegram_config().filters {
+        Some(f) => f,
+        None => return Ok(()),
+    };
 
     let chat_id = ChatId(state.config.get_telegram_config().user_id);
 
     let text = msg.text().or(msg.caption()).unwrap_or_default();
-    for keyword in KEYWORDS {
+    for keyword in filters {
         if text.contains(keyword) {
             let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
             let processor = msg::MsgProcessor {
@@ -40,7 +43,7 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         && let Some(text) = doc.file_name.as_ref()
         && text.ends_with(".json")
     {
-        for keyword in KEYWORDS {
+        for keyword in filters {
             if text.contains(keyword) {
                 let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
                 let processor = msg::MsgProcessor {
