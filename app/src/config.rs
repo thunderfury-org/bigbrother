@@ -40,6 +40,7 @@ pub struct LibraryConfig {
 pub struct TelegramConfig {
     pub bot_token: String,
     pub user_id: i64,
+    pub filters: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
