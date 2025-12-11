@@ -29,7 +29,7 @@ impl AppState {
         let db = Database::connect(conn_str.as_str()).await?;
 
         Ok(AppState {
-            db: db,
+            db,
             pan123: Arc::new(pan123::Client::new(
                 &config.get_pan123_config().client_id,
                 &config.get_pan123_config().client_secret,

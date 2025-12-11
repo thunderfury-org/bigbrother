@@ -49,4 +49,8 @@ sea-orm = { version = "2.0.0-rc", features = [
   "runtime-tokio-rustls",
   "macros",
 ] }
-sea-orm-migration = { version = "2.0.0-rc" }
+sea-orm-migration = { version = "2.0.0-rc", features = [
+  "sqlx-sqlite",
+  "runtime-tokio-rustls",
+] }
+chrono = { version = "0.4", features = ["serde"] }

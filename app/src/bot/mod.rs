@@ -2,12 +2,21 @@ use teloxide::prelude::*;
 
 use crate::state::AppState;
 
+mod cmd;
 mod msg;
 
 pub async fn run(state: AppState) {
     let bot = Bot::new(state.config.get_telegram_config().bot_token.as_str());
+
+    cmd::create_commands_in_background(&bot);
+
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
+        .branch(
+            Update::filter_message()
+                .filter_command::<cmd::Command>()
+                .endpoint(cmd::handle_command),
+        )
         .branch(Update::filter_message().endpoint(handle_message));
 
     Dispatcher::builder(bot, handler)

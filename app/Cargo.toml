@@ -28,3 +28,4 @@ lingua = { workspace = true }
 teloxide = { workspace = true }
 futures = { workspace = true }
 sea-orm = { workspace = true }
+chrono = { workspace = true }

@@ -9,6 +9,7 @@ mod bot;
 mod cli;
 mod client;
 mod config;
+mod entity;
 mod error;
 mod library;
 mod logger;
