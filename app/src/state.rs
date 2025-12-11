@@ -10,7 +10,7 @@ use crate::{
 
 #[derive(Clone, Default)]
 pub struct AppState {
-    pub _db: DatabaseConnection,
+    pub db: DatabaseConnection,
     pub config: Arc<config::Manager>,
     pub pan123: Arc<pan123::Client>,
     pub pan189: Arc<pan189::Client>,
@@ -29,7 +29,7 @@ impl AppState {
         let db = Database::connect(conn_str.as_str()).await?;
 
         Ok(AppState {
-            _db: db,
+            db: db,
             pan123: Arc::new(pan123::Client::new(
                 &config.get_pan123_config().client_id,
                 &config.get_pan123_config().client_secret,
