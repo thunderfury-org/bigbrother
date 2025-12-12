@@ -1,16 +1,14 @@
-openlist:
-  base_url:
-  token:
+pan123:
+  client_id: ""
+  client_secret: ""
 
 tmdb:
-  api_key:
+  api_key: ""
 
 telegram:
-  token:
-  chat_id:
+  bot_token: ""
+  user_id:
 
-libraries:
-  - name:
-    path:
-    watch_path:
-    local_path:
+library:
+  remote_path: ""
+  local_path: ""

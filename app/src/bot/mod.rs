@@ -1,6 +1,7 @@
 use teloxide::prelude::*;
+use tracing::error;
 
-use crate::state::AppState;
+use crate::{entity::keyword, state::AppState};
 
 mod cmd;
 mod msg;
@@ -28,15 +29,24 @@ pub async fn run(state: AppState) {
 }
 
 async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    let filters = match &state.config.get_telegram_config().filters {
-        Some(f) => f,
-        None => return Ok(()),
+    let keywords = match keyword::list_all_keywords(&state.db).await {
+        Ok(keywords) => keywords,
+        Err(e) => {
+            error!("Failed to query keywords from database: {e}");
+            return Ok(());
+        }
     };
+
+    if keywords.is_empty() {
+        return Ok(());
+    }
+
+    let filters: Vec<String> = keywords.into_iter().map(|k| k.value).collect();
 
     let chat_id = ChatId(state.config.get_telegram_config().user_id);
 
     let text = msg.text().or(msg.caption()).unwrap_or_default();
-    for keyword in filters {
+    for keyword in &filters {
         if text.contains(keyword) {
             let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
             let processor = msg::MsgProcessor {
@@ -52,7 +62,7 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         && let Some(text) = doc.file_name.as_ref()
         && text.ends_with(".json")
     {
-        for keyword in filters {
+        for keyword in &filters {
             if text.contains(keyword) {
                 let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
                 let processor = msg::MsgProcessor {
