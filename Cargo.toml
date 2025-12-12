@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["app"]
+members = ["app", "migration"]
 default-members = ["app"]
 
 [profile.release]
@@ -30,7 +30,7 @@ reqwest = { version = "0.12", features = [
   "brotli",
 ], default-features = false }
 reqwest-middleware = "0.4"
-reqwest-retry = "0.7"
+reqwest-retry = "0.8"
 thiserror = "2"
 regex = "1"
 lingua = { version = "1.7.2", default-features = false, features = [
@@ -49,3 +49,8 @@ sea-orm = { version = "2.0.0-rc", features = [
   "runtime-tokio-rustls",
   "macros",
 ] }
+sea-orm-migration = { version = "2.0.0-rc", features = [
+  "sqlx-sqlite",
+  "runtime-tokio-rustls",
+] }
+chrono = { version = "0.4", features = ["serde"] }

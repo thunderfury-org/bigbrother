@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+migration = { path = "../migration" }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -27,3 +28,4 @@ lingua = { workspace = true }
 teloxide = { workspace = true }
 futures = { workspace = true }
 sea-orm = { workspace = true }
+chrono = { workspace = true }
