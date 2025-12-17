@@ -107,10 +107,9 @@ impl Importer {
                     stack.push((file.file_id, format!("{}/{}", parent_path, file.file_name)));
                 } else {
                     // Regular file
-                    self.summary.total += 1;
+
                     let metadata = self.parse_media_metadata(&file.file_name, &parent_path);
                     if metadata.unknown_type() {
-                        self.summary.skipped += 1;
                         continue;
                     }
 
@@ -127,7 +126,7 @@ impl Importer {
                 }
             }
 
-            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
+            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)
@@ -153,10 +152,9 @@ impl Importer {
             let mut media_files_in_dir = Vec::new();
             for file in &files {
                 // Regular file
-                self.summary.total += 1;
+
                 let metadata = self.parse_media_metadata(&file.name, &parent_path);
                 if metadata.unknown_type() {
-                    self.summary.skipped += 1;
                     continue;
                 }
 
@@ -171,7 +169,7 @@ impl Importer {
                     },
                 ));
             }
-            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
+            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)

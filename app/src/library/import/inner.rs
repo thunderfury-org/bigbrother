@@ -22,12 +22,6 @@ pub(super) struct MediaFile {
     pub subtitles: Vec<RawFile>,
 }
 
-impl MediaFile {
-    pub fn file_count(&self) -> usize {
-        1 + self.subtitles.len()
-    }
-}
-
 pub(super) enum Media<'a> {
     Movie {
         detail: MovieDetail,

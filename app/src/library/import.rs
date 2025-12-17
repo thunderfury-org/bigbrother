@@ -20,8 +20,6 @@ mod transfer;
 pub struct ImportSummary {
     pub success: usize,
     pub failed: usize,
-    pub skipped: usize,
-    pub total: usize,
     pub total_size: u64,
     pub cost: std::time::Duration,
 }

@@ -100,10 +100,8 @@ impl Importer {
                 .map(|p| p.to_str().unwrap_or_default())
                 .unwrap_or_default();
 
-            self.summary.total += 1;
             let metadata = self.parse_media_metadata(name, parent_path);
             if metadata.unknown_type() {
-                self.summary.skipped += 1;
                 continue;
             }
 
@@ -119,7 +117,7 @@ impl Importer {
             ));
         }
 
-        self.convert_share_raw_file_to_media_file(all_files)
+        self.group_video_and_subtitle_files(all_files)
     }
 }
 

@@ -182,17 +182,14 @@ impl MsgProcessor<'_> {
             0.0
         };
         format!(
-            "📁 共 {} 个文件\n\
+            "📁 导入总结\n\
              ✅ 成功: {}个\n\
              ❌ 失败: {}个\n\
-             🔄 跳过文件: {}个\n\
              📊 成功转存大小: {:.2} GB\n\
              📊 平均文件大小: {:.2} GB\n\
              ⏱️ 耗时: {:.2} 秒",
-            summary.total,
             summary.success,
             summary.failed,
-            summary.skipped,
             total_size_gb,
             avg_size_gb,
             summary.cost.as_secs_f64()

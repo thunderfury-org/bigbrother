@@ -54,7 +54,6 @@ impl Importer {
                 self.delete_files_in_local(&movie_path, &existing_files).await?;
             } else {
                 // do not need overwrite existing files, skip
-                self.summary.skipped += media_files.iter().map(|f| f.file_count()).sum::<usize>();
                 return Ok(());
             }
         }
@@ -64,7 +63,7 @@ impl Importer {
             detail.title,
             self.get_year_from_date(detail.release_date.as_str()),
         );
-        self.transfer_video_files(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
+        self.transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
         Ok(())
     }
@@ -123,7 +122,6 @@ impl Importer {
                         self.delete_files_in_local(&season_full_path, existing_files).await?;
                     } else {
                         // existing file size is larger than new file, skip
-                        self.summary.skipped += files.iter().map(|f| f.file_count()).sum::<usize>();
                         continue;
                     }
                 }
@@ -136,7 +134,7 @@ impl Importer {
                     season_number,
                     episode_number
                 );
-                self.transfer_video_files(&season_full_path, season_dir_id, name_prefix.as_str(), media_file)
+                self.transfer_media_file(&season_full_path, season_dir_id, name_prefix.as_str(), media_file)
                     .await?;
             }
         }
@@ -196,32 +194,64 @@ impl Importer {
         Ok(())
     }
 
-    async fn transfer_video_files(
-        &mut self,
+    async fn transfer_media_file(
+        &self,
         parent_path: &str,
         parent_dir_id: i64,
         name_prefix: &str,
         media_file: &MediaFile,
     ) -> AppResult<()> {
         let video_file_name = self.format_video_file_name(name_prefix, media_file);
+        let success = self
+            .transfer_video_file(parent_path, parent_dir_id, video_file_name.as_str(), media_file)
+            .await?;
+        if !success {
+            return Ok(());
+        }
+
+        // save subtitle files
+        let subtitle_file_name_replace_from = media_file
+            .video
+            .name
+            .trim_end_matches(media_file.metadata.extension.as_str());
+        let subtitle_file_name_replace_to = video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
+        for subtitle in &media_file.subtitles {
+            self.transfer_subtitle_file(
+                parent_path,
+                parent_dir_id,
+                subtitle,
+                subtitle_file_name_replace_from,
+                subtitle_file_name_replace_to,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn transfer_video_file(
+        &self,
+        parent_path: &str,
+        parent_dir_id: i64,
+        video_file_name: &str,
+        media_file: &MediaFile,
+    ) -> AppResult<bool> {
         let res = self
             .state
             .pan123
             .fast_upload(
                 parent_dir_id,
-                video_file_name.as_str(),
+                video_file_name,
                 media_file.video.etag.as_str(),
                 media_file.video.size,
             )
             .await
             .inspect_err(|e| {
-                error!("Failed to transfer file {}, error: {}", media_file.video.name, e);
+                error!("Failed to transfer file {}, error: {}", video_file_name, e);
             })?;
         match res {
             Some(id) => {
                 info!("File {} saved in library, file id: {}", video_file_name, id);
-                self.summary.success += 1;
-                self.summary.total_size += media_file.video.size;
 
                 // create strm file
                 self.create_strm_file(
@@ -231,30 +261,14 @@ impl Importer {
                 )
                 .await?;
 
-                // save subtitle files
-                let subtitle_file_name_replace_from = media_file
-                    .video
-                    .name
-                    .trim_end_matches(media_file.metadata.extension.as_str());
-                let subtitle_file_name_replace_to =
-                    video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
-                for subtitle in &media_file.subtitles {
-                    self.transfer_subtitle_file(
-                        parent_path,
-                        parent_dir_id,
-                        subtitle,
-                        subtitle_file_name_replace_from,
-                        subtitle_file_name_replace_to,
-                    )
-                    .await?;
-                }
+                Ok(true)
             }
             None => {
                 info!("File {} not saved in library", video_file_name);
-                self.summary.failed += media_file.file_count();
+
+                Ok(false)
             }
         }
-        Ok(())
     }
 
     async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
@@ -281,24 +295,25 @@ impl Importer {
     }
 
     async fn transfer_subtitle_file(
-        &mut self,
+        &self,
         parent_path: &str,
         parent_dir_id: i64,
         raw_file: &RawFile,
         file_name_replace_from: &str,
         file_name_replace_to: &str,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
         let res = self
             .state
             .pan123
             .fast_upload(parent_dir_id, file_name.as_str(), raw_file.etag.as_str(), raw_file.size)
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!("Failed to transfer file {}, error: {}", file_name, e);
+            })?;
         match res {
             Some(id) => {
                 info!("File {} saved in library, file id: {}", file_name, id);
-                self.summary.success += 1;
-                self.summary.total_size += raw_file.size;
 
                 // download subtitle file
                 let local_file_path = format!("{}/{}", parent_path, file_name).replace(
@@ -307,12 +322,15 @@ impl Importer {
                 );
                 self.state.pan123.download_file(id, local_file_path.as_str()).await?;
                 info!("Subtitle file {} downloaded", local_file_path);
+
+                Ok(true)
             }
             None => {
-                self.summary.failed += 1;
+                info!("File {} not saved in library", file_name);
+
+                Ok(false)
             }
         }
-        Ok(())
     }
 
     fn format_video_file_name(&self, name_prefix: &str, file: &MediaFile) -> String {

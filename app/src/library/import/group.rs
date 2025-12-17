@@ -9,16 +9,6 @@ use super::{
 use crate::{error::AppResult, media::Metadata};
 
 impl Importer {
-    pub(super) fn convert_share_raw_file_to_media_file(
-        &mut self,
-        raw_files: Vec<(Box<Metadata>, RawFile)>,
-    ) -> Vec<MediaFile> {
-        let new_file_count = raw_files.len();
-        let grouped_files = self.group_video_and_subtitle_files(raw_files);
-        self.summary.skipped += new_file_count - grouped_files.iter().map(|f| f.file_count()).sum::<usize>();
-        grouped_files
-    }
-
     /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
     pub(super) fn group_video_and_subtitle_files(&self, raw_files: Vec<(Box<Metadata>, RawFile)>) -> Vec<MediaFile> {
         if raw_files.is_empty() {
@@ -111,7 +101,7 @@ impl Importer {
                                 "Multi season tv, but no season number found in file: {}",
                                 file.video.name
                             );
-                            self.summary.skipped += 1;
+
                             return Ok(());
                         }
                     }
@@ -121,7 +111,7 @@ impl Importer {
                     None => {
                         // episode number not found in file metadata
                         info!("No episode number found in file: {}", file.video.name);
-                        self.summary.skipped += 1;
+
                         return Ok(());
                     }
                 };
@@ -140,11 +130,6 @@ impl Importer {
             }
             None => {
                 // tv not found in tmdb
-                info!(
-                    "No tv found in tmdb for file: {}, path: {}",
-                    file.video.name, file.video.path
-                );
-                self.summary.skipped += 1;
             }
         }
 
@@ -175,7 +160,6 @@ impl Importer {
                     "No movie found in tmdb for file: {}, path: {}",
                     file.video.name, file.video.path
                 );
-                self.summary.skipped += 1;
             }
         }
 
