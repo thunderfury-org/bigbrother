@@ -29,7 +29,7 @@ pub(super) enum Media<'a> {
     },
     Tv {
         detail: TvDetail,
-        // (season, episode) -> files[]
+        /// (season, episode) -> files[]
         files: BTreeMap<u32, BTreeMap<u32, Vec<&'a MediaFile>>>,
     },
 }

@@ -163,8 +163,15 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
-        for media in imported {
-            self.send_message(self.format_import_summary(&media)).await?;
+        for media in &imported {
+            match self.format_imported_media(media) {
+                Some(summary) => {
+                    self.send_message(summary).await?;
+                }
+                None => {
+                    self.send_message("导入失败的媒体，未生成摘要").await?;
+                }
+            }
         }
         Ok(())
     }
@@ -185,7 +192,7 @@ impl MsgProcessor<'_> {
         ChatId(self.state.config.get_telegram_config().user_id)
     }
 
-    fn format_import_summary(&self, media: &ImportedMedia) -> String {
+    fn format_imported_media(&self, media: &ImportedMedia) -> Option<String> {
         match media {
             ImportedMedia::Movie {
                 title,
@@ -194,20 +201,20 @@ impl MsgProcessor<'_> {
                 cost,
                 has_failed,
             } => {
+                if *has_failed {
+                    return None;
+                }
+
                 let size_gb = *size as f64 / 1_000_000_000.0;
-                format!(
-                    "🎬 电影导入: {}\n\
-                     📅 年份: {}\n\
+                Some(format!(
+                    "🎬 电影 {} ({}) 已入库\n\
                      📊 大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒\n\
-                     {} {}",
+                     ⏱️ 耗时: {:.2} 秒\n",
                     title,
                     year,
                     size_gb,
                     cost.as_secs_f64(),
-                    if *has_failed { "❌ 失败" } else { "✅ 成功" },
-                    if *has_failed { "有部分文件未能成功导入" } else { "" }
-                )
+                ))
             }
             ImportedMedia::Tv {
                 name,
@@ -219,42 +226,26 @@ impl MsgProcessor<'_> {
                 total_size,
                 number_of_episodes,
                 cost,
-                has_failed,
+                ..
             } => {
-                let total_size_gb = *total_size as f64 / 1_000_000_000.0;
-                let episodes_str = if episodes.is_empty() {
-                    "无".to_string()
-                } else {
-                    format!("{:?}", episodes)
-                };
-                let missing_episodes_str = if missing_episodes.is_empty() {
-                    "无".to_string()
-                } else {
-                    format!("{:?}", missing_episodes)
-                };
+                if episodes.is_empty() {
+                    return None;
+                }
 
-                format!(
-                    "📺 剧集导入: {}\n\
-                     📅 年份: {}\n\
-                     季数: {}\n\
-                     剧集范围: 1-{} (共{}集)\n\
-                     导入剧集: {}\n\
-                     遗漏剧集: {}\n\
+                let total_size_gb = *total_size as f64 / 1_000_000_000.0;
+
+                Some(format!(
+                    "📺 剧集 {} ({}) S{:02} 已入库\n\
+                     📊 平均大小: {:.2} GB\n\
                      📊 总大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒\n\
-                     {} {}",
+                     ⏱️ 耗时: {:.2} 秒\n",
                     name,
                     year,
                     season,
-                    max_episode_number,
-                    number_of_episodes,
-                    episodes_str,
-                    missing_episodes_str,
+                    total_size_gb / (episodes.len() as f64),
                     total_size_gb,
                     cost.as_secs_f64(),
-                    if *has_failed { "❌ 失败" } else { "✅ 成功" },
-                    if *has_failed { "有部分文件未能成功导入" } else { "" }
-                )
+                ))
             }
         }
     }

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use tracing::info;
 
 use super::{
-    ImportSummary, Importer,
+    ImportedMedia, Importer,
     inner::{MediaFile, RawFile},
 };
 use crate::error::{AppError, AppResult};
@@ -30,7 +30,7 @@ pub fn is_fslink(content: &str) -> bool {
 }
 
 impl Importer {
-    pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<ImportSummary> {
+    pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         info!("import from fslink");
 
         let mut resource = ResourceJson::default();
@@ -75,12 +75,12 @@ impl Importer {
         Ok(files)
     }
 
-    pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<ImportSummary> {
+    pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
         let resource: ResourceJson = serde_json::from_slice(&json)?;
         self.import_from_resource_json(&resource).await
     }
 
-    async fn import_from_resource_json(&mut self, resource: &ResourceJson) -> AppResult<ImportSummary> {
+    async fn import_from_resource_json(&mut self, resource: &ResourceJson) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.list_files_from_json(resource);
         self.transfer_media_files(&media_files).await
     }

@@ -1,7 +1,7 @@
 use reqwest::Url;
 
 use super::{
-    ImportSummary, Importer,
+    ImportedMedia, Importer,
     inner::{MediaFile, RawFile},
 };
 use crate::error::{AppError, AppResult};
@@ -37,14 +37,14 @@ impl<'a> ShareUrl<'a> {
 }
 
 impl Importer {
-    pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<ImportSummary> {
+    pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
         match url {
             ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
             ShareUrl::Pan189(url) => self.import_pan189_share(url).await,
         }
     }
 
-    async fn import_pan123_share(&mut self, url: &Url) -> AppResult<ImportSummary> {
+    async fn import_pan123_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
         let share_key = url
             .path_segments()
             .map(|mut s| s.next_back().unwrap_or_default())
@@ -59,7 +59,7 @@ impl Importer {
         self.transfer_media_files(&media_files).await
     }
 
-    async fn import_pan189_share(&mut self, url: &Url) -> AppResult<ImportSummary> {
+    async fn import_pan189_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
         let share_code = url
             .query_pairs()
             .find(|(k, _)| k == "code")
