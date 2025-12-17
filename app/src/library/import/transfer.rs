@@ -21,6 +21,8 @@ impl Importer {
         let mut results = Vec::with_capacity(media_files.len());
 
         let medias = self.group_media_files(media_files).await?;
+        info!("Grouped into {} media items", medias.len());
+
         for media in &medias {
             match media {
                 Media::Movie { detail, files } => {

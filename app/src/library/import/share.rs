@@ -58,6 +58,7 @@ impl Importer {
             .unwrap_or_default();
 
         let media_files = self.list_files_from_pan123_share(share_key, &share_password).await?;
+        info!("found {} media files from pan123 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
 
@@ -84,6 +85,7 @@ impl Importer {
         }
 
         let media_files = self.list_files_from_pan189_share(&share_code).await?;
+        info!("found {} media files from pan189 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
 

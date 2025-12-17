@@ -129,7 +129,10 @@ impl Importer {
                 }
             }
             None => {
-                // tv not found in tmdb
+                info!(
+                    "No tv found in tmdb for file: {}, path: {}",
+                    file.video.name, file.video.path
+                );
             }
         }
 
