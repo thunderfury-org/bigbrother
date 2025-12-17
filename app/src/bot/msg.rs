@@ -10,7 +10,7 @@ use teloxide::{
 use tracing::error;
 
 use crate::{
-    library::{self, ImportSummary, ShareUrl},
+    library::{self, ImportedMedia, ShareUrl},
     log_time,
     state::AppState,
 };
@@ -22,6 +22,7 @@ pub(super) struct MsgProcessor<'a> {
     pub state: &'a AppState,
     pub bot: &'a Bot,
     pub msg: &'a Message,
+    pub from_monitor: bool,
 }
 
 impl MsgProcessor<'_> {
@@ -52,21 +53,22 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_document(&self, doc: &Document) -> ResponseResult<()> {
-        if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) {
+        if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) && !self.from_monitor {
             self.send_message("不是 JSON 文件，忽略").await?;
             return Ok(());
         }
 
-        self.send_message("开始处理 JSON 文件").await?;
+        if !self.from_monitor {
+            self.send_message("开始处理 JSON 文件").await?;
+        }
 
         let file = self.bot.get_file(doc.file.id.to_owned()).await?;
         let mut content = Vec::new();
         self.bot.download_file(&file.path, &mut content).await?;
 
         match library::import_from_json(self.state, content).await {
-            Ok(summary) => {
-                let formatted: String = self.format_import_summary(&summary);
-                self.send_message(formatted).await?;
+            Ok(imported) => {
+                self.handle_imported_medias(imported).await?;
             }
             Err(e) => {
                 error!("import from json failed: {}", e);
@@ -78,13 +80,14 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_share_url(&self, url: &ShareUrl<'_>) -> ResponseResult<()> {
-        let reply = format!("开始处理分享: {}", url.get_url());
-        self.send_message(&reply).await?;
+        if !self.from_monitor {
+            let reply = format!("开始处理分享: {}", url.get_url());
+            self.send_message(&reply).await?;
+        }
 
         match library::import_from_share_url(self.state, url).await {
-            Ok(summary) => {
-                let formatted: String = self.format_import_summary(&summary);
-                self.send_message(formatted).await?;
+            Ok(imported) => {
+                self.handle_imported_medias(imported).await?;
             }
             Err(e) => {
                 error!("import from share url {} failed: {}", url.get_url(), e);
@@ -96,12 +99,13 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_fslink(&self, fslink: &str) -> ResponseResult<()> {
-        self.send_message("开始处理秒传").await?;
+        if !self.from_monitor {
+            self.send_message("开始处理秒传").await?;
+        }
 
         match library::import_from_fslink(self.state, fslink).await {
-            Ok(summary) => {
-                let formatted: String = self.format_import_summary(&summary);
-                self.send_message(formatted).await?;
+            Ok(imported) => {
+                self.handle_imported_medias(imported).await?;
             }
             Err(e) => {
                 error!("import from fslink {} failed: {}", fslink, e);
@@ -158,6 +162,13 @@ impl MsgProcessor<'_> {
         }
     }
 
+    async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
+        for media in imported {
+            self.send_message(self.format_import_summary(&media)).await?;
+        }
+        Ok(())
+    }
+
     async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<Message> {
         if self.msg.from.is_none() {
             self.bot.send_message(self.get_chat_id(), text).await
@@ -174,25 +185,77 @@ impl MsgProcessor<'_> {
         ChatId(self.state.config.get_telegram_config().user_id)
     }
 
-    fn format_import_summary(&self, summary: &ImportSummary) -> String {
-        let total_size_gb = summary.total_size as f64 / 1_000_000_000.0;
-        let avg_size_gb = if summary.success > 0 {
-            summary.total_size as f64 / summary.success as f64 / 1_000_000_000.0
-        } else {
-            0.0
-        };
-        format!(
-            "📁 导入总结\n\
-             ✅ 成功: {}个\n\
-             ❌ 失败: {}个\n\
-             📊 成功转存大小: {:.2} GB\n\
-             📊 平均文件大小: {:.2} GB\n\
-             ⏱️ 耗时: {:.2} 秒",
-            summary.success,
-            summary.failed,
-            total_size_gb,
-            avg_size_gb,
-            summary.cost.as_secs_f64()
-        )
+    fn format_import_summary(&self, media: &ImportedMedia) -> String {
+        match media {
+            ImportedMedia::Movie {
+                title,
+                year,
+                size,
+                cost,
+                has_failed,
+            } => {
+                let size_gb = *size as f64 / 1_000_000_000.0;
+                format!(
+                    "🎬 电影导入: {}\n\
+                     📅 年份: {}\n\
+                     📊 大小: {:.2} GB\n\
+                     ⏱️ 耗时: {:.2} 秒\n\
+                     {} {}",
+                    title,
+                    year,
+                    size_gb,
+                    cost.as_secs_f64(),
+                    if *has_failed { "❌ 失败" } else { "✅ 成功" },
+                    if *has_failed { "有部分文件未能成功导入" } else { "" }
+                )
+            }
+            ImportedMedia::Tv {
+                name,
+                year,
+                season,
+                episodes,
+                missing_episodes,
+                max_episode_number,
+                total_size,
+                number_of_episodes,
+                cost,
+                has_failed,
+            } => {
+                let total_size_gb = *total_size as f64 / 1_000_000_000.0;
+                let episodes_str = if episodes.is_empty() {
+                    "无".to_string()
+                } else {
+                    format!("{:?}", episodes)
+                };
+                let missing_episodes_str = if missing_episodes.is_empty() {
+                    "无".to_string()
+                } else {
+                    format!("{:?}", missing_episodes)
+                };
+
+                format!(
+                    "📺 剧集导入: {}\n\
+                     📅 年份: {}\n\
+                     季数: {}\n\
+                     剧集范围: 1-{} (共{}集)\n\
+                     导入剧集: {}\n\
+                     遗漏剧集: {}\n\
+                     📊 总大小: {:.2} GB\n\
+                     ⏱️ 耗时: {:.2} 秒\n\
+                     {} {}",
+                    name,
+                    year,
+                    season,
+                    max_episode_number,
+                    number_of_episodes,
+                    episodes_str,
+                    missing_episodes_str,
+                    total_size_gb,
+                    cost.as_secs_f64(),
+                    if *has_failed { "❌ 失败" } else { "✅ 成功" },
+                    if *has_failed { "有部分文件未能成功导入" } else { "" }
+                )
+            }
+        }
     }
 }
