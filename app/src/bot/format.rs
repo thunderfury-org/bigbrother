@@ -78,4 +78,3 @@ mod tests {
         assert_eq!(format_episodes(&[99, 100, 102]), "E99-E100,E102");
     }
 }
-
