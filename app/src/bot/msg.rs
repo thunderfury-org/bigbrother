@@ -9,6 +9,7 @@ use teloxide::{
 };
 use tracing::error;
 
+use super::format;
 use crate::{
     library::{self, ImportedMedia, ShareUrl},
     log_time,
@@ -124,7 +125,7 @@ impl MsgProcessor<'_> {
     fn extract_urls(&self) -> Vec<Url> {
         let mut urls = Vec::new();
 
-        let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
+        let text = self.msg.text().unwrap_or_default();
         self.extract_urls_from_text(text, &mut urls);
 
         if let Some(entities) = self.msg.caption_entities() {
@@ -163,15 +164,16 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
+        let mut msg_sent = false;
         for media in &imported {
-            match self.format_imported_media(media) {
-                Some(summary) => {
-                    self.send_message(summary).await?;
-                }
-                None => {
-                    self.send_message("导入失败的媒体，未生成摘要").await?;
-                }
+            if let Some(summary) = self.format_imported_media(media) {
+                self.send_message(summary).await?;
+                msg_sent = true;
             }
+        }
+
+        if !self.from_monitor && !msg_sent {
+            self.send_message("没有新入库的媒体").await?;
         }
         Ok(())
     }
@@ -209,7 +211,7 @@ impl MsgProcessor<'_> {
                 Some(format!(
                     "🎬 电影 {} ({}) 已入库\n\
                      📊 大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒\n",
+                     ⏱️ 耗时: {:.2} 秒",
                     title,
                     year,
                     size_gb,
@@ -233,18 +235,28 @@ impl MsgProcessor<'_> {
                 }
 
                 let total_size_gb = *total_size as f64 / 1_000_000_000.0;
+                let missing_str = if missing_episodes.is_empty() {
+                    "".to_owned()
+                } else {
+                    format!("🎬️ 缺失集: {}\n", format::format_episodes(missing_episodes))
+                };
 
                 Some(format!(
-                    "📺 剧集 {} ({}) S{:02} 已入库\n\
-                     📊 平均大小: {:.2} GB\n\
+                    "📺 剧集 {} ({}) S{:02} {} 已入库\n{}\
+                     📦 平均大小: {:.2} GB\n\
                      📊 总大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒\n",
+                     ⏱️ 耗时: {:.2} 秒\n\
+                     📦 集数: {}/{}",
                     name,
                     year,
                     season,
+                    format::format_episodes(episodes),
+                    missing_str,
                     total_size_gb / (episodes.len() as f64),
                     total_size_gb,
                     cost.as_secs_f64(),
+                    max_episode_number,
+                    number_of_episodes,
                 ))
             }
         }

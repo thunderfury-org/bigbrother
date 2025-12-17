@@ -16,6 +16,7 @@ pub(super) mod share;
 mod tmdb_info;
 mod transfer;
 
+#[derive(Debug)]
 pub enum ImportedMedia {
     Movie {
         title: String,
@@ -34,7 +35,7 @@ pub enum ImportedMedia {
         total_size: u64,
         number_of_episodes: u32,
         cost: std::time::Duration,
-        has_failed: bool,
+        _has_failed: bool,
     },
 }
 

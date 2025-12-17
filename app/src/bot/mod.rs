@@ -4,6 +4,7 @@ use tracing::error;
 use crate::{entity::keyword, state::AppState};
 
 mod cmd;
+mod format;
 mod msg;
 
 pub async fn run(state: AppState) {

@@ -31,7 +31,7 @@ pub fn is_fslink(content: &str) -> bool {
 
 impl Importer {
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        info!("import from fslink");
+        info!("Importing from fslink");
 
         let mut resource = ResourceJson::default();
 
@@ -76,6 +76,7 @@ impl Importer {
     }
 
     pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
+        info!("Importing from JSON");
         let resource: ResourceJson = serde_json::from_slice(&json)?;
         self.import_from_resource_json(&resource).await
     }

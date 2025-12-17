@@ -109,9 +109,6 @@ impl Metadata {
         if self.season_number.is_none() && other.season_number.is_some() {
             self.season_number = other.season_number;
         }
-        if self.episode_number.is_none() && other.episode_number.is_some() {
-            self.episode_number = other.episode_number;
-        }
         if self.second_episode_number.is_none() && other.second_episode_number.is_some() {
             self.second_episode_number = other.second_episode_number;
         }

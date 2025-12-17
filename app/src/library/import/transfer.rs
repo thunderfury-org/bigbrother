@@ -8,7 +8,7 @@ use tracing::{error, info};
 
 use super::{
     ImportedMedia, Importer,
-    inner::{Media, MediaFile, RawFile},
+    inner::{Media, MediaFile, RawFile, TransferEpisodeArgs},
 };
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -18,16 +18,18 @@ use crate::{
 
 impl Importer {
     pub(super) async fn transfer_media_files(&mut self, media_files: &[MediaFile]) -> AppResult<Vec<ImportedMedia>> {
-        let results = Vec::with_capacity(media_files.len());
+        let mut results = Vec::with_capacity(media_files.len());
 
         let medias = self.group_media_files(media_files).await?;
         for media in &medias {
             match media {
                 Media::Movie { detail, files } => {
-                    self.transfer_movie(detail, files).await?;
+                    if let Some(imported) = self.transfer_movie(detail, files).await? {
+                        results.push(imported);
+                    }
                 }
                 Media::Tv { detail, files } => {
-                    self.transfer_tv(detail, files).await?;
+                    results.extend(self.transfer_tv(detail, files).await?);
                 }
             }
         }
@@ -147,15 +149,15 @@ impl Importer {
         let season_full_path = format!("{}/{}", tv_path, season_dir);
         for (episode_number, files) in season_files {
             let res = self
-                .transfer_episode(
+                .transfer_episode(&TransferEpisodeArgs {
                     detail,
-                    season_number,
-                    episode_number,
+                    season_number: *season_number,
+                    episode_number: *episode_number,
                     files,
-                    &season_full_path,
+                    season_full_path: &season_full_path,
                     season_dir_id,
-                    &existing_episode_files,
-                )
+                    existing_episode_files: &existing_episode_files,
+                })
                 .await?;
             if let Some((success, size)) = res {
                 if success {
@@ -179,7 +181,7 @@ impl Importer {
             total_size,
             number_of_episodes: self.get_number_of_episodes_in_season(detail, season_number),
             cost: start_time.elapsed(),
-            has_failed,
+            _has_failed: has_failed,
         })
     }
 
@@ -219,26 +221,18 @@ impl Importer {
         missing_episodes
     }
 
-    async fn transfer_episode(
-        &self,
-        detail: &TvDetail,
-        season_number: &u32,
-        episode_number: &u32,
-        files: &[&MediaFile],
-        season_full_path: &str,
-        season_dir_id: i64,
-        existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
-    ) -> AppResult<Option<(bool, u64)>> {
-        let media_file = files
+    async fn transfer_episode(&self, args: &TransferEpisodeArgs<'_>) -> AppResult<Option<(bool, u64)>> {
+        let media_file = args
+            .files
             .iter()
             .max_by(|a, b| a.video.size.cmp(&b.video.size))
             .ok_or_else(|| {
                 AppError::NotFound(format!(
                     "no video file found when transfer tv series {} season {} episode {}",
-                    detail.name, season_number, episode_number
+                    args.detail.name, args.season_number, args.episode_number
                 ))
             })?;
-        if let Some(existing_files) = existing_episode_files.get(episode_number)
+        if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
             && !existing_files.is_empty()
         {
             // episode file already exists in library
@@ -246,7 +240,8 @@ impl Importer {
                 // existing file size is smaller than new file, need overwrite
                 // delete existing files
                 self.delete_files_in_library(existing_files).await?;
-                self.delete_files_in_local(season_full_path, existing_files).await?;
+                self.delete_files_in_local(args.season_full_path, existing_files)
+                    .await?;
             } else {
                 // existing file size is larger than new file, skip
                 return Ok(None);
@@ -256,13 +251,18 @@ impl Importer {
         // save episode file
         let name_prefix = format!(
             "{}.{}.S{:02}E{:02}.",
-            detail.name,
-            self.get_year_from_date(detail.first_air_date.as_str()),
-            season_number,
-            episode_number
+            args.detail.name,
+            self.get_year_from_date(args.detail.first_air_date.as_str()),
+            args.season_number,
+            args.episode_number
         );
         let success = self
-            .transfer_media_file(season_full_path, season_dir_id, name_prefix.as_str(), media_file)
+            .transfer_media_file(
+                args.season_full_path,
+                args.season_dir_id,
+                name_prefix.as_str(),
+                media_file,
+            )
             .await?;
         Ok(Some((success, media_file.video.size)))
     }

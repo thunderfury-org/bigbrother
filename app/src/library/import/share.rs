@@ -1,4 +1,5 @@
 use reqwest::Url;
+use tracing::info;
 
 use super::{
     ImportedMedia, Importer,
@@ -38,6 +39,7 @@ impl<'a> ShareUrl<'a> {
 
 impl Importer {
     pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
+        info!("Importing from share URL: {}", url.get_url());
         match url {
             ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
             ShareUrl::Pan189(url) => self.import_pan189_share(url).await,
