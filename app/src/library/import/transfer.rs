@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     io,
     path::Path,
 };
@@ -7,8 +7,8 @@ use std::{
 use tracing::{error, info};
 
 use super::{
-    ImportSummary, Importer,
-    inner::{Media, MediaFile, RawFile},
+    ImportedMedia, Importer,
+    inner::{Media, MediaFile, RawFile, TransferEpisodeArgs},
 };
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -17,25 +17,33 @@ use crate::{
 };
 
 impl Importer {
-    pub(super) async fn transfer_media_files(&mut self, media_files: &[MediaFile]) -> AppResult<ImportSummary> {
+    pub(super) async fn transfer_media_files(&mut self, media_files: &[MediaFile]) -> AppResult<Vec<ImportedMedia>> {
+        let mut results = Vec::with_capacity(media_files.len());
+
         let medias = self.group_media_files(media_files).await?;
         for media in &medias {
             match media {
                 Media::Movie { detail, files } => {
-                    self.transfer_movie(detail, files).await?;
+                    if let Some(imported) = self.transfer_movie(detail, files).await? {
+                        results.push(imported);
+                    }
                 }
                 Media::Tv { detail, files } => {
-                    self.transfer_tv(detail, files).await?;
+                    results.extend(self.transfer_tv(detail, files).await?);
                 }
             }
         }
 
-        self.summary.cost = self.start_time.elapsed();
-        Ok(self.summary.clone())
+        Ok(results)
     }
 
-    async fn transfer_movie(&mut self, detail: &MovieDetail, media_files: &[&MediaFile]) -> AppResult<()> {
+    async fn transfer_movie(
+        &mut self,
+        detail: &MovieDetail,
+        media_files: &[&MediaFile],
+    ) -> AppResult<Option<ImportedMedia>> {
         log_time!(format!("transfer movie {}", self.get_movie_base_name(detail)));
+        let start_time = std::time::Instant::now();
 
         let movie_path = self.get_movie_path_in_library(detail);
         let movie_dir_id = self.get_or_create_dir_in_library(movie_path.as_str()).await?;
@@ -54,8 +62,7 @@ impl Importer {
                 self.delete_files_in_local(&movie_path, &existing_files).await?;
             } else {
                 // do not need overwrite existing files, skip
-                self.summary.skipped += media_files.iter().map(|f| f.file_count()).sum::<usize>();
-                return Ok(());
+                return Ok(None);
             }
         }
 
@@ -64,84 +71,200 @@ impl Importer {
             detail.title,
             self.get_year_from_date(detail.release_date.as_str()),
         );
-        self.transfer_video_files(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
+        let success = self
+            .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
-        Ok(())
+        Ok(Some(ImportedMedia::Movie {
+            title: detail.title.to_owned(),
+            year: self.get_year_from_date(detail.release_date.as_str()).to_owned(),
+            size: media_file.video.size,
+            cost: start_time.elapsed(),
+            has_failed: !success,
+        }))
     }
 
     async fn transfer_tv(
         &mut self,
         detail: &TvDetail,
         files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
-    ) -> AppResult<()> {
+    ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", self.get_tv_base_name(detail)));
 
         let tv_path = self.get_tv_path_in_library(detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
         let season_dir_ids = self.state.pan123.list_dir_ids(tv_dir_id).await?;
 
+        let mut results = Vec::new();
         for (season_number, season_files) in files {
-            log_time!(format!(
-                "transfer tv {} season {:02}",
-                self.get_tv_base_name(detail),
-                season_number
-            ));
-
-            let season_dir = format!("Season {:02}", season_number);
-            let season_full_path = format!("{}/{}", tv_path, season_dir);
-            let (season_dir_id, existing_episode_files) = match season_dir_ids.get(&season_dir) {
-                Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
-                None => {
-                    // create season folder if not exists
-                    let id = self.state.pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
-                    info!(
-                        "Tv series {} season {} folder {} created in library, id: {}",
-                        detail.name, season_number, season_dir, id
-                    );
-                    (id, HashMap::new())
-                }
-            };
-
-            for (episode_number, files) in season_files {
-                let media_file = files
-                    .iter()
-                    .max_by(|a, b| a.video.size.cmp(&b.video.size))
-                    .ok_or_else(|| {
-                        AppError::NotFound(format!(
-                            "no video file found when transfer tv series {} season {} episode {}",
-                            detail.name, season_number, episode_number
-                        ))
-                    })?;
-                if let Some(existing_files) = existing_episode_files.get(episode_number)
-                    && !existing_files.is_empty()
-                {
-                    // episode file already exists in library
-                    if self.need_overwrite_existing_files(existing_files, media_file) {
-                        // existing file size is smaller than new file, need overwrite
-                        // delete existing files
-                        self.delete_files_in_library(existing_files).await?;
-                        self.delete_files_in_local(&season_full_path, existing_files).await?;
-                    } else {
-                        // existing file size is larger than new file, skip
-                        self.summary.skipped += files.iter().map(|f| f.file_count()).sum::<usize>();
-                        continue;
-                    }
-                }
-
-                // save episode file
-                let name_prefix = format!(
-                    "{}.{}.S{:02}E{:02}.",
-                    detail.name,
-                    self.get_year_from_date(detail.first_air_date.as_str()),
+            results.push(
+                self.transfer_season(
+                    detail,
                     season_number,
-                    episode_number
+                    season_files,
+                    &tv_path,
+                    tv_dir_id,
+                    &season_dir_ids,
+                )
+                .await?,
+            );
+        }
+
+        Ok(results)
+    }
+
+    async fn transfer_season(
+        &mut self,
+        detail: &TvDetail,
+        season_number: &u32,
+        season_files: &BTreeMap<u32, Vec<&MediaFile>>,
+        tv_path: &str,
+        tv_dir_id: i64,
+        season_dir_ids: &HashMap<String, i64>,
+    ) -> AppResult<ImportedMedia> {
+        log_time!(format!(
+            "transfer tv {} season {:02}",
+            self.get_tv_base_name(detail),
+            season_number
+        ));
+        let start_time = std::time::Instant::now();
+
+        let season_dir = format!("Season {:02}", season_number);
+        let (season_dir_id, existing_episode_files) = match season_dir_ids.get(&season_dir) {
+            Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
+            None => {
+                // create season folder if not exists
+                let id = self.state.pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
+                info!(
+                    "Tv series {} season {} folder {} created in library, id: {}",
+                    detail.name, season_number, season_dir, id
                 );
-                self.transfer_video_files(&season_full_path, season_dir_id, name_prefix.as_str(), media_file)
-                    .await?;
+                (id, HashMap::new())
+            }
+        };
+
+        let mut has_failed = false;
+        let mut total_size = 0u64;
+        let mut episodes = Vec::new();
+
+        let season_full_path = format!("{}/{}", tv_path, season_dir);
+        for (episode_number, files) in season_files {
+            let res = self
+                .transfer_episode(&TransferEpisodeArgs {
+                    detail,
+                    season_number: *season_number,
+                    episode_number: *episode_number,
+                    files,
+                    season_full_path: &season_full_path,
+                    season_dir_id,
+                    existing_episode_files: &existing_episode_files,
+                })
+                .await?;
+            if let Some((success, size)) = res {
+                if success {
+                    total_size += size;
+                    episodes.push(*episode_number);
+                } else {
+                    has_failed = true;
+                }
             }
         }
 
-        Ok(())
+        let max_episode_number = self.get_max_episode_number(&episodes, &existing_episode_files);
+
+        Ok(ImportedMedia::Tv {
+            name: detail.name.to_owned(),
+            year: self.get_year_from_date(detail.first_air_date.as_str()).to_owned(),
+            season: *season_number,
+            missing_episodes: self.get_missing_episodes(max_episode_number, &episodes, &existing_episode_files),
+            episodes,
+            max_episode_number,
+            total_size,
+            number_of_episodes: self.get_number_of_episodes_in_season(detail, season_number),
+            cost: start_time.elapsed(),
+            _has_failed: has_failed,
+        })
+    }
+
+    fn get_number_of_episodes_in_season(&self, detail: &TvDetail, season_number: &u32) -> u32 {
+        for season in &detail.seasons {
+            if &season.season_number == season_number {
+                return season.episode_count;
+            }
+        }
+        0
+    }
+
+    fn get_max_episode_number(&self, episodes: &[u32], existing_episode_files: &HashMap<u32, Vec<MediaFile>>) -> u32 {
+        std::cmp::max(
+            *episodes.iter().max().unwrap_or(&0),
+            *existing_episode_files.keys().max().unwrap_or(&0),
+        )
+    }
+
+    fn get_missing_episodes(
+        &self,
+        max_episode_number: u32,
+        episodes: &[u32],
+        existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
+    ) -> Vec<u32> {
+        let mut existing_episodes: HashSet<u32> = episodes.iter().cloned().collect();
+        for episode in existing_episode_files.keys() {
+            existing_episodes.insert(*episode);
+        }
+
+        let mut missing_episodes = Vec::new();
+        for episode_number in 1..=max_episode_number {
+            if !existing_episodes.contains(&episode_number) {
+                missing_episodes.push(episode_number);
+            }
+        }
+        missing_episodes
+    }
+
+    async fn transfer_episode(&self, args: &TransferEpisodeArgs<'_>) -> AppResult<Option<(bool, u64)>> {
+        let media_file = args
+            .files
+            .iter()
+            .max_by(|a, b| a.video.size.cmp(&b.video.size))
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "no video file found when transfer tv series {} season {} episode {}",
+                    args.detail.name, args.season_number, args.episode_number
+                ))
+            })?;
+        if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
+            && !existing_files.is_empty()
+        {
+            // episode file already exists in library
+            if self.need_overwrite_existing_files(existing_files, media_file) {
+                // existing file size is smaller than new file, need overwrite
+                // delete existing files
+                self.delete_files_in_library(existing_files).await?;
+                self.delete_files_in_local(args.season_full_path, existing_files)
+                    .await?;
+            } else {
+                // existing file size is larger than new file, skip
+                return Ok(None);
+            }
+        }
+
+        // save episode file
+        let name_prefix = format!(
+            "{}.{}.S{:02}E{:02}.",
+            args.detail.name,
+            self.get_year_from_date(args.detail.first_air_date.as_str()),
+            args.season_number,
+            args.episode_number
+        );
+        let success = self
+            .transfer_media_file(
+                args.season_full_path,
+                args.season_dir_id,
+                name_prefix.as_str(),
+                media_file,
+            )
+            .await?;
+        Ok(Some((success, media_file.video.size)))
     }
 
     async fn delete_files_in_library(&self, files: &[MediaFile]) -> AppResult<()> {
@@ -196,32 +319,67 @@ impl Importer {
         Ok(())
     }
 
-    async fn transfer_video_files(
-        &mut self,
+    async fn transfer_media_file(
+        &self,
         parent_path: &str,
         parent_dir_id: i64,
         name_prefix: &str,
         media_file: &MediaFile,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         let video_file_name = self.format_video_file_name(name_prefix, media_file);
+
+        if !media_file.subtitles.is_empty() {
+            // save subtitle files first, in case video file transfer failed
+            let subtitle_file_name_replace_from = media_file
+                .video
+                .name
+                .trim_end_matches(media_file.metadata.extension.as_str());
+            let subtitle_file_name_replace_to =
+                video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
+            for subtitle in &media_file.subtitles {
+                let success = self
+                    .transfer_subtitle_file(
+                        parent_path,
+                        parent_dir_id,
+                        subtitle,
+                        subtitle_file_name_replace_from,
+                        subtitle_file_name_replace_to,
+                    )
+                    .await?;
+                if !success {
+                    // subtitle file transfer failed, skip the whole media file transfer
+                    return Ok(false);
+                }
+            }
+        }
+
+        self.transfer_video_file(parent_path, parent_dir_id, video_file_name.as_str(), media_file)
+            .await
+    }
+
+    async fn transfer_video_file(
+        &self,
+        parent_path: &str,
+        parent_dir_id: i64,
+        video_file_name: &str,
+        media_file: &MediaFile,
+    ) -> AppResult<bool> {
         let res = self
             .state
             .pan123
             .fast_upload(
                 parent_dir_id,
-                video_file_name.as_str(),
+                video_file_name,
                 media_file.video.etag.as_str(),
                 media_file.video.size,
             )
             .await
             .inspect_err(|e| {
-                error!("Failed to transfer file {}, error: {}", media_file.video.name, e);
+                error!("Failed to transfer file {}, error: {}", video_file_name, e);
             })?;
         match res {
             Some(id) => {
                 info!("File {} saved in library, file id: {}", video_file_name, id);
-                self.summary.success += 1;
-                self.summary.total_size += media_file.video.size;
 
                 // create strm file
                 self.create_strm_file(
@@ -231,30 +389,14 @@ impl Importer {
                 )
                 .await?;
 
-                // save subtitle files
-                let subtitle_file_name_replace_from = media_file
-                    .video
-                    .name
-                    .trim_end_matches(media_file.metadata.extension.as_str());
-                let subtitle_file_name_replace_to =
-                    video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
-                for subtitle in &media_file.subtitles {
-                    self.transfer_subtitle_file(
-                        parent_path,
-                        parent_dir_id,
-                        subtitle,
-                        subtitle_file_name_replace_from,
-                        subtitle_file_name_replace_to,
-                    )
-                    .await?;
-                }
+                Ok(true)
             }
             None => {
                 info!("File {} not saved in library", video_file_name);
-                self.summary.failed += media_file.file_count();
+
+                Ok(false)
             }
         }
-        Ok(())
     }
 
     async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
@@ -281,24 +423,25 @@ impl Importer {
     }
 
     async fn transfer_subtitle_file(
-        &mut self,
+        &self,
         parent_path: &str,
         parent_dir_id: i64,
         raw_file: &RawFile,
         file_name_replace_from: &str,
         file_name_replace_to: &str,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
         let res = self
             .state
             .pan123
             .fast_upload(parent_dir_id, file_name.as_str(), raw_file.etag.as_str(), raw_file.size)
-            .await?;
+            .await
+            .inspect_err(|e| {
+                error!("Failed to transfer file {}, error: {}", file_name, e);
+            })?;
         match res {
             Some(id) => {
                 info!("File {} saved in library, file id: {}", file_name, id);
-                self.summary.success += 1;
-                self.summary.total_size += raw_file.size;
 
                 // download subtitle file
                 let local_file_path = format!("{}/{}", parent_path, file_name).replace(
@@ -307,12 +450,15 @@ impl Importer {
                 );
                 self.state.pan123.download_file(id, local_file_path.as_str()).await?;
                 info!("Subtitle file {} downloaded", local_file_path);
+
+                Ok(true)
             }
             None => {
-                self.summary.failed += 1;
+                info!("File {} not saved in library", file_name);
+
+                Ok(false)
             }
         }
-        Ok(())
     }
 
     fn format_video_file_name(&self, name_prefix: &str, file: &MediaFile) -> String {

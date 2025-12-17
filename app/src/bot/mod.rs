@@ -4,6 +4,7 @@ use tracing::error;
 use crate::{entity::keyword, state::AppState};
 
 mod cmd;
+mod format;
 mod msg;
 
 pub async fn run(state: AppState) {
@@ -43,16 +44,14 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
 
     let filters: Vec<String> = keywords.into_iter().map(|k| k.value).collect();
 
-    let chat_id = ChatId(state.config.get_telegram_config().user_id);
-
     let text = msg.text().or(msg.caption()).unwrap_or_default();
     for keyword in &filters {
         if text.contains(keyword) {
-            let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
             let processor = msg::MsgProcessor {
                 state: &state,
                 bot: &bot,
-                msg: &m,
+                msg: &msg,
+                from_monitor: true,
             };
             return processor.process().await;
         }
@@ -64,11 +63,11 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
     {
         for keyword in &filters {
             if text.contains(keyword) {
-                let m = bot.forward_message(chat_id, msg.chat.id, msg.id).await?;
                 let processor = msg::MsgProcessor {
                     state: &state,
                     bot: &bot,
-                    msg: &m,
+                    msg: &msg,
+                    from_monitor: true,
                 };
                 return processor.process().await;
             }
@@ -89,6 +88,7 @@ async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResu
         state: &state,
         bot: &bot,
         msg: &msg,
+        from_monitor: false,
     };
     processor.process().await
 }

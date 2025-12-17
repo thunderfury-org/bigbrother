@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -22,12 +22,6 @@ pub(super) struct MediaFile {
     pub subtitles: Vec<RawFile>,
 }
 
-impl MediaFile {
-    pub fn file_count(&self) -> usize {
-        1 + self.subtitles.len()
-    }
-}
-
 pub(super) enum Media<'a> {
     Movie {
         detail: MovieDetail,
@@ -35,7 +29,17 @@ pub(super) enum Media<'a> {
     },
     Tv {
         detail: TvDetail,
-        // (season, episode) -> files[]
+        /// (season, episode) -> files[]
         files: BTreeMap<u32, BTreeMap<u32, Vec<&'a MediaFile>>>,
     },
+}
+
+pub(super) struct TransferEpisodeArgs<'a> {
+    pub detail: &'a TvDetail,
+    pub season_number: u32,
+    pub episode_number: u32,
+    pub files: &'a [&'a MediaFile],
+    pub season_full_path: &'a str,
+    pub season_dir_id: i64,
+    pub existing_episode_files: &'a HashMap<u32, Vec<MediaFile>>,
 }

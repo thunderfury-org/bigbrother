@@ -1,7 +1,8 @@
 use reqwest::Url;
+use tracing::info;
 
 use super::{
-    ImportSummary, Importer,
+    ImportedMedia, Importer,
     inner::{MediaFile, RawFile},
 };
 use crate::error::{AppError, AppResult};
@@ -37,14 +38,15 @@ impl<'a> ShareUrl<'a> {
 }
 
 impl Importer {
-    pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<ImportSummary> {
+    pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
+        info!("Importing from share URL: {}", url.get_url());
         match url {
             ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
             ShareUrl::Pan189(url) => self.import_pan189_share(url).await,
         }
     }
 
-    async fn import_pan123_share(&mut self, url: &Url) -> AppResult<ImportSummary> {
+    async fn import_pan123_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
         let share_key = url
             .path_segments()
             .map(|mut s| s.next_back().unwrap_or_default())
@@ -59,7 +61,7 @@ impl Importer {
         self.transfer_media_files(&media_files).await
     }
 
-    async fn import_pan189_share(&mut self, url: &Url) -> AppResult<ImportSummary> {
+    async fn import_pan189_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
         let share_code = url
             .query_pairs()
             .find(|(k, _)| k == "code")
@@ -107,10 +109,9 @@ impl Importer {
                     stack.push((file.file_id, format!("{}/{}", parent_path, file.file_name)));
                 } else {
                     // Regular file
-                    self.summary.total += 1;
+
                     let metadata = self.parse_media_metadata(&file.file_name, &parent_path);
                     if metadata.unknown_type() {
-                        self.summary.skipped += 1;
                         continue;
                     }
 
@@ -127,7 +128,7 @@ impl Importer {
                 }
             }
 
-            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
+            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)
@@ -153,10 +154,9 @@ impl Importer {
             let mut media_files_in_dir = Vec::new();
             for file in &files {
                 // Regular file
-                self.summary.total += 1;
+
                 let metadata = self.parse_media_metadata(&file.name, &parent_path);
                 if metadata.unknown_type() {
-                    self.summary.skipped += 1;
                     continue;
                 }
 
@@ -171,7 +171,7 @@ impl Importer {
                     },
                 ));
             }
-            all_files.extend(self.convert_share_raw_file_to_media_file(media_files_in_dir));
+            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)

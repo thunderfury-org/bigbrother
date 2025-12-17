@@ -16,14 +16,27 @@ pub(super) mod share;
 mod tmdb_info;
 mod transfer;
 
-#[derive(Debug, Default, Clone)]
-pub struct ImportSummary {
-    pub success: usize,
-    pub failed: usize,
-    pub skipped: usize,
-    pub total: usize,
-    pub total_size: u64,
-    pub cost: std::time::Duration,
+#[derive(Debug)]
+pub enum ImportedMedia {
+    Movie {
+        title: String,
+        year: String,
+        size: u64,
+        cost: std::time::Duration,
+        has_failed: bool,
+    },
+    Tv {
+        name: String,
+        year: String,
+        season: u32,
+        episodes: Vec<u32>,
+        missing_episodes: Vec<u32>,
+        max_episode_number: u32,
+        total_size: u64,
+        number_of_episodes: u32,
+        cost: std::time::Duration,
+        _has_failed: bool,
+    },
 }
 
 pub(super) struct Importer {
@@ -31,8 +44,6 @@ pub(super) struct Importer {
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
     metadata_cache: HashMap<String, Box<Metadata>>,
-    summary: ImportSummary,
-    start_time: std::time::Instant,
 }
 
 impl Importer {
@@ -42,8 +53,6 @@ impl Importer {
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             metadata_cache: HashMap::new(),
-            summary: ImportSummary::default(),
-            start_time: std::time::Instant::now(),
         }
     }
 }
