@@ -7,7 +7,7 @@ use teloxide::{
     sugar::request::RequestReplyExt,
     types::{Document, InlineKeyboardButtonKind, MessageEntityKind},
 };
-use tracing::error;
+use tracing::{error, info};
 
 use super::format;
 use crate::{
@@ -166,6 +166,7 @@ impl MsgProcessor<'_> {
     async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
         let mut msg_sent = false;
         for media in &imported {
+            info!("Imported media: {:?}", media);
             if let Some(summary) = self.format_imported_media(media) {
                 self.send_message(summary).await?;
                 msg_sent = true;

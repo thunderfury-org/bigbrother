@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use crate::{
     client::{pan123, pan189, tmdb},
@@ -25,8 +25,11 @@ impl AppState {
         if !std::fs::exists(db_dir.as_str())? {
             std::fs::create_dir_all(db_dir.as_str())?;
         }
+
         let conn_str = format!("sqlite:{}/data.db?mode=rwc", db_dir);
-        let db = Database::connect(conn_str.as_str()).await?;
+        let mut opt = ConnectOptions::new(conn_str);
+        opt.sqlx_logging(false);
+        let db = Database::connect(opt).await?;
 
         Ok(AppState {
             db,
