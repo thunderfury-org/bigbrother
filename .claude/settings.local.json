@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(DATABASE_URL=sqlite:../data/db/data.db?mode=rwc:*)",
+      "Bash(cargo run:*)",
+      "Bash(sqlite3:*)",
+      "Bash(./tools/generate_entity.sh:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo add:*)"
+    ]
+  }
+}

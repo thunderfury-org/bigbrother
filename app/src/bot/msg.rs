@@ -4,13 +4,13 @@ use reqwest::Url;
 use teloxide::{
     net::Download,
     prelude::*,
-    sugar::request::RequestReplyExt,
     types::{Document, InlineKeyboardButtonKind, MessageEntityKind},
 };
 use tracing::{error, info};
 
 use super::format;
 use crate::{
+    event::types::SendMessagePayload,
     library::{self, ImportedMedia, ShareUrl},
     log_time,
     state::AppState,
@@ -180,14 +180,31 @@ impl MsgProcessor<'_> {
     }
 
     async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<Message> {
-        if self.msg.from.is_none() {
-            self.bot.send_message(self.get_chat_id(), text).await
+        let text = text.into();
+        let chat_id = self.get_chat_id().0;
+        let reply_to = if self.msg.from.is_some() {
+            Some(self.msg.id.0)
         } else {
-            self.bot
-                .send_message(self.get_chat_id(), text)
-                .reply_to(self.msg.id)
-                .await
-        }
+            None
+        };
+
+        // 发布事件（非阻塞）
+        let _ = self
+            .state
+            .event_bus
+            .publish(
+                "send_message",
+                SendMessagePayload {
+                    chat_id,
+                    text,
+                    reply_to_message_id: reply_to,
+                },
+            )
+            .await;
+
+        // 返回一个 dummy Message（调用方不再依赖返回值）
+        // 注意：这里返回的是一个占位符，实际消息会异步发送
+        Ok(self.msg.clone())
     }
 
     #[inline]

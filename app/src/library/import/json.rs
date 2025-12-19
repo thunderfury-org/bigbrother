@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_parse_files_from_fslink() {
-        let mut importer = Importer::default();
+        let mut importer = Importer::new_test();
         let files = importer
             .parse_files_from_fslink(FS_LINK.trim_start_matches("123FSLinkV2$"))
             .unwrap();

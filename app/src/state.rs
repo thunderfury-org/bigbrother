@@ -6,15 +6,17 @@ use crate::{
     client::{pan123, pan189, tmdb},
     config,
     error::AppResult,
+    event::EventBus,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
     pub config: Arc<config::Manager>,
     pub pan123: Arc<pan123::Client>,
     pub pan189: Arc<pan189::Client>,
     pub tmdb: Arc<tmdb::Client>,
+    pub event_bus: Arc<EventBus>,
 }
 
 impl AppState {
@@ -31,6 +33,9 @@ impl AppState {
         opt.sqlx_logging(false);
         let db = Database::connect(opt).await?;
 
+        // 创建 Event Bus
+        let event_bus = Arc::new(EventBus::new(db.clone()));
+
         Ok(AppState {
             db,
             pan123: Arc::new(pan123::Client::new(
@@ -41,6 +46,7 @@ impl AppState {
             pan189: Arc::new(pan189::Client::new()),
             tmdb: Arc::new(tmdb::Client::new(&config.get_tmdb_config().api_key)),
             config: Arc::new(config),
+            event_bus,
         })
     }
 }

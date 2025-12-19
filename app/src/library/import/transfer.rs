@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_need_overwrite_existing_files() {
-        let importer = Importer::default();
+        let importer = Importer::new_test();
 
         // Case 1: New file is larger than all existing files
         let existing_files_1 = vec![create_mock_media_file(100), create_mock_media_file(200)];

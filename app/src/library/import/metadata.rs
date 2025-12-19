@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn test_parse_media_metadata() {
-        let mut importer = Importer::default();
+        let mut importer = Importer::new_test();
         let meta = importer.parse_media_metadata(
             "唐朝诡事录 - 2025 - S03E11 - HDR - 第 11 集.mkv",
             "唐朝诡事录（2022）{tmdb-211089}//Season 3",
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_parse_media_metadata_1() {
-        let mut importer = Importer::default();
+        let mut importer = Importer::new_test();
         let meta = importer.parse_media_metadata(
             "S02E32.2024.2160p.WEB-DL.H265.EDR.DDP5.1-BestWEB.mkv",
             "唐朝诡事录（2022）{tmdb-211089}//Season 3",

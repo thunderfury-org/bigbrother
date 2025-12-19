@@ -11,6 +11,8 @@ mod client;
 mod config;
 mod entity;
 mod error;
+mod event;
+mod event_bus;
 mod library;
 mod logger;
 mod media;
