@@ -1,17 +1,17 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
-};
-use serde::{Deserialize, Serialize};
-use tokio::{
-    sync::{RwLock, mpsc},
-    time,
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
+use serde::{Serialize, de::DeserializeOwned};
+use tokio::sync::{
+    RwLock,
+    mpsc::{self, Receiver, Sender},
 };
 
-use crate::{entity::model::event, error::AppResult};
+use crate::{
+    entity::model::event,
+    error::{AppError, AppResult},
+};
 
 /// Event Bus 核心实现
 pub struct EventBus {
@@ -53,90 +53,53 @@ impl EventBus {
     }
 
     /// 订阅事件
-    pub async fn subscribe<T, Func, Fut>(&self, event: &str, handler: Func)
+    pub async fn subscribe<T, Func, Fut>(&self, event: &str, handler: Func) -> AppResult<()>
     where
-        T: for<'de> Deserialize<'de> + Send + 'static,
+        T: DeserializeOwned,
         Func: Fn(T) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+        Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
-        let (tx, mut rx) = mpsc::channel::<()>(1);
-        rx.close();
-
-        // 存储 notifier 和 handler (在当前线程)
-        let notifiers = self.notifiers.clone();
-        let tx_clone = tx.clone();
-
-        // 启动事件处理循环
-        let db = self.db.clone();
+        let (tx, mut rx) = self.create_channel(event).await?;
 
         tokio::spawn(async move {
-            rx.close();
+            tx.try_send(());
+
             loop {
-                match rx.recv().await {
-                    Some(()) => (),
-                    None => break,
-                };
-
-                let events = match event::Entity::find()
-                    .filter(event::Column::Event.eq(event))
-                    .filter(event::Column::Ack.eq(false))
-                    .order_by_asc(event::Column::Id)
-                    .limit(10)
-                    .all(&db)
-                    .await
-                {
-                    Ok(evts) => evts,
-                    Err(e) => {
-                        tracing::error!("Failed to fetch event '{}' records, {}, will retry later", event, e);
-                        time::sleep(time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
-
-                if events.is_empty() {
-                    continue;
+                if let None = rx.recv().await {
+                    // Channel closed
+                    break;
                 }
 
-                for e in events {
-                    // 解析 payload
-                    let payload = match serde_json::from_str::<T>(&e.payload) {
-                        Ok(p) => p,
-                        Err(err) => {
-                            tracing::error!("Failed to parse payload '{}', {}", e.payload, err);
-                            // need delete
-                            continue;
-                        }
-                    };
-
-                    match handler(payload).await {
-                        Ok(_) => {
-                            // 成功：标记为已确认
-                            let mut active: event::ActiveModel = evt.into();
-                            active.ack = Set(true);
-                            active.update_time = Set(chrono::Utc::now().timestamp());
-
-                            if let Err(e) = active.update(&db).await {
-                                tracing::error!(event_id, "Failed to update event: {}", e);
-                            } else {
-                                tracing::info!(event_id, "Event completed successfully");
-                            }
-                        }
-                        Err(e) => {
-                            // 失败：更新时间戳
-                            let mut active: event::ActiveModel = evt.into();
-                            active.update_time = Set(chrono::Utc::now().timestamp());
-
-                            if let Err(update_err) = active.update(&db).await {
-                                tracing::error!(event_id, "Failed to update event: {}", update_err);
-                            }
-
-                            tracing::warn!(event_id, "Event processing failed: {}", e);
-                        }
-                    }
-                }
+                // check if event bus closed
             }
         });
 
         tracing::info!("Subscribed to event '{}'", event);
+        Ok(())
+    }
+
+    async fn create_channel(&self, event: &str) -> AppResult<(Sender<()>, Receiver<()>)> {
+        // check if already subscribed
+        {
+            let notifiers = self.notifiers.read().await;
+            if notifiers.contains_key(event) {
+                return Err(AppError::InvalidParameter(format!(
+                    "Event '{}' is already subscribed",
+                    event
+                )));
+            }
+        }
+
+        let mut notifiers = self.notifiers.write().await;
+        if notifiers.contains_key(event) {
+            return Err(AppError::InvalidParameter(format!(
+                "Event '{}' is already subscribed",
+                event
+            )));
+        }
+
+        let (tx, rx) = mpsc::channel(1);
+        notifiers.insert(event.to_owned(), tx.clone());
+        Ok((tx, rx))
     }
 }
