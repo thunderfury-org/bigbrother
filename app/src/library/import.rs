@@ -57,13 +57,8 @@ impl Importer {
     }
 }
 
-#[cfg(test)]
-impl Importer {
-    /// Create a test instance without real AppState
-    pub fn new_test() -> Self {
-        Self {
-            state: std::ptr::null(),
-            metadata_cache: HashMap::new(),
-        }
+impl Default for Importer {
+    fn default() -> Self {
+        Self::new(AppState::default())
     }
 }
