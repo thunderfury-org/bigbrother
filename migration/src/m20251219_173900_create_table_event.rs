@@ -12,7 +12,7 @@ impl MigrationTrait for Migration {
                     .table(Event::Table)
                     .if_not_exists()
                     .col(pk_auto(Event::Id))
-                    .col(string(Event::Event))
+                    .col(string(Event::Name))
                     .col(text(Event::Payload))
                     .col(boolean(Event::Ack))
                     .col(timestamp(Event::CreateTime))
@@ -26,8 +26,8 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .if_not_exists()
                     .table(Event::Table)
-                    .name("idx-event-ack")
-                    .col(Event::Event)
+                    .name("idx-name-ack")
+                    .col(Event::Name)
                     .col(Event::Ack)
                     .to_owned(),
             )
@@ -43,7 +43,7 @@ impl MigrationTrait for Migration {
 enum Event {
     Table,
     Id,
-    Event,
+    Name,
     Payload,
     Ack,
     CreateTime,

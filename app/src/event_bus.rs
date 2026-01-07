@@ -5,7 +5,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
     sync::{
         RwLock,
-        mpsc::{self, Receiver, Sender},
+        watch::{self, Receiver, Sender},
     },
     time::sleep,
 };
@@ -16,10 +16,14 @@ use crate::{
     error::{AppError, AppResult},
 };
 
+pub trait Event: Serialize + DeserializeOwned + Send + 'static {
+    const NAME: &'static str;
+}
+
 #[derive(Default)]
 pub struct EventBus {
     db: DatabaseConnection,
-    notifiers: Arc<RwLock<HashMap<String, mpsc::Sender<()>>>>,
+    notifiers: Arc<RwLock<HashMap<String, watch::Sender<()>>>>,
 }
 
 impl EventBus {
@@ -30,44 +34,45 @@ impl EventBus {
         }
     }
 
-    pub async fn publish<T: Serialize>(&self, event: &str, payload: &T) -> AppResult<()> {
+    pub async fn publish<E: Event>(&self, payload: &E) -> AppResult<()> {
         let payload_json = serde_json::to_string(payload)?;
         // save to database
-        event::add_record(&self.db, event, &payload_json).await?;
+        event::add_record(&self.db, E::NAME, &payload_json).await?;
 
         // notify subscriber
         let notifiers = self.notifiers.read().await;
-        if let Some(tx) = notifiers.get(event) {
-            let _ = tx.try_send(());
+        if let Some(tx) = notifiers.get(E::NAME) {
+            let _ = tx.send(());
         }
 
         Ok(())
     }
 
-    pub async fn subscribe<T, Func, Fut>(&self, event: &str, handler: Func) -> AppResult<()>
+    pub async fn subscribe<S, E, Func, Fut>(&self, state: S, handler: Func) -> AppResult<()>
     where
-        T: DeserializeOwned + Send,
-        Func: Fn(T) -> Fut + Send + Sync + 'static,
+        S: Clone + Send + Sync + 'static,
+        E: Event,
+        Func: Fn(S, E) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
-        let (tx, mut rx) = self.create_channel(event).await?;
+        let (tx, mut rx) = self.create_channel(E::NAME).await?;
 
         let db = self.db.clone();
-        let event_owned = event.to_owned();
+        let event_name = E::NAME.to_owned();
         tokio::spawn(async move {
             // Initial trigger to process existing events
-            let _ = tx.try_send(());
+            tx.send_replace(());
 
             loop {
-                if let None = rx.recv().await {
+                if rx.changed().await.is_err() {
                     // Channel closed
                     return;
                 }
 
-                let records = match event::list_next_records(&db, &event_owned, 10).await {
+                let records = match event::list_next_records(&db, &event_name, 10).await {
                     Ok(records) => records,
                     Err(e) => {
-                        error!("Failed to list event records for '{}', {}", event_owned, e);
+                        error!("Failed to list event records for '{}', {}", event_name, e);
                         // retry later
                         continue;
                     }
@@ -75,52 +80,39 @@ impl EventBus {
 
                 // Process records one by one
                 for record in records {
-                    // Retry loop for each record
                     loop {
-                        // Check if channel is closed (shutdown signal)
-                        if rx.is_closed() {
-                            info!("Event bus shutting down for event '{}'", event_owned);
-                            return;
-                        }
-
                         // Deserialize payload
-                        let payload: T = match serde_json::from_str(&record.payload) {
+                        let payload: E = match serde_json::from_str(&record.payload) {
                             Ok(p) => p,
                             Err(e) => {
                                 error!(
                                     "Failed to deserialize event '{}' payload `{}`: {}",
-                                    event_owned, record.payload, e
+                                    event_name, record.payload, e
                                 );
                                 // Mark as acknowledged to prevent infinite retry of malformed data
                                 if let Err(ack_err) = event::mark_as_acknowledged(&db, record.id).await {
                                     error!("Failed to mark malformed event as acknowledged, {}", ack_err);
                                 }
-                                // Continue to next record
                                 break;
                             }
                         };
 
                         // Call handler
-                        match handler(payload).await {
+                        match handler(state.clone(), payload).await {
                             Ok(_) => {
                                 // Success: mark as acknowledged
                                 if let Err(e) = event::mark_as_acknowledged(&db, record.id).await {
                                     error!("Failed to mark event as acknowledged after processing, {}", e);
                                 }
-                                // Continue to next record
                                 break;
                             }
                             Err(e) => {
-                                // Failure: log error and retry after delay
                                 error!(
-                                    "Event '{}' processing failed, retrying after delay, id {}, {}",
-                                    event_owned, record.id, e
+                                    "Error processing event '{}', id {}, will retry after 5 seconds, {}",
+                                    event_name, record.id, e
                                 );
-
-                                // Sleep to avoid rapid retry loop
+                                // Retry after delay
                                 sleep(Duration::from_secs(5)).await;
-
-                                // Continue retry loop for same record
                             }
                         }
                     }
@@ -128,7 +120,7 @@ impl EventBus {
             }
         });
 
-        info!("Subscribed to event '{}'", event);
+        info!("Subscribed to event '{}'", E::NAME);
         Ok(())
     }
 
@@ -152,7 +144,7 @@ impl EventBus {
             )));
         }
 
-        let (tx, rx) = mpsc::channel(1);
+        let (tx, rx) = watch::channel(());
         notifiers.insert(event.to_owned(), tx.clone());
         Ok((tx, rx))
     }

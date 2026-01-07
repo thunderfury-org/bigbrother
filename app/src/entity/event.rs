@@ -2,12 +2,12 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait
 
 use super::model::event;
 
-pub async fn list_next_records<C>(db: &C, event: &str, limit: u64) -> Result<Vec<event::Model>, DbErr>
+pub async fn list_next_records<C>(db: &C, name: &str, limit: u64) -> Result<Vec<event::Model>, DbErr>
 where
     C: ConnectionTrait,
 {
     event::Entity::find()
-        .filter(event::Column::Event.eq(event))
+        .filter(event::Column::Name.eq(name))
         .filter(event::Column::Ack.eq(false))
         .order_by_id_asc()
         .limit(limit)
@@ -28,12 +28,12 @@ where
     Ok(())
 }
 
-pub async fn add_record<C>(db: &C, event_name: &str, payload: &str) -> Result<(), DbErr>
+pub async fn add_record<C>(db: &C, name: &str, payload: &str) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
     let new_event = event::ActiveModel {
-        event: sea_orm::ActiveValue::Set(event_name.to_owned()),
+        name: sea_orm::ActiveValue::Set(name.to_owned()),
         payload: sea_orm::ActiveValue::Set(payload.to_owned()),
         ack: sea_orm::ActiveValue::Set(false),
         create_time: sea_orm::ActiveValue::Set(chrono::Utc::now()),

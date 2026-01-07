@@ -4,13 +4,13 @@ use reqwest::Url;
 use teloxide::{
     net::Download,
     prelude::*,
-    sugar::request::RequestReplyExt,
     types::{Document, InlineKeyboardButtonKind, MessageEntityKind},
 };
 use tracing::{error, info};
 
-use super::format;
+use super::format::format_imported_media;
 use crate::{
+    event::SendTelegramMessage,
     library::{self, ImportedMedia, ShareUrl},
     log_time,
     state::AppState,
@@ -55,12 +55,12 @@ impl MsgProcessor<'_> {
 
     async fn handle_document(&self, doc: &Document) -> ResponseResult<()> {
         if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) && !self.from_monitor {
-            self.send_message("不是 JSON 文件，忽略").await?;
+            self.send_message("不是 JSON 文件，忽略").await;
             return Ok(());
         }
 
         if !self.from_monitor {
-            self.send_message("开始处理 JSON 文件").await?;
+            self.send_message("开始处理 JSON 文件").await;
         }
 
         let file = self.bot.get_file(doc.file.id.to_owned()).await?;
@@ -73,7 +73,7 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from json failed: {}", e);
-                self.send_message(format!("JSON 文件处理失败: {}", e)).await?;
+                self.send_message(format!("JSON 文件处理失败: {}", e)).await;
             }
         }
 
@@ -83,7 +83,7 @@ impl MsgProcessor<'_> {
     async fn handle_share_url(&self, url: &ShareUrl<'_>) -> ResponseResult<()> {
         if !self.from_monitor {
             let reply = format!("开始处理分享: {}", url.get_url());
-            self.send_message(&reply).await?;
+            self.send_message(&reply).await;
         }
 
         match library::import_from_share_url(self.state, url).await {
@@ -92,7 +92,7 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from share url {} failed: {}", url.get_url(), e);
-                self.send_message(format!("分享处理失败: {}", e)).await?;
+                self.send_message(format!("分享处理失败: {}", e)).await;
             }
         }
 
@@ -101,7 +101,7 @@ impl MsgProcessor<'_> {
 
     async fn handle_fslink(&self, fslink: &str) -> ResponseResult<()> {
         if !self.from_monitor {
-            self.send_message("开始处理秒传").await?;
+            self.send_message("开始处理秒传").await;
         }
 
         match library::import_from_fslink(self.state, fslink).await {
@@ -110,7 +110,7 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from fslink {} failed: {}", fslink, e);
-                self.send_message(format!("秒传处理失败: {}", e)).await?;
+                self.send_message(format!("秒传处理失败: {}", e)).await;
             }
         }
 
@@ -167,99 +167,29 @@ impl MsgProcessor<'_> {
         let mut msg_sent = false;
         for media in &imported {
             info!("Imported media: {:?}", media);
-            if let Some(summary) = self.format_imported_media(media) {
-                self.send_message(summary).await?;
+            if let Some(summary) = format_imported_media(media) {
+                self.send_message(summary).await;
                 msg_sent = true;
             }
         }
 
         if !self.from_monitor && !msg_sent {
-            self.send_message("没有新入库的媒体").await?;
+            self.send_message("没有新入库的媒体").await;
         }
         Ok(())
     }
 
-    async fn send_message<T: Into<String>>(&self, text: T) -> ResponseResult<Message> {
-        if self.msg.from.is_none() {
-            self.bot.send_message(self.get_chat_id(), text).await
-        } else {
-            self.bot
-                .send_message(self.get_chat_id(), text)
-                .reply_to(self.msg.id)
-                .await
-        }
-    }
-
-    #[inline]
-    fn get_chat_id(&self) -> ChatId {
-        ChatId(self.state.config.get_telegram_config().user_id)
-    }
-
-    fn format_imported_media(&self, media: &ImportedMedia) -> Option<String> {
-        match media {
-            ImportedMedia::Movie {
-                title,
-                year,
-                size,
-                cost,
-                has_failed,
-            } => {
-                if *has_failed {
-                    return None;
-                }
-
-                let size_gb = *size as f64 / 1_000_000_000.0;
-                Some(format!(
-                    "🎬 电影 {} ({}) 已入库\n\
-                     📊 大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒",
-                    title,
-                    year,
-                    size_gb,
-                    cost.as_secs_f64(),
-                ))
-            }
-            ImportedMedia::Tv {
-                name,
-                year,
-                season,
-                episodes,
-                missing_episodes,
-                max_episode_number,
-                total_size,
-                number_of_episodes,
-                cost,
-                ..
-            } => {
-                if episodes.is_empty() {
-                    return None;
-                }
-
-                let total_size_gb = *total_size as f64 / 1_000_000_000.0;
-                let missing_str = if missing_episodes.is_empty() {
-                    "".to_owned()
-                } else {
-                    format!("🎬️ 缺失集: {}\n", format::format_episodes(missing_episodes))
-                };
-
-                Some(format!(
-                    "📺 剧集 {} ({}) S{:02} {} 已入库\n{}\
-                     📦 平均大小: {:.2} GB\n\
-                     📊 总大小: {:.2} GB\n\
-                     ⏱️ 耗时: {:.2} 秒\n\
-                     📦 集数: {}/{}",
-                    name,
-                    year,
-                    season,
-                    format::format_episodes(episodes),
-                    missing_str,
-                    total_size_gb / (episodes.len() as f64),
-                    total_size_gb,
-                    cost.as_secs_f64(),
-                    max_episode_number,
-                    number_of_episodes,
-                ))
-            }
+    async fn send_message<T: Into<String>>(&self, text: T) {
+        let msg = SendTelegramMessage {
+            message: text.into(),
+            reply_to: if self.msg.from.is_none() {
+                None
+            } else {
+                Some(self.msg.id.0)
+            },
+        };
+        if let Err(e) = self.state.bus().publish(&msg).await {
+            error!("Failed publish send telegram message event: {}", e);
         }
     }
 }

@@ -8,7 +8,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub event: String,
+    pub name: String,
     #[sea_orm(column_type = "Text")]
     pub payload: String,
     pub ack: bool,

@@ -1,16 +1,15 @@
 use teloxide::prelude::*;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{entity::keyword, state::AppState};
 
 mod cmd;
 mod format;
+pub mod handler;
 mod msg;
 
 pub async fn run(state: AppState) {
-    let bot = Bot::new(state.config.get_telegram_config().bot_token.as_str());
-
-    cmd::create_commands_in_background(&bot);
+    cmd::create_commands_in_background(state.bot());
 
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
@@ -21,7 +20,7 @@ pub async fn run(state: AppState) {
         )
         .branch(Update::filter_message().endpoint(handle_message));
 
-    Dispatcher::builder(bot, handler)
+    Dispatcher::builder(state.bot().clone(), handler)
         .enable_ctrlc_handler()
         .dependencies(dptree::deps![state])
         .build()
@@ -30,7 +29,7 @@ pub async fn run(state: AppState) {
 }
 
 async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    let keywords = match keyword::list_all_keywords(&state.db).await {
+    let keywords = match keyword::list_all_keywords(state.db()).await {
         Ok(keywords) => keywords,
         Err(e) => {
             error!("Failed to query keywords from database: {e}");
@@ -78,8 +77,11 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
 }
 
 async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    let user_id = UserId(state.config.get_telegram_config().user_id.try_into().unwrap());
+    info!("Received message from {:?}", msg.chat);
+
+    let user_id = UserId(state.config().get_telegram_config().user_id.try_into().unwrap());
     if msg.from.as_ref().is_none_or(|u| u.id != user_id) {
+        info!("Ignoring message from unauthorized user: {:?}", msg.from);
         // Ignore messages not from the specified user
         return Ok(());
     }
