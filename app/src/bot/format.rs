@@ -1,4 +1,6 @@
-pub(super) fn format_episodes(episodes: &[u32]) -> String {
+use crate::library::ImportedMedia;
+
+fn format_episodes(episodes: &[u32]) -> String {
     if episodes.is_empty() {
         return String::new();
     }
@@ -27,6 +29,74 @@ pub(super) fn format_episodes(episodes: &[u32]) -> String {
     }
 
     parts.join(",")
+}
+
+pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
+    match media {
+        ImportedMedia::Movie {
+            title,
+            year,
+            size,
+            cost,
+            has_failed,
+        } => {
+            if *has_failed {
+                return None;
+            }
+
+            let size_gb = *size as f64 / 1_000_000_000.0;
+            Some(format!(
+                "🎬 电影 {} ({}) 已入库\n\
+                     📊 大小: {:.2} GB\n\
+                     ⏱️ 耗时: {:.2} 秒",
+                title,
+                year,
+                size_gb,
+                cost.as_secs_f64(),
+            ))
+        }
+        ImportedMedia::Tv {
+            name,
+            year,
+            season,
+            episodes,
+            missing_episodes,
+            max_episode_number,
+            total_size,
+            number_of_episodes,
+            cost,
+            ..
+        } => {
+            if episodes.is_empty() {
+                return None;
+            }
+
+            let total_size_gb = *total_size as f64 / 1_000_000_000.0;
+            let missing_str = if missing_episodes.is_empty() {
+                "".to_owned()
+            } else {
+                format!("🎬️ 缺失集: {}\n", format_episodes(missing_episodes))
+            };
+
+            Some(format!(
+                "📺 剧集 {} ({}) S{:02} {} 已入库\n{}\
+                     📦 平均大小: {:.2} GB\n\
+                     📊 总大小: {:.2} GB\n\
+                     ⏱️ 耗时: {:.2} 秒\n\
+                     📦 集数: {}/{}",
+                name,
+                year,
+                season,
+                format_episodes(episodes),
+                missing_str,
+                total_size_gb / (episodes.len() as f64),
+                total_size_gb,
+                cost.as_secs_f64(),
+                max_episode_number,
+                number_of_episodes,
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

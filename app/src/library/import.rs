@@ -56,9 +56,3 @@ impl Importer {
         }
     }
 }
-
-impl Default for Importer {
-    fn default() -> Self {
-        Self::new(AppState::default())
-    }
-}

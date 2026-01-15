@@ -57,7 +57,7 @@ impl Importer {
 
         if !existing_files.is_empty() {
             // existing files found, check if need overwrite
-            if self.need_overwrite_existing_files(&existing_files, media_file) {
+            if need_overwrite_existing_files(&existing_files, media_file) {
                 // existing file size is smaller than new file, need overwrite
                 // delete existing files
                 self.delete_files_in_library(&existing_files).await?;
@@ -94,7 +94,7 @@ impl Importer {
 
         let tv_path = self.get_tv_path_in_library(detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.state.pan123.list_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.state.pan123().list_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -135,7 +135,7 @@ impl Importer {
             Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
             None => {
                 // create season folder if not exists
-                let id = self.state.pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
+                let id = self.state.pan123().mkdir(tv_dir_id, season_dir.as_str()).await?;
                 info!(
                     "Tv series {} season {} folder {} created in library, id: {}",
                     detail.name, season_number, season_dir, id
@@ -238,7 +238,7 @@ impl Importer {
             && !existing_files.is_empty()
         {
             // episode file already exists in library
-            if self.need_overwrite_existing_files(existing_files, media_file) {
+            if need_overwrite_existing_files(existing_files, media_file) {
                 // existing file size is smaller than new file, need overwrite
                 // delete existing files
                 self.delete_files_in_library(existing_files).await?;
@@ -284,14 +284,14 @@ impl Importer {
             }
         }
 
-        self.state.pan123.trash_files(file_ids.as_slice()).await?;
+        self.state.pan123().trash_files(file_ids.as_slice()).await?;
         Ok(())
     }
 
     async fn delete_files_in_local(&self, remote_parent_path: &str, files: &[MediaFile]) -> AppResult<()> {
         let local_parent_path = remote_parent_path.replace(
-            self.state.config.get_library_config().remote_path.as_str(),
-            self.state.config.get_library_config().local_path.as_str(),
+            self.state.config().get_library_config().remote_path.as_str(),
+            self.state.config().get_library_config().local_path.as_str(),
         );
 
         for f in files {
@@ -328,7 +328,7 @@ impl Importer {
         name_prefix: &str,
         media_file: &MediaFile,
     ) -> AppResult<bool> {
-        let video_file_name = self.format_video_file_name(name_prefix, media_file);
+        let video_file_name = format_video_file_name(name_prefix, media_file);
 
         if !media_file.subtitles.is_empty() {
             // save subtitle files first, in case video file transfer failed
@@ -368,7 +368,7 @@ impl Importer {
     ) -> AppResult<bool> {
         let res = self
             .state
-            .pan123
+            .pan123()
             .fast_upload(
                 parent_dir_id,
                 video_file_name,
@@ -404,15 +404,15 @@ impl Importer {
     async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
         let strm_file_content = format!(
             "{}{}?file_id={}",
-            self.state.config.get_media_server_config().get_strm_download_url(),
+            self.state.config().get_media_server_config().get_strm_download_url(),
             remote_file_path,
             file_id
         );
 
         let local_file_path = remote_file_path
             .replace(
-                self.state.config.get_library_config().remote_path.as_str(),
-                self.state.config.get_library_config().local_path.as_str(),
+                self.state.config().get_library_config().remote_path.as_str(),
+                self.state.config().get_library_config().local_path.as_str(),
             )
             .trim_end_matches(extension)
             .to_owned()
@@ -435,7 +435,7 @@ impl Importer {
         let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
         let res = self
             .state
-            .pan123
+            .pan123()
             .fast_upload(parent_dir_id, file_name.as_str(), raw_file.etag.as_str(), raw_file.size)
             .await
             .inspect_err(|e| {
@@ -447,10 +447,10 @@ impl Importer {
 
                 // download subtitle file
                 let local_file_path = format!("{}/{}", parent_path, file_name).replace(
-                    self.state.config.get_library_config().remote_path.as_str(),
-                    self.state.config.get_library_config().local_path.as_str(),
+                    self.state.config().get_library_config().remote_path.as_str(),
+                    self.state.config().get_library_config().local_path.as_str(),
                 );
-                self.state.pan123.download_file(id, local_file_path.as_str()).await?;
+                self.state.pan123().download_file(id, local_file_path.as_str()).await?;
                 info!("Subtitle file {} downloaded", local_file_path);
 
                 Ok(true)
@@ -462,47 +462,47 @@ impl Importer {
             }
         }
     }
+}
 
-    fn format_video_file_name(&self, name_prefix: &str, file: &MediaFile) -> String {
-        if file.video.name.starts_with(name_prefix) {
-            file.video.name.to_owned()
+fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
+    if file.video.name.starts_with(name_prefix) {
+        file.video.name.to_owned()
+    } else {
+        let mut parts = vec![];
+        if !file.metadata.resolution.is_empty() {
+            parts.push(file.metadata.resolution.as_str());
+        }
+        if !file.metadata.frame_rate.is_empty() {
+            parts.push(file.metadata.frame_rate.as_str());
+        }
+        if !file.metadata.quality.is_empty() {
+            parts.push(file.metadata.quality.as_str());
+        }
+        if !file.metadata.hdr.is_empty() {
+            parts.push(file.metadata.hdr.as_str());
+        }
+        if !file.metadata.video_codec.is_empty() {
+            parts.push(file.metadata.video_codec.as_str());
+        }
+        if !file.metadata.audio_codec.is_empty() {
+            parts.push(file.metadata.audio_codec.as_str());
+        }
+        if file.metadata.release_group.is_empty() {
+            format!("{}{}{}", name_prefix, parts.join("."), file.metadata.extension)
         } else {
-            let mut parts = vec![];
-            if !file.metadata.resolution.is_empty() {
-                parts.push(file.metadata.resolution.as_str());
-            }
-            if !file.metadata.frame_rate.is_empty() {
-                parts.push(file.metadata.frame_rate.as_str());
-            }
-            if !file.metadata.quality.is_empty() {
-                parts.push(file.metadata.quality.as_str());
-            }
-            if !file.metadata.hdr.is_empty() {
-                parts.push(file.metadata.hdr.as_str());
-            }
-            if !file.metadata.video_codec.is_empty() {
-                parts.push(file.metadata.video_codec.as_str());
-            }
-            if !file.metadata.audio_codec.is_empty() {
-                parts.push(file.metadata.audio_codec.as_str());
-            }
-            if file.metadata.release_group.is_empty() {
-                format!("{}{}{}", name_prefix, parts.join("."), file.metadata.extension)
-            } else {
-                format!(
-                    "{}{}-{}{}",
-                    name_prefix,
-                    parts.join("."),
-                    file.metadata.release_group,
-                    file.metadata.extension
-                )
-            }
+            format!(
+                "{}{}-{}{}",
+                name_prefix,
+                parts.join("."),
+                file.metadata.release_group,
+                file.metadata.extension
+            )
         }
     }
+}
 
-    fn need_overwrite_existing_files(&self, existing_files: &[MediaFile], media_file: &MediaFile) -> bool {
-        existing_files.iter().all(|f| f.video.size < media_file.video.size)
-    }
+fn need_overwrite_existing_files(existing_files: &[MediaFile], media_file: &MediaFile) -> bool {
+    existing_files.iter().all(|f| f.video.size < media_file.video.size)
 }
 
 #[cfg(test)]
@@ -526,26 +526,24 @@ mod tests {
 
     #[test]
     fn test_need_overwrite_existing_files() {
-        let importer = Importer::default();
-
         // Case 1: New file is larger than all existing files
         let existing_files_1 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_1 = create_mock_media_file(300);
-        assert!(importer.need_overwrite_existing_files(&existing_files_1, &new_file_1));
+        assert!(need_overwrite_existing_files(&existing_files_1, &new_file_1));
 
         // Case 2: New file is smaller than an existing file
         let existing_files_2 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_2 = create_mock_media_file(50);
-        assert!(!importer.need_overwrite_existing_files(&existing_files_2, &new_file_2));
+        assert!(!need_overwrite_existing_files(&existing_files_2, &new_file_2));
 
         // Case 3: New file is the same size as an existing file
         let existing_files_3 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_3 = create_mock_media_file(200);
-        assert!(!importer.need_overwrite_existing_files(&existing_files_3, &new_file_3));
+        assert!(!need_overwrite_existing_files(&existing_files_3, &new_file_3));
 
         // Case 4: No existing files
         let existing_files_4 = vec![];
         let new_file_4 = create_mock_media_file(100);
-        assert!(importer.need_overwrite_existing_files(&existing_files_4, &new_file_4));
+        assert!(need_overwrite_existing_files(&existing_files_4, &new_file_4));
     }
 }

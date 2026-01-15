@@ -14,7 +14,7 @@ use crate::{client::RequestError, state::AppState};
 pub(super) fn new_router(state: AppState) -> Router {
     let path = format!(
         "{}/{{*path}}",
-        state.config.get_media_server_config().get_strm_path_prefix()
+        state.config().get_media_server_config().get_strm_path_prefix()
     );
     Router::new().route(path.as_str(), get(redirect)).with_state(state)
 }
@@ -31,7 +31,7 @@ async fn redirect(
 
     match file_id.unwrap().parse::<i64>() {
         Err(e) => (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
-        Ok(id) => match state.pan123.get_download_url(id).await {
+        Ok(id) => match state.pan123().get_download_url(id).await {
             Ok(url) => {
                 if url.is_empty() {
                     error!("Failed to get download url of file {}, id: {}", path, id);

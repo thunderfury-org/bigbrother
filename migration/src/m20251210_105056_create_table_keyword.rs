@@ -12,8 +12,8 @@ impl MigrationTrait for Migration {
                     .table(Keyword::Table)
                     .if_not_exists()
                     .col(pk_auto(Keyword::Id))
-                    .col(string(Keyword::Value).not_null())
-                    .col(timestamp(Keyword::CreateTime).not_null())
+                    .col(string(Keyword::Value))
+                    .col(timestamp(Keyword::CreateTime))
                     .index(Index::create().unique().name("idx-keyword-value").col(Keyword::Value))
                     .to_owned(),
             )

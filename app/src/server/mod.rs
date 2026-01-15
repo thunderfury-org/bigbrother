@@ -1,7 +1,3 @@
-use tokio::signal::{
-    self,
-    unix::{SignalKind, signal},
-};
 use tower_http::{
     LatencyUnit,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
@@ -9,12 +5,12 @@ use tower_http::{
 use trace_id::TraceIdLayer;
 use tracing::{Level, info};
 
-use crate::state::AppState;
+use crate::{state::AppState, util::signal::shutdown_signal};
 
 mod media;
 
 pub async fn run(state: AppState) {
-    let addr = state.config.get_media_server_config().get_addr();
+    let addr = state.config().get_media_server_config().get_addr();
     info!("Starting media server at {}", addr);
 
     let app = media::new_router(state.clone()).layer(TraceIdLayer::new()).layer(
@@ -33,14 +29,4 @@ pub async fn run(state: AppState) {
         .await
         .unwrap();
     info!("Media server has shutdown gracefully.");
-}
-
-async fn shutdown_signal() {
-    let mut term = signal(SignalKind::terminate()).unwrap();
-    tokio::select! {
-        _ = signal::ctrl_c() => {},
-        _ = term.recv() => {},
-    }
-
-    info!("Signal received, starting graceful shutdown...");
 }
