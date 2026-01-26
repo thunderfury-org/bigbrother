@@ -122,7 +122,7 @@ impl Importer {
                         RawFile {
                             id: Some(file.file_id),
                             name: file.file_name.to_owned(),
-                            etag: file.etag.to_owned(),
+                            etag: file.etag.as_str().into(),
                             size: file.size,
                             path: parent_path.to_owned(),
                         },
@@ -167,7 +167,7 @@ impl Importer {
                     RawFile {
                         id: None,
                         name: file.name.to_owned(),
-                        etag: file.md5.to_lowercase(),
+                        etag: file.md5.as_str().into(),
                         size: file.size,
                         path: parent_path.to_owned(),
                     },

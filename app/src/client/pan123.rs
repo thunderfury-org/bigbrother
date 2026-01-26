@@ -68,6 +68,14 @@ struct FastUploadResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct FastUploadWithSha1Response {
+    #[serde(rename = "reuse")]
+    reuse: bool,
+    #[serde(rename = "fileID")]
+    file_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
 struct MkdirResponse {
     #[serde(rename = "dirID")]
     dir_id: i64,
@@ -219,6 +227,29 @@ impl Client {
                 None
             }
         })
+    }
+
+    pub async fn fast_upload_with_sha1(
+        &self,
+        parent_file_id: i64,
+        file_name: &str,
+        sha1: &str,
+        size: u64,
+    ) -> RequestResult<Option<i64>> {
+        self.post::<_, FastUploadWithSha1Response>(
+            self.build_open_api_url("/upload/v2/file/sha1_reuse"),
+            None,
+            Some(&json!(
+                {
+                    "parentFileID": parent_file_id,
+                    "filename": file_name,
+                    "sha1": sha1,
+                    "size": size,
+                }
+            )),
+        )
+        .await
+        .map(|r| if r.reuse { r.file_id } else { None })
     }
 
     pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {

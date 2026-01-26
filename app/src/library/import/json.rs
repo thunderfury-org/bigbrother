@@ -111,7 +111,7 @@ impl Importer {
                 RawFile {
                     id: None,
                     name: name.to_owned(),
-                    etag: file.etag.to_owned(),
+                    etag: file.etag.as_str().into(),
                     size: file.size,
                     path: parent_path.to_owned(),
                 },

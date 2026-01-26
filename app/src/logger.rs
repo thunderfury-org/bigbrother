@@ -9,9 +9,14 @@ use time::{
 };
 use tracing::{error, level_filters::LevelFilter};
 use tracing_appender::rolling::Rotation;
-use tracing_subscriber::fmt::time::OffsetTime;
+use tracing_subscriber::{
+    Layer,
+    filter::{self, Targets},
+    fmt::{self, time::OffsetTime},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
-const MAX_LEVEL: LevelFilter = LevelFilter::INFO;
 const CONFIG: EncodedConfig = Config::DEFAULT
     .set_time_precision(TimePrecision::Second {
         decimal_digits: NonZeroU8::new(3),
@@ -23,20 +28,41 @@ pub fn init(log_dir: &str) {
         .rotation(Rotation::DAILY)
         .filename_prefix("bigbrother")
         .filename_suffix("log")
-        .max_log_files(7)
+        .max_log_files(3)
         .build(log_dir)
         .expect("Failed to initialize rolling file appender");
+
+    let media_server_log_writer = tracing_appender::rolling::Builder::new()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("media_server")
+        .filename_suffix("log")
+        .max_log_files(3)
+        .build(log_dir)
+        .expect("Failed to initialize access log appender");
 
     let offset = match UtcOffset::current_local_offset() {
         Ok(o) => o,
         Err(_) => UtcOffset::UTC,
     };
 
-    tracing_subscriber::fmt()
+    // Main application logger
+    let app_logger = fmt::layer()
         .with_writer(writer)
         .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
-        .with_max_level(MAX_LEVEL)
         .with_ansi(false)
+        .with_filter(LevelFilter::INFO)
+        .with_filter(Targets::new().with_target("media_server", LevelFilter::OFF));
+
+    // Separate logger for media_server.log
+    let media_server_logger = fmt::layer()
+        .with_writer(media_server_log_writer)
+        .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
+        .with_ansi(false)
+        .with_filter(filter::Targets::new().with_target("media_server", filter::LevelFilter::INFO));
+
+    tracing_subscriber::registry()
+        .with(media_server_logger)
+        .with(app_logger)
         .init();
 
     log_panic();
