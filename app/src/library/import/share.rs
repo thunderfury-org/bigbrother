@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 pub enum ShareUrl<'a> {
     Pan123(&'a Url),
     Pan189(&'a Url),
+    Pan115(&'a Url),
 }
 
 impl<'a> ShareUrl<'a> {
@@ -25,6 +26,8 @@ impl<'a> ShareUrl<'a> {
             && (url.path().starts_with("/t/") || url.path() == "/web/share")
         {
             Some(Self::Pan189(url))
+        } else if url.host_str().is_some_and(|h| h == "115.com" || h == "115cdn.com") && url.path().starts_with("/s/") {
+            Some(Self::Pan115(url))
         } else {
             None
         }
@@ -34,6 +37,7 @@ impl<'a> ShareUrl<'a> {
         match self {
             Self::Pan123(url) => url,
             Self::Pan189(url) => url,
+            Self::Pan115(url) => url,
         }
     }
 }
@@ -44,6 +48,7 @@ impl Importer {
         match url {
             ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
             ShareUrl::Pan189(url) => self.import_pan189_share(url).await,
+            ShareUrl::Pan115(url) => self.import_pan115_share(url).await,
         }
     }
 
@@ -87,6 +92,30 @@ impl Importer {
 
         let media_files = self.list_files_from_pan189_share(&share_code).await?;
         info!("found {} media files from pan189 share", media_files.len());
+        self.transfer_media_files(&media_files).await
+    }
+
+    async fn import_pan115_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
+        let share_code = url
+            .path_segments()
+            .map(|mut s| s.next_back().unwrap_or_default())
+            .unwrap_or_default();
+
+        let receive_code = url
+            .query_pairs()
+            .find(|(k, _)| k == "password")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_default();
+
+        if share_code.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "Can not extract share code from URL: {}",
+                url
+            )));
+        }
+
+        let media_files = self.list_files_from_pan115_share(share_code, &receive_code).await?;
+        info!("found {} media files from pan115 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
 
@@ -180,5 +209,110 @@ impl Importer {
         }
 
         Ok(all_files)
+    }
+
+    async fn list_files_from_pan115_share(
+        &mut self,
+        share_code: &str,
+        receive_code: &str,
+    ) -> AppResult<Vec<MediaFile>> {
+        let mut all_files = Vec::new();
+        let mut stack = vec![("0".to_string(), String::new())];
+
+        while let Some((cid, parent_path)) = stack.pop() {
+            let entries = self
+                .state
+                .client()
+                .pan115
+                .list_share_files(share_code, receive_code, &cid)
+                .await?;
+
+            let mut media_files_in_dir = Vec::new();
+            for entry in &entries {
+                if entry.is_file() {
+                    // Regular file
+                    let metadata = self.parse_media_metadata(&entry.name, &parent_path);
+                    if metadata.unknown_type() {
+                        continue;
+                    }
+
+                    media_files_in_dir.push((
+                        metadata,
+                        RawFile {
+                            id: None,
+                            name: entry.name.to_owned(),
+                            etag: entry.sha.as_deref().unwrap_or_default().into(),
+                            size: entry.size,
+                            path: parent_path.to_owned(),
+                        },
+                    ));
+                } else if let Some(cid) = &entry.cid {
+                    // Directory
+                    stack.push((cid.to_owned(), format!("{}/{}", parent_path, entry.name)));
+                }
+            }
+
+            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
+        }
+
+        Ok(all_files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shareurl_from_pan115_with_password() {
+        let url = Url::parse("https://115cdn.com/s/swfoexi3no3?password=j7b2").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_some());
+        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
+    }
+
+    #[test]
+    fn test_shareurl_from_pan115_with_rc() {
+        let url = Url::parse("https://115.com/s/swfoexi3no3?rc=j7b2").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_some());
+        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
+    }
+
+    #[test]
+    fn test_shareurl_from_pan115_without_password() {
+        let url = Url::parse("https://115.com/s/swfoexi3no3").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_some());
+        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
+    }
+
+    #[test]
+    fn test_shareurl_from_pan123() {
+        let url = Url::parse("https://www.123pan.com/s/abc123?pwd=test").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_some());
+        assert!(matches!(share_url.unwrap(), ShareUrl::Pan123(_)));
+    }
+
+    #[test]
+    fn test_shareurl_from_pan189() {
+        let url = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_some());
+        assert!(matches!(share_url.unwrap(), ShareUrl::Pan189(_)));
+    }
+
+    #[test]
+    fn test_shareurl_from_invalid_url() {
+        let url = Url::parse("https://example.com/s/abc123").unwrap();
+        let share_url = ShareUrl::from(&url);
+
+        assert!(share_url.is_none());
     }
 }

@@ -2,7 +2,6 @@ use serde::{Deserialize, Deserializer};
 
 use super::{RequestError, RequestResult, http};
 
-#[allow(dead_code)]
 const API_URL: &str = "https://115cdn.com/webapi/share/snap";
 
 // Custom deserializer to handle both string and number types
@@ -22,20 +21,6 @@ where
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct ShareInfo {
-    #[serde(rename = "snap_id")]
-    pub snap_id: String,
-    #[serde(rename = "file_size")]
-    pub file_size: u64,
-    #[serde(rename = "share_title")]
-    pub share_title: String,
-    #[serde(rename = "share_state")]
-    pub share_state: i32,
-}
-
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct FileEntry {
     /// File ID (present for files)
@@ -60,7 +45,6 @@ pub struct FileEntry {
 }
 
 impl FileEntry {
-    #[allow(dead_code)]
     pub fn is_file(&self) -> bool {
         self.fid.is_some()
     }
@@ -71,7 +55,6 @@ struct ListResponse {
     #[serde(rename = "state")]
     state: bool,
     #[serde(rename = "error")]
-    #[allow(dead_code)]
     error: String,
     #[serde(rename = "errno")]
     errno: i32,
@@ -82,10 +65,6 @@ struct ListResponse {
 
 #[derive(Debug, Deserialize)]
 struct ListResponseData {
-    #[serde(rename = "shareinfo")]
-    #[allow(dead_code)]
-    pub shareinfo: ShareInfo,
-
     #[serde(rename = "count")]
     pub count: i32,
 
