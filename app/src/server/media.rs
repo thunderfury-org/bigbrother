@@ -7,7 +7,7 @@ use axum::{
     routing::get,
 };
 use reqwest::StatusCode;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{client::RequestError, state::AppState};
 
@@ -34,32 +34,22 @@ async fn redirect(
         Ok(id) => match state.pan123().get_download_url(id).await {
             Ok(url) => {
                 if url.is_empty() {
-                    error!(
-                        target = "media_server",
-                        "Failed to get download url of file {}, id: {}", path, id
-                    );
+                    error!("Failed to get download url of file {}, id: {}", path, id);
                     return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
                 }
-                info!(target = "media_server", "Redirecting /d/{} to {}", path, url);
                 axum::response::Redirect::to(url.as_str()).into_response()
             }
             Err(e) => match e {
                 RequestError::Unauthorized => {
-                    error!(
-                        target = "media_server",
-                        "Unauthorized to get download url of file {}, id: {}", path, id
-                    );
+                    error!("Unauthorized to get download url of file {}, id: {}", path, id);
                     (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
                 }
                 RequestError::NotFound(_) => {
-                    error!(target = "media_server", "File {} not found, id: {}", path, id);
+                    error!("File {} not found, id: {}", path, id);
                     (StatusCode::NOT_FOUND, "File not found").into_response()
                 }
                 _ => {
-                    error!(
-                        target = "media_server",
-                        "Failed to get download url of file {}, id: {}, {}", path, id, e
-                    );
+                    error!("Failed to get download url of file {}, id: {}, {}", path, id, e);
                     (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response()
                 }
             },

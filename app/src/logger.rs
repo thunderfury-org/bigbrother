@@ -7,11 +7,11 @@ use time::{
         iso8601::{Config, EncodedConfig, TimePrecision},
     },
 };
-use tracing::{error, level_filters::LevelFilter};
+use tracing::error;
 use tracing_appender::rolling::Rotation;
 use tracing_subscriber::{
-    Layer,
-    filter::{self, Targets},
+    EnvFilter, Layer,
+    filter::FilterFn,
     fmt::{self, time::OffsetTime},
     layer::SubscriberExt,
     util::SubscriberInitExt,
@@ -32,9 +32,9 @@ pub fn init(log_dir: &str) {
         .build(log_dir)
         .expect("Failed to initialize rolling file appender");
 
-    let media_server_log_writer = tracing_appender::rolling::Builder::new()
+    let access_log_writer = tracing_appender::rolling::Builder::new()
         .rotation(Rotation::DAILY)
-        .filename_prefix("media_server")
+        .filename_prefix("access.http")
         .filename_suffix("log")
         .max_log_files(3)
         .build(log_dir)
@@ -50,18 +50,28 @@ pub fn init(log_dir: &str) {
         .with_writer(writer)
         .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
         .with_ansi(false)
-        .with_filter(LevelFilter::INFO)
-        .with_filter(Targets::new().with_target("media_server", LevelFilter::OFF));
+        .with_filter(FilterFn::new(|meta| {
+            if *meta.level() > tracing::Level::INFO {
+                return false;
+            }
 
-    // Separate logger for media_server.log
-    let media_server_logger = fmt::layer()
-        .with_writer(media_server_log_writer)
+            // Exclude access log entries
+            if meta.is_event() && meta.target() == "bigbrother::server::log" {
+                false
+            } else {
+                true
+            }
+        }));
+
+    // Separate logger for access.log
+    let access_logger = fmt::layer()
+        .with_writer(access_log_writer)
         .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
         .with_ansi(false)
-        .with_filter(filter::Targets::new().with_target("media_server", filter::LevelFilter::INFO));
+        .with_filter(EnvFilter::new("off,bigbrother::server::log=info"));
 
     tracing_subscriber::registry()
-        .with(media_server_logger)
+        .with(access_logger)
         .with(app_logger)
         .init();
 
