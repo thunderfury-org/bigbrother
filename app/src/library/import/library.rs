@@ -35,7 +35,7 @@ impl Importer {
     }
 
     async fn list_media_files_in_library(&mut self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
-        let files = self.state.pan123().list(dir_id).await?;
+        let files = self.state.client().pan123.list(dir_id).await?;
 
         let mut raw_files = Vec::new();
         for file in &files {
@@ -64,13 +64,13 @@ impl Importer {
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {
-        let file_id = self.state.pan123().get_file_id_by_path(path).await?;
+        let file_id = self.state.client().pan123.get_file_id_by_path(path).await?;
         match file_id {
             Some(id) => Ok(id),
             None => {
                 info!("Dir {} not found in library", path);
                 // create in library
-                let id = self.state.pan123().mkdir_by_path(path).await?;
+                let id = self.state.client().pan123.mkdir_by_path(path).await?;
                 info!("Dir {} created in library, id: {}", path, id);
                 Ok(id)
             }

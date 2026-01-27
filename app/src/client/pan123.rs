@@ -106,7 +106,7 @@ struct AccessToken {
     expired_at: time::OffsetDateTime,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Client {
     client_id: String,
     client_secret: String,

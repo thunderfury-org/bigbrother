@@ -93,7 +93,7 @@ struct ListResponseData {
     pub list: Vec<FileEntry>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Client {}
 
 impl Client {

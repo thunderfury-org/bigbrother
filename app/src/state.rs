@@ -2,20 +2,33 @@ use std::sync::Arc;
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use crate::{
-    client::{pan123, pan189, tmdb},
-    config,
-    error::AppResult,
-    event_bus::EventBus,
-};
+use crate::{client, config, error::AppResult, event_bus::EventBus};
+
+/// Unified client struct containing all API clients
+#[derive(Clone)]
+pub struct Client {
+    pub pan115: client::pan115::Client,
+    pub pan123: client::pan123::Client,
+    pub pan189: client::pan189::Client,
+    pub tmdb: client::tmdb::Client,
+}
+
+impl Client {
+    pub fn new(pan123_client_id: &str, pan123_client_secret: &str, pan123_cache_dir: &str, tmdb_api_key: &str) -> Self {
+        Self {
+            pan115: client::pan115::Client::new(),
+            pan123: client::pan123::Client::new(pan123_client_id, pan123_client_secret, pan123_cache_dir),
+            pan189: client::pan189::Client::new(),
+            tmdb: client::tmdb::Client::new(tmdb_api_key),
+        }
+    }
+}
 
 #[derive(Clone)]
 struct InnerAppState {
     pub db: DatabaseConnection,
     pub config: Arc<config::Manager>,
-    pub pan123: Arc<pan123::Client>,
-    pub pan189: Arc<pan189::Client>,
-    pub tmdb: Arc<tmdb::Client>,
+    pub client: Arc<Client>,
     pub bus: Arc<EventBus>,
     pub bot: Arc<teloxide::Bot>,
 }
@@ -41,13 +54,12 @@ impl AppState {
 
         Ok(AppState {
             inner: Arc::new(InnerAppState {
-                pan123: Arc::new(pan123::Client::new(
+                client: Arc::new(Client::new(
                     &config.get_pan123_config().client_id,
                     &config.get_pan123_config().client_secret,
                     &format!("{}/pan123", config.get_cache_dir()),
+                    &config.get_tmdb_config().api_key,
                 )),
-                pan189: Arc::new(pan189::Client::new()),
-                tmdb: Arc::new(tmdb::Client::new(&config.get_tmdb_config().api_key)),
                 bus: Arc::new(EventBus::new(db.clone())),
                 bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
                 db,
@@ -64,16 +76,8 @@ impl AppState {
         &self.inner.config
     }
 
-    pub fn pan123(&self) -> &pan123::Client {
-        &self.inner.pan123
-    }
-
-    pub fn pan189(&self) -> &pan189::Client {
-        &self.inner.pan189
-    }
-
-    pub fn tmdb(&self) -> &tmdb::Client {
-        &self.inner.tmdb
+    pub fn client(&self) -> &Client {
+        &self.inner.client
     }
 
     pub fn bus(&self) -> &EventBus {

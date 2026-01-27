@@ -97,7 +97,7 @@ impl Importer {
         let remote_path = self.state.config().get_library_config().remote_path.as_str();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.state.pan123().list_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.state.client().pan123.list_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -138,7 +138,7 @@ impl Importer {
             Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
             None => {
                 // create season folder if not exists
-                let id = self.state.pan123().mkdir(tv_dir_id, season_dir.as_str()).await?;
+                let id = self.state.client().pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
                 info!(
                     "Tv series {} season {} folder {} created in library, id: {}",
                     detail.name, season_number, season_dir, id
@@ -287,7 +287,7 @@ impl Importer {
             }
         }
 
-        self.state.pan123().trash_files(file_ids.as_slice()).await?;
+        self.state.client().pan123.trash_files(file_ids.as_slice()).await?;
         Ok(())
     }
 
@@ -444,7 +444,11 @@ impl Importer {
                     self.state.config().get_library_config().remote_path.as_str(),
                     self.state.config().get_library_config().local_path.as_str(),
                 );
-                self.state.pan123().download_file(id, local_file_path.as_str()).await?;
+                self.state
+                    .client()
+                    .pan123
+                    .download_file(id, local_file_path.as_str())
+                    .await?;
                 info!("Subtitle file {} downloaded", local_file_path);
 
                 Ok(true)
@@ -466,13 +470,15 @@ impl Importer {
         Ok(match &raw_file.etag {
             Etag::Md5(etag) => {
                 self.state
-                    .pan123()
+                    .client()
+                    .pan123
                     .fast_upload(parent_dir_id, file_name, etag, raw_file.size)
                     .await?
             }
             Etag::Sha1(sha1) => {
                 self.state
-                    .pan123()
+                    .client()
+                    .pan123
                     .fast_upload_with_sha1(parent_dir_id, file_name, sha1, raw_file.size)
                     .await?
             }

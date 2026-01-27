@@ -60,7 +60,7 @@ struct ListShareFileResponse {
     file_list: FileListResponse,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Client {}
 
 impl Client {
