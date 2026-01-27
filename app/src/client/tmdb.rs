@@ -71,7 +71,7 @@ pub struct SearchTvResult {
     pub original_name: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Client {
     api_key: String,
 }

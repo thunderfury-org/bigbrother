@@ -8,7 +8,8 @@ use tracing::{error, info};
 
 use super::{
     ImportedMedia, Importer,
-    inner::{Media, MediaFile, RawFile, TransferEpisodeArgs},
+    inner::{Etag, Media, MediaFile, RawFile, TransferEpisodeArgs},
+    library,
 };
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
@@ -44,10 +45,11 @@ impl Importer {
         detail: &MovieDetail,
         media_files: &[&MediaFile],
     ) -> AppResult<Option<ImportedMedia>> {
-        log_time!(format!("transfer movie {}", self.get_movie_base_name(detail)));
+        log_time!(format!("transfer movie {}", library::get_movie_base_name(detail)));
         let start_time = std::time::Instant::now();
 
-        let movie_path = self.get_movie_path_in_library(detail);
+        let remote_path = self.state.config().get_library_config().remote_path.as_str();
+        let movie_path = library::get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self.get_or_create_dir_in_library(movie_path.as_str()).await?;
         let existing_files = self.list_movie_files_in_library(movie_dir_id).await?;
         let media_file = media_files
@@ -71,14 +73,14 @@ impl Importer {
         let name_prefix = format!(
             "{}.{}.",
             detail.title,
-            self.get_year_from_date(detail.release_date.as_str()),
+            library::get_year_from_date(detail.release_date.as_str()),
         );
         let success = self
             .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
         Ok(Some(ImportedMedia::Movie {
             title: detail.title.to_owned(),
-            year: self.get_year_from_date(detail.release_date.as_str()).to_owned(),
+            year: library::get_year_from_date(detail.release_date.as_str()).to_owned(),
             size: media_file.video.size,
             cost: start_time.elapsed(),
             has_failed: !success,
@@ -90,11 +92,12 @@ impl Importer {
         detail: &TvDetail,
         files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
     ) -> AppResult<Vec<ImportedMedia>> {
-        log_time!(format!("transfer tv {}", self.get_tv_base_name(detail)));
+        log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let tv_path = self.get_tv_path_in_library(detail);
+        let remote_path = self.state.config().get_library_config().remote_path.as_str();
+        let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.state.pan123().list_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.state.client().pan123.list_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -125,7 +128,7 @@ impl Importer {
     ) -> AppResult<ImportedMedia> {
         log_time!(format!(
             "transfer tv {} season {:02}",
-            self.get_tv_base_name(detail),
+            library::get_tv_base_name(detail),
             season_number
         ));
         let start_time = std::time::Instant::now();
@@ -135,7 +138,7 @@ impl Importer {
             Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
             None => {
                 // create season folder if not exists
-                let id = self.state.pan123().mkdir(tv_dir_id, season_dir.as_str()).await?;
+                let id = self.state.client().pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
                 info!(
                     "Tv series {} season {} folder {} created in library, id: {}",
                     detail.name, season_number, season_dir, id
@@ -175,7 +178,7 @@ impl Importer {
 
         Ok(ImportedMedia::Tv {
             name: detail.name.to_owned(),
-            year: self.get_year_from_date(detail.first_air_date.as_str()).to_owned(),
+            year: library::get_year_from_date(detail.first_air_date.as_str()).to_owned(),
             season: *season_number,
             missing_episodes: self.get_missing_episodes(max_episode_number, &episodes, &existing_episode_files),
             episodes,
@@ -254,7 +257,7 @@ impl Importer {
         let name_prefix = format!(
             "{}.{}.S{:02}E{:02}.",
             args.detail.name,
-            self.get_year_from_date(args.detail.first_air_date.as_str()),
+            library::get_year_from_date(args.detail.first_air_date.as_str()),
             args.season_number,
             args.episode_number
         );
@@ -284,7 +287,7 @@ impl Importer {
             }
         }
 
-        self.state.pan123().trash_files(file_ids.as_slice()).await?;
+        self.state.client().pan123.trash_files(file_ids.as_slice()).await?;
         Ok(())
     }
 
@@ -367,14 +370,7 @@ impl Importer {
         media_file: &MediaFile,
     ) -> AppResult<bool> {
         let res = self
-            .state
-            .pan123()
-            .fast_upload(
-                parent_dir_id,
-                video_file_name,
-                media_file.video.etag.as_str(),
-                media_file.video.size,
-            )
+            .transfer_raw_file(parent_dir_id, video_file_name, &media_file.video)
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", video_file_name, e);
@@ -434,9 +430,7 @@ impl Importer {
     ) -> AppResult<bool> {
         let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
         let res = self
-            .state
-            .pan123()
-            .fast_upload(parent_dir_id, file_name.as_str(), raw_file.etag.as_str(), raw_file.size)
+            .transfer_raw_file(parent_dir_id, file_name.as_str(), raw_file)
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", file_name, e);
@@ -450,7 +444,11 @@ impl Importer {
                     self.state.config().get_library_config().remote_path.as_str(),
                     self.state.config().get_library_config().local_path.as_str(),
                 );
-                self.state.pan123().download_file(id, local_file_path.as_str()).await?;
+                self.state
+                    .client()
+                    .pan123
+                    .download_file(id, local_file_path.as_str())
+                    .await?;
                 info!("Subtitle file {} downloaded", local_file_path);
 
                 Ok(true)
@@ -461,6 +459,30 @@ impl Importer {
                 Ok(false)
             }
         }
+    }
+
+    async fn transfer_raw_file(
+        &self,
+        parent_dir_id: i64,
+        file_name: &str,
+        raw_file: &RawFile,
+    ) -> AppResult<Option<i64>> {
+        Ok(match &raw_file.etag {
+            Etag::Md5(etag) => {
+                self.state
+                    .client()
+                    .pan123
+                    .fast_upload(parent_dir_id, file_name, etag, raw_file.size)
+                    .await?
+            }
+            Etag::Sha1(sha1) => {
+                self.state
+                    .client()
+                    .pan123
+                    .fast_upload_with_sha1(parent_dir_id, file_name, sha1, raw_file.size)
+                    .await?
+            }
+        })
     }
 }
 
@@ -487,13 +509,14 @@ fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
         if !file.metadata.audio_codec.is_empty() {
             parts.push(file.metadata.audio_codec.as_str());
         }
+
+        let prefix = format!("{}{}", name_prefix, parts.join("."));
         if file.metadata.release_group.is_empty() {
-            format!("{}{}{}", name_prefix, parts.join("."), file.metadata.extension)
+            format!("{}{}", prefix.trim_end_matches("."), file.metadata.extension)
         } else {
             format!(
-                "{}{}-{}{}",
-                name_prefix,
-                parts.join("."),
+                "{}-{}{}",
+                prefix.trim_end_matches("."),
                 file.metadata.release_group,
                 file.metadata.extension
             )
@@ -516,12 +539,188 @@ mod tests {
             video: RawFile {
                 id: None,
                 name: "test.mkv".to_string(),
-                etag: "etag".to_string(),
+                etag: "etag".into(),
                 size,
                 path: "/path".to_string(),
             },
             subtitles: Vec::new(),
         }
+    }
+
+    fn create_media_file_with_metadata(
+        name: &str,
+        extension: &str,
+        resolution: &str,
+        frame_rate: &str,
+        quality: &str,
+        hdr: &str,
+        video_codec: &str,
+        audio_codec: &str,
+        release_group: &str,
+    ) -> MediaFile {
+        let mut metadata = Metadata::default();
+        metadata.extension = extension.to_string();
+        metadata.resolution = resolution.to_string();
+        metadata.frame_rate = frame_rate.to_string();
+        metadata.quality = quality.to_string();
+        metadata.hdr = hdr.to_string();
+        metadata.video_codec = video_codec.to_string();
+        metadata.audio_codec = audio_codec.to_string();
+        metadata.release_group = release_group.to_string();
+
+        MediaFile {
+            metadata: Box::new(metadata),
+            video: RawFile {
+                id: None,
+                name: name.to_string(),
+                etag: "etag".into(),
+                size: 1000,
+                path: "/path".to_string(),
+            },
+            subtitles: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_format_video_file_name_already_has_prefix() {
+        // If the file name already starts with the prefix, it should be returned as-is
+        let prefix = "The Matrix.1999.";
+        let file = create_media_file_with_metadata(
+            "The Matrix.1999.BluRay.1080p.mkv",
+            ".mkv",
+            "1080p",
+            "",
+            "BluRay",
+            "",
+            "",
+            "",
+            "",
+        );
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "The Matrix.1999.BluRay.1080p.mkv");
+    }
+
+    #[test]
+    fn test_format_video_file_name_with_all_metadata() {
+        let prefix = "Breaking Bad.2008.S01E01.";
+        let file = create_media_file_with_metadata(
+            "original_name.mkv",
+            ".mkv",
+            "2160p",
+            "60fps",
+            "WEB-DL",
+            "HDR10",
+            "H265",
+            "DTS",
+            "RARBG",
+        );
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(
+            result,
+            "Breaking Bad.2008.S01E01.2160p.60fps.WEB-DL.HDR10.H265.DTS-RARBG.mkv"
+        );
+    }
+
+    #[test]
+    fn test_format_video_file_name_no_release_group() {
+        let prefix = "Inception.2010.";
+        let file = create_media_file_with_metadata(
+            "original.mp4",
+            ".mp4",
+            "1080p",
+            "24fps",
+            "BluRay",
+            "",
+            "H264",
+            "AAC",
+            "",
+        );
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "Inception.2010.1080p.24fps.BluRay.H264.AAC.mp4");
+    }
+
+    #[test]
+    fn test_format_video_file_name_minimal_metadata() {
+        let prefix = "Movie.2020.";
+        let file = create_media_file_with_metadata("file.mkv", ".mkv", "720p", "", "", "", "", "", "");
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "Movie.2020.720p.mkv");
+    }
+
+    #[test]
+    fn test_format_video_file_name_no_metadata() {
+        let prefix = "Show.2021.";
+        let file = create_media_file_with_metadata("video.avi", ".avi", "", "", "", "", "", "", "");
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "Show.2021.avi");
+    }
+
+    #[test]
+    fn test_format_video_file_name_hdr_variants() {
+        // Test with HDR10+
+        let prefix = "HDR Movie.2022.";
+        let file = create_media_file_with_metadata(
+            "original.mkv",
+            ".mkv",
+            "2160p",
+            "",
+            "WEB-DL",
+            "HDR10+",
+            "H265",
+            "",
+            "NTb",
+        );
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "HDR Movie.2022.2160p.WEB-DL.HDR10+.H265-NTb.mkv");
+
+        // Test with Dolby Vision
+        let file_dv = create_media_file_with_metadata(
+            "original.mkv",
+            ".mkv",
+            "2160p",
+            "",
+            "BluRay",
+            "DV",
+            "H265",
+            "Atmos",
+            "GROUP",
+        );
+        let result_dv = format_video_file_name(prefix, &file_dv);
+        assert_eq!(result_dv, "HDR Movie.2022.2160p.BluRay.DV.H265.Atmos-GROUP.mkv");
+    }
+
+    #[test]
+    fn test_format_video_file_name_special_characters_in_prefix() {
+        let prefix = "Star Wars: Episode IV.1977.";
+        let file = create_media_file_with_metadata("file.mkv", ".mkv", "1080p", "", "BluRay", "", "H264", "", "YTS");
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "Star Wars: Episode IV.1977.1080p.BluRay.H264-YTS.mkv");
+    }
+
+    #[test]
+    fn test_format_video_file_name_partial_metadata() {
+        // Test with only some metadata fields populated
+        let prefix = "Series.2023.S02E05.";
+        let file = create_media_file_with_metadata("ep.mkv", ".mkv", "", "30fps", "", "", "H264", "", "AMZN");
+        let result = format_video_file_name(prefix, &file);
+        assert_eq!(result, "Series.2023.S02E05.30fps.H264-AMZN.mkv");
+    }
+
+    #[test]
+    fn test_format_video_file_name_different_extensions() {
+        let prefix = "Video.2024.";
+
+        // Test .mp4
+        let file_mp4 = create_media_file_with_metadata("file.mp4", ".mp4", "1080p", "", "", "", "", "", "");
+        assert_eq!(format_video_file_name(prefix, &file_mp4), "Video.2024.1080p.mp4");
+
+        // Test .avi
+        let file_avi = create_media_file_with_metadata("file.avi", ".avi", "720p", "", "", "", "", "", "");
+        assert_eq!(format_video_file_name(prefix, &file_avi), "Video.2024.720p.avi");
+
+        // Test .webm
+        let file_webm = create_media_file_with_metadata("file.webm", ".webm", "480p", "", "", "", "", "", "");
+        assert_eq!(format_video_file_name(prefix, &file_webm), "Video.2024.480p.webm");
     }
 
     #[test]

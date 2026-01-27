@@ -5,6 +5,7 @@ use tracing::info;
 
 use super::{
     ImportedMedia, Importer,
+    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
 use crate::error::{AppError, AppResult};
@@ -111,35 +112,184 @@ impl Importer {
                 RawFile {
                     id: None,
                     name: name.to_owned(),
-                    etag: file.etag.to_owned(),
+                    etag: file.etag.as_str().into(),
                     size: file.size,
                     path: parent_path.to_owned(),
                 },
             ));
         }
 
-        self.group_video_and_subtitle_files(all_files)
+        group_video_and_subtitle_files(all_files)
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     const FS_LINK: &str = "123FSLinkV2$0645d6c4f5494410cb115d84246f27d2#1035390787#Test.2020.S01E197.2160p.WEB-DL.H265.AAC 2.0 {tmdb-101172}.mkv";
+    #[test]
+    fn test_is_fslink_v2() {
+        assert!(is_fslink("123FSLinkV2$some_content"));
+    }
 
-//     #[test]
-//     fn test_is_fslink() {
-//         assert!(is_fslink(FS_LINK));
-//     }
+    #[test]
+    fn test_is_fslink_flcp() {
+        assert!(is_fslink("123FLCPV2$some_content"));
+    }
 
-//     #[test]
-//     fn test_parse_files_from_fslink() {
-//         let files = parse_files_from_fslink(FS_LINK.trim_start_matches("123FSLinkV2$")).unwrap();
-//         let media_files = importer.list_files_from_json(&ResourceJson {
-//             common_path: "".to_owned(),
-//             files,
-//         });
-//         assert_eq!(media_files.len(), 1);
-//     }
-// }
+    #[test]
+    fn test_is_fslink_invalid() {
+        assert!(!is_fslink("invalid_link"));
+        assert!(!is_fslink(""));
+        assert!(!is_fslink("123FSLink$"));
+    }
+
+    #[test]
+    fn test_parse_single_file() {
+        let fslink = "0645d6c4f5494410cb115d84246f27d2#1035390787#Test.2020.S01E197.mkv";
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].etag, "0645d6c4f5494410cb115d84246f27d2");
+        assert_eq!(result[0].size, 1035390787);
+        assert_eq!(result[0].path, "Test.2020.S01E197.mkv");
+    }
+
+    #[test]
+    fn test_parse_multiple_files() {
+        let fslink = "hash1#1024#file1.mp4$hash2#2048#file2.mkv$hash3#4096#file3.srt";
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 3);
+
+        assert_eq!(result[0].etag, "hash1");
+        assert_eq!(result[0].size, 1024);
+        assert_eq!(result[0].path, "file1.mp4");
+
+        assert_eq!(result[1].etag, "hash2");
+        assert_eq!(result[1].size, 2048);
+        assert_eq!(result[1].path, "file2.mkv");
+
+        assert_eq!(result[2].etag, "hash3");
+        assert_eq!(result[2].size, 4096);
+        assert_eq!(result[2].path, "file3.srt");
+    }
+
+    #[test]
+    fn test_parse_file_with_special_characters() {
+        let fslink = "abc123#999#Test.2020.S01E197.2160p.WEB-DL.H265.AAC 2.0 {tmdb-101172}.mkv";
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].path,
+            "Test.2020.S01E197.2160p.WEB-DL.H265.AAC 2.0 {tmdb-101172}.mkv"
+        );
+    }
+
+    #[test]
+    fn test_parse_file_with_path() {
+        let fslink = "etag123#5000#folder/subfolder/movie.mp4";
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "folder/subfolder/movie.mp4");
+    }
+
+    #[test]
+    fn test_parse_invalid_format_too_few_parts() {
+        let fslink = "hash1#1024";
+        let result = parse_files_from_fslink(fslink);
+
+        assert!(result.is_err());
+        if let Err(AppError::InvalidParameter(msg)) = result {
+            assert!(msg.contains("invalid fslink"));
+        } else {
+            panic!("Expected InvalidParameter error");
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_format_too_many_parts() {
+        let fslink = "hash1#1024#file.mp4#extra";
+        let result = parse_files_from_fslink(fslink);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_size_not_number() {
+        let fslink = "hash1#notanumber#file.mp4";
+        let result = parse_files_from_fslink(fslink);
+
+        assert!(result.is_err());
+        if let Err(AppError::InvalidParameter(msg)) = result {
+            assert!(msg.contains("size is not u64"));
+        } else {
+            panic!("Expected InvalidParameter error with size message");
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_size_negative() {
+        let fslink = "hash1#-1#file.mp4";
+        let result = parse_files_from_fslink(fslink);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_size_float() {
+        let fslink = "hash1#1024.5#file.mp4";
+        let result = parse_files_from_fslink(fslink);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_zero_size() {
+        let fslink = "hash1#0#file.mp4";
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].size, 0);
+    }
+
+    #[test]
+    fn test_parse_large_size() {
+        let fslink = "hash1#18446744073709551615#file.mp4"; // u64::MAX
+        let result = parse_files_from_fslink(fslink).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].size, u64::MAX);
+    }
+
+    #[test]
+    fn test_parse_mixed_valid_invalid() {
+        // First file is valid, second is invalid
+        let fslink = "hash1#1024#file1.mp4$invalid";
+        let result = parse_files_from_fslink(fslink);
+
+        // Should fail on the invalid part
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_empty_fields() {
+        let fslink = "##file.mp4";
+        let result = parse_files_from_fslink(fslink);
+
+        // Empty size should fail to parse
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_with_hash_in_filename() {
+        // Filename contains # character - will be split incorrectly
+        let fslink = "etag123#1024#file#with#hash.mp4";
+        let result = parse_files_from_fslink(fslink);
+
+        // Should fail because it splits into more than 3 parts
+        assert!(result.is_err());
+    }
+}

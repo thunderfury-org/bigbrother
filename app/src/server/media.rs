@@ -7,7 +7,7 @@ use axum::{
     routing::get,
 };
 use reqwest::StatusCode;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{client::RequestError, state::AppState};
 
@@ -31,13 +31,12 @@ async fn redirect(
 
     match file_id.unwrap().parse::<i64>() {
         Err(e) => (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
-        Ok(id) => match state.pan123().get_download_url(id).await {
+        Ok(id) => match state.client().pan123.get_download_url(id).await {
             Ok(url) => {
                 if url.is_empty() {
                     error!("Failed to get download url of file {}, id: {}", path, id);
                     return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
                 }
-                info!("Redirecting /d/{} to {}", path, url);
                 axum::response::Redirect::to(url.as_str()).into_response()
             }
             Err(e) => match e {

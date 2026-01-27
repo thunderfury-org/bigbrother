@@ -1,268 +1,156 @@
-# CLAUDE.md
+# Development Guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Philosophy
 
-## Project Overview
+### Core Beliefs
 
-BigBrother is a Rust-based backend application for managing and organizing TV show files and metadata. It monitors Telegram channels for media shares, fetches metadata from TMDB, and organizes content in cloud storage (123Pan) with local symlinks. The application runs two concurrent services: an Axum HTTP server for media redirects and a Teloxide Telegram bot for user interaction and channel monitoring.
+- **Incremental progress over big bangs** - Small changes that compile and pass tests
+- **Learning from existing code** - Study and plan before implementing
+- **Pragmatic over dogmatic** - Adapt to project reality
+- **Clear intent over clever code** - Be boring and obvious
 
-## Common Commands
+### Simplicity Means
 
-### Build and Development
+- Single responsibility per function/class
+- Avoid premature abstractions
+- No clever tricks - choose the boring solution
+- If you need to explain it, it's too complex
 
-```bash
-# Build debug version
-cargo build
+## Process
 
-# Build release version (with LTO optimization)
-cargo build --release
-# Or use Makefile
-make build-release
+### 1. Planning & Staging
 
-# Run in debug mode
-cargo run -- server --data-dir ./data
+Break complex work into 3-5 stages. Document in `IMPLEMENTATION_PLAN.md`:
 
-# Run release binary
-./target/release/bigbrother server --data-dir ./data
+```markdown
+## Stage N: [Name]
 
-# Format code
-cargo fmt --all
-# Or use Makefile
-make fmt
-
-# Lint code
-cargo clippy -- -D warnings
-# Or use Makefile (includes format check)
-make lint
+**Goal**: [Specific deliverable]
+**Success Criteria**: [Testable outcomes]
+**Tests**: [Specific test cases]
+**Status**: [Not Started|In Progress|Complete]
 ```
 
-### Database Management
+- Update status as you progress
+- Remove file when all stages are done
 
-```bash
-# Apply all pending migrations
-cd migration && cargo run
+### 2. Implementation Flow
 
-# Generate new migration
-cd migration && cargo run -- generate MIGRATION_NAME
+1. **Understand** - Study existing patterns in codebase
+2. **Test** - Write test first (red)
+3. **Implement** - Minimal code to pass (green)
+4. **Refactor** - Clean up with tests passing
+5. **Commit** - With clear message linking to plan
 
-# Check migration status
-cd migration && cargo run -- status
+### 3. When Stuck (After 3 Attempts)
 
-# Rollback last migration
-cd migration && cargo run -- down
+**CRITICAL**: Maximum 3 attempts per issue, then STOP.
 
-# Fresh database (drop all tables and reapply)
-cd migration && cargo run -- fresh
+1. **Document what failed**:
+   - What you tried
+   - Specific error messages
+   - Why you think it failed
 
-# Regenerate entity models from database
-./tools/generate_entity.sh
-```
+2. **Research alternatives**:
+   - Find 2-3 similar implementations
+   - Note different approaches used
 
-Note: Database commands require `DATABASE_URL=sqlite:data/db/data.db?mode=rwc` which the tools set automatically.
+3. **Question fundamentals**:
+   - Is this the right abstraction level?
+   - Can this be split into smaller problems?
+   - Is there a simpler approach entirely?
 
-## Architecture
+4. **Try different angle**:
+   - Different library/framework feature?
+   - Different architectural pattern?
+   - Remove abstraction instead of adding?
 
-### Workspace Structure
+## Technical Standards
 
-The project is a Rust workspace with two members:
-- **app/**: Main application with web server, bot, and import logic
-- **migration/**: SeaORM database migrations
+### Architecture Principles
 
-### Key Dependencies
+- **Composition over inheritance** - Use dependency injection
+- **Interfaces over singletons** - Enable testing and flexibility
+- **Explicit over implicit** - Clear data flow and dependencies
+- **Test-driven when possible** - Never disable tests, fix them
 
-- **Web**: Axum 0.8 with Tower middleware
-- **Bot**: Teloxide 0.17.0 for Telegram integration
-- **Database**: SeaORM 2.0-rc with SQLite
-- **HTTP**: Reqwest 0.12 with retry middleware
-- **Logging**: Tracing with daily rolling logs
-- **Config**: Serde + YAML
+### Code Quality
 
-### Application State
+- **Every commit must**:
+  - Compile successfully
+  - Pass all existing tests
+  - Include tests for new functionality
+  - Follow project formatting/linting
 
-The `AppState` struct is shared between the server and bot via `Arc`:
-- `db`: SQLite database connection
-- `config`: Configuration manager (loaded from `config/config.yaml`)
-- `pan123`: 123Pan cloud storage client with OAuth token management
-- `pan189`: Tianyi Pan189 cloud storage client
-- `tmdb`: The Movie Database API client
-
-### Concurrent Architecture
-
-The application launches two tasks with `tokio::join!`:
-
-1. **HTTP Server** ([server/mod.rs](app/src/server/mod.rs)): Serves media redirect endpoint at `GET /d/{path}?file_id=X` which fetches download URLs from 123Pan
-2. **Telegram Bot** ([bot/mod.rs](app/src/bot/mod.rs)): Handles commands, channel posts, and user messages
-
-Both tasks share the same `AppState` and can be terminated via SIGTERM/CTRL-C.
-
-### Module Organization
-
-- **bot/**: Telegram bot with command handlers, message processing, and channel post monitoring
-  - **cmd.rs**: Command handlers (/help, /list_keywords, /add_keyword, /delete_keyword)
-  - **msg.rs**: Message processor for extracting URLs, downloading files, triggering imports
-  - **format.rs**: Telegram message formatting utilities
-- **server/**: Axum HTTP server for media file redirects
-- **client/**: External service integrations
-  - **pan123.rs**: 123Pan API client with token caching and file operations
-  - **pan189.rs**: Tianyi Pan189 API client for share file listing
-  - **tmdb.rs**: TMDB API client for movie/TV metadata
-- **library/**: Core media import engine (20KB transfer.rs)
-  - **import.rs**: Main Importer with caching logic
-  - **transfer.rs**: Complex file transfer orchestration
-  - **group.rs**: Groups media files into movies/TV shows
-  - **metadata.rs**: TMDB metadata fetching and caching
-  - **share.rs**: Share URL detection (Pan123/Pan189)
-  - **json.rs**: JSON and fslink format parsing
-  - **library.rs**: Library path operations
-- **media/**: Filename parsing to extract metadata (resolution, codec, episode info, etc.)
-  - **parser.rs**: Advanced regex-based filename parsing
-  - **normalize.rs**: Text normalization for titles
-- **entity/**: SeaORM database models
-  - **keyword.rs**: Keywords for channel post filtering
-- **config.rs**: Configuration structure loaded from YAML
-- **state.rs**: AppState initialization with service clients
-- **logger.rs**: Daily rolling log files with ISO8601 timestamps
-
-### Import Flow
-
-The import flow is triggered by Telegram channel posts or direct messages:
-
-1. **Detection**: Bot monitors channel posts for keywords (stored in DB)
-2. **Extraction**: Extract share URLs, JSON documents, or fslinks from messages
-3. **Listing**: Fetch media files from source (123Pan, Pan189, or JSON)
-4. **Parsing**: Parse filenames to extract metadata (title, season, episode, resolution)
-5. **Grouping**: Group videos with subtitles, organize by movie/TV/season
-6. **TMDB**: Fetch metadata from TMDB API (cached in Importer)
-7. **Transfer**: Upload to 123Pan library path via fast upload
-8. **Local**: Create symlinks in local library path
-9. **Summary**: Send formatted summary to Telegram user
-
-### Configuration
-
-Configuration is loaded from `{data_dir}/config/config.yaml` with these sections:
-- **pan123**: Cloud storage credentials (client_id, client_secret, file_id)
-- **pan189**: Tianyi Pan189 integration
-- **tmdb**: API key for metadata
-- **telegram**: Bot token and authorized user ID
-- **library**: Remote path (in 123Pan) and local path (for symlinks)
-- **media_server**: HTTP server host, port, advertise URL, strm path prefix
-
-Directory structure:
-```
-data_dir/
-├── config/config.yaml
-├── db/data.db
-├── cache/pan123/token.json  # OAuth token with expiration
-└── log/bigbrother.YYYY-MM-DD.log  # Daily rolling logs (max 7 files)
-```
-
-### Token Management
-
-The pan123 client manages OAuth tokens with expiration:
-- Tokens cached at `{cache_dir}/pan123/token.json`
-- Read-write lock for concurrent access
-- Automatic refresh when expired
-- Token includes access_token, refresh_token, and expiration timestamp
+- **Before committing**:
+  - Run formatters/linters
+  - Self-review changes
+  - Ensure commit message explains "why"
 
 ### Error Handling
 
-Custom `AppError` enum with three variants:
-- `InvalidParameter`: Invalid input
-- `NotFound`: Resource not found
-- `Internal`: Internal errors with context
+- Fail fast with descriptive messages
+- Include context for debugging
+- Handle errors at appropriate level
+- Never silently swallow exceptions
 
-Errors are logged with tracing and returned as appropriate HTTP status codes (400, 404, 500).
+## Decision Framework
 
-### Database Schema
+When multiple valid approaches exist, choose based on:
 
-Current tables:
-- **keyword**: User-configured keywords for channel post monitoring (id, value, create_time)
+1. **Testability** - Can I easily test this?
+2. **Readability** - Will someone understand this in 6 months?
+3. **Consistency** - Does this match project patterns?
+4. **Simplicity** - Is this the simplest solution that works?
+5. **Reversibility** - How hard to change later?
 
-When adding new tables:
-1. Generate migration: `cd migration && cargo run -- generate NAME`
-2. Edit migration file in [migration/src/](migration/src/)
-3. Apply migration: `cd migration && cargo run`
-4. Regenerate entities: `./tools/generate_entity.sh`
+## Project Integration
 
-### Media Filename Parsing
+### Learning the Codebase
 
-The [media/parser.rs](app/src/media/parser.rs) module extracts structured metadata from filenames:
-- File type (video/subtitle) and extension
-- TMDB ID, titles with language codes, year
-- Season/episode numbers for TV shows
-- Resolution (2160p, 1080p, 720p), frame rate, quality (BluRay, WEB-DL)
-- HDR format, video/audio codecs, release group
-- Subtitle languages
+- Find 3 similar features/components
+- Identify common patterns and conventions
+- Use same libraries/utilities when possible
+- Follow existing test patterns
 
-This metadata is used for grouping files and fetching TMDB information.
+### Tooling
 
-### External Service Integration
+- Use project's existing build system
+- Use project's test framework
+- Use project's formatter/linter settings
+- Don't introduce new tools without strong justification
 
-All service clients use:
-- `reqwest` with retry middleware (exponential backoff)
-- Async/await with Tokio runtime
-- Tracing for request logging
-- Custom error types mapped to `AppError`
+## Quality Gates
 
-**123Pan client** features:
-- OAuth2 token management with automatic refresh
-- File operations: list, search, upload (direct and fast), mkdir, trash
-- Share file listing with pagination
-- Download URL generation (valid for limited time)
+### Definition of Done
 
-**TMDB client** features:
-- Movie/TV search by title and year
-- Detailed metadata fetch by ID
-- Language-aware queries (Chinese support)
-- Adult content enabled by default
+- [ ] Tests written and passing
+- [ ] Code follows project conventions
+- [ ] No linter/formatter warnings
+- [ ] Commit messages are clear
+- [ ] Implementation matches plan
+- [ ] No TODOs without issue numbers
 
-### Logging
+### Test Guidelines
 
-Tracing configuration:
-- Daily rolling log files in `{data_dir}/log/`
-- Max 7 files retained (older files deleted)
-- INFO level by default
-- ISO8601 timestamps with millisecond precision
-- Panic hook captures backtraces when available
-- All HTTP requests traced with method, path, and duration
+- Test behavior, not implementation
+- One assertion per test when possible
+- Clear test names describing scenario
+- Use existing test utilities/helpers
+- Tests should be deterministic
 
-## Development Notes
+## Important Reminders
 
-### When Modifying the Bot
+**NEVER**:
 
-- The bot only responds to the authorized user ID from config
-- Channel post handling checks keywords from database before processing
-- Message processing extracts multiple URL types (share URLs, JSON downloads, fslinks)
-- Always send confirmation messages back to user after operations
+- Use `--no-verify` to bypass commit hooks
+- Disable tests instead of fixing them
+- Commit code that doesn't compile
+- Make assumptions - verify with existing code
 
-### When Adding New Clients
+**ALWAYS**:
 
-- Follow the pattern in [client/](app/src/client/): struct with methods, async functions, error handling
-- Use `reqwest_middleware` for automatic retries
-- Add to `AppState` in [state.rs](app/src/state.rs) initialization
-- Consider token caching if the API uses OAuth
-
-### When Modifying Import Logic
-
-- The [library/transfer.rs](app/src/library/transfer.rs) file (20KB) is the core orchestrator
-- Import flow handles duplicates by comparing file sizes
-- TMDB metadata is cached in the Importer struct to avoid redundant API calls
-- Group files carefully: videos must match with their subtitles based on episode numbers
-- Local symlinks point to 123Pan virtual mount paths (ensure paths are accessible)
-
-### When Adding Database Models
-
-1. Create migration in [migration/src/](migration/src/)
-2. Apply migration to dev database
-3. Run `./tools/generate_entity.sh` to update models
-4. Add business logic methods to entity modules in [app/src/entity/](app/src/entity/)
-5. Use SeaORM query builder with proper error handling
-
-### Testing Approach
-
-Currently no automated tests. When testing manually:
-- Use a test data directory with separate config/database
-- Monitor logs in `{data_dir}/log/` for detailed tracing
-- Test bot commands via Telegram direct messages
-- Test imports with small sample files first
-- Verify file structure in both 123Pan and local paths
+- Commit working code incrementally
+- Update plan documentation as you go
+- Learn from existing implementations
+- Stop after 3 failed attempts and reassess

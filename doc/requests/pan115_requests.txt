@@ -1,0 +1,125 @@
+https://115cdn.com/webapi/share/snap?share_code=swfoexi3no3&offset=0&limit=1000&asc=0&cid=0&receive_code=j7b2&format=json
+
+{
+    "state": true,
+    "error": "",
+    "errno": 0,
+    "data": {
+        "userinfo": {
+            "user_id": "344385180",
+            "user_name": "3***0",
+            "face": "http://avatars.115.com/01/3c86md_m.jpg"
+        },
+        "shareinfo": {
+            "snap_id": "312951397",
+            "file_size": 18617794907,
+            "share_title": "新狂蟒之灾 Anaconda (2025)",
+            "share_state": 1,
+            "forbid_reason": "",
+            "create_time": 1769495383,
+            "receive_code": "j7b2",
+            "receive_count": 178,
+            "expire_time": -1,
+            "file_category": 0,
+            "auto_renewal": 0,
+            "share_duration": -1,
+            "auto_fill_recvcode": 1,
+            "can_report": 1,
+            "can_notice": 1,
+            "have_vio_file": 0,
+            "skip_login_state": "0"
+        },
+        "count": 1,
+        "list": [
+            {
+                "cid": "3351075729570791276",
+                "pid": "0",
+                "n": "新狂蟒之灾 Anaconda (2025)",
+                "ns": "",
+                "s": 18617794907,
+                "fc": 0,
+                "t": "1769495365",
+                "e": "",
+                "p": 0,
+                "u": "",
+                "check_code": 0,
+                "check_msg": "",
+                "all_skip_login": 0,
+                "play_long": 0,
+                "audio_play_long": 0,
+                "fl": []
+            }
+        ],
+        "share_state": 1,
+        "user_appeal": {
+            "can_appeal": 0,
+            "can_share_appeal": 0,
+            "popup_appeal_page": 0,
+            "can_global_appeal": 0
+        }
+    }
+}
+
+https://115cdn.com/webapi/share/snap?share_code=swfoexi3no3&offset=0&limit=1000&asc=0&cid=3351075729570791276&receive_code=j7b2&format=json
+{
+    "state": true,
+    "error": "",
+    "errno": 0,
+    "data": {
+        "userinfo": {
+            "user_id": "344385180",
+            "user_name": "3***0",
+            "face": "http://avatars.115.com/01/3c86md_m.jpg"
+        },
+        "shareinfo": {
+            "snap_id": "312951397",
+            "file_size": 18617794907,
+            "share_title": "新狂蟒之灾 Anaconda (2025)",
+            "share_state": 1,
+            "forbid_reason": "",
+            "create_time": 1769495383,
+            "receive_code": "j7b2",
+            "receive_count": 181,
+            "expire_time": -1,
+            "file_category": 0,
+            "auto_renewal": 0,
+            "share_duration": -1,
+            "auto_fill_recvcode": 1,
+            "can_report": 1,
+            "can_notice": 1,
+            "have_vio_file": 0,
+            "skip_login_state": "0"
+        },
+        "count": 1,
+        "list": [
+            {
+                "fid": "3351075412498185300",
+                "uid": 344385180,
+                "cid": 3351075729570791276,
+                "n": "Anaconda.2025.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.mkv",
+                "ns": "",
+                "s": 18617794907,
+                "fc": 1,
+                "t": "1769495375",
+                "d": 1,
+                "c": 0,
+                "e": "",
+                "ico": "mkv",
+                "sha": "09619DF88530E74163823E54A78AD3412E2B82FC",
+                "is_skip_login": 0,
+                "fl": [],
+                "u": "",
+                "iv": 1,
+                "vdi": 4,
+                "play_long": 5930
+            }
+        ],
+        "share_state": 1,
+        "user_appeal": {
+            "can_appeal": 0,
+            "can_share_appeal": 0,
+            "popup_appeal_page": 0,
+            "can_global_appeal": 0
+        }
+    }
+}

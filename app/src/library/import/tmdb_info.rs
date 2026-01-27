@@ -18,7 +18,8 @@ impl Importer {
 
             if let Some(movie) = self
                 .state
-                .tmdb()
+                .client()
+                .tmdb
                 .get_movie_detail(meta.tmdb_id.parse().unwrap())
                 .await?
             {
@@ -36,7 +37,7 @@ impl Importer {
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
                 return Ok(movie.clone());
             }
-            let movies = self.state.tmdb().search_movie(&title.title, &meta.year).await?;
+            let movies = self.state.client().tmdb.search_movie(&title.title, &meta.year).await?;
             match movies.len() {
                 0 => {
                     self.movie_info_cache.insert(cache_key, None);
@@ -47,7 +48,7 @@ impl Importer {
                         "Movie found for title: {}, year: {}, id: {}",
                         title.title, meta.year, movies[0].id
                     );
-                    let movie = self.state.tmdb().get_movie_detail(movies[0].id).await?;
+                    let movie = self.state.client().tmdb.get_movie_detail(movies[0].id).await?;
                     self.movie_info_cache.insert(cache_key, movie.clone());
                     return Ok(movie);
                 }
@@ -58,7 +59,7 @@ impl Importer {
                                 "Movie found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, movie.id
                             );
-                            let movie = self.state.tmdb().get_movie_detail(movie.id).await?;
+                            let movie = self.state.client().tmdb.get_movie_detail(movie.id).await?;
                             self.movie_info_cache.insert(cache_key, movie.clone());
                             return Ok(movie);
                         }
@@ -79,7 +80,13 @@ impl Importer {
                 return Ok(tv.clone());
             }
 
-            if let Some(tv) = self.state.tmdb().get_tv_detail(meta.tmdb_id.parse().unwrap()).await? {
+            if let Some(tv) = self
+                .state
+                .client()
+                .tmdb
+                .get_tv_detail(meta.tmdb_id.parse().unwrap())
+                .await?
+            {
                 info!(
                     "Tv found for title: {}, year: {}, id: {}",
                     tv.name, tv.first_air_date, tv.id
@@ -95,7 +102,7 @@ impl Importer {
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
                 return Ok(tv.clone());
             }
-            let tvs = self.state.tmdb().search_tv(&title.title, &meta.year).await?;
+            let tvs = self.state.client().tmdb.search_tv(&title.title, &meta.year).await?;
             match tvs.len() {
                 0 => {
                     self.tv_info_cache.insert(cache_key, None);
@@ -106,7 +113,7 @@ impl Importer {
                         "Tv found for title: {}, year: {}, id: {}",
                         title.title, meta.year, tvs[0].id
                     );
-                    let tv = self.state.tmdb().get_tv_detail(tvs[0].id).await?;
+                    let tv = self.state.client().tmdb.get_tv_detail(tvs[0].id).await?;
                     self.tv_info_cache.insert(cache_key, tv.clone());
                     return Ok(tv);
                 }
@@ -117,7 +124,7 @@ impl Importer {
                                 "Tv found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, tv.id
                             );
-                            let tv = self.state.tmdb().get_tv_detail(tv.id).await?;
+                            let tv = self.state.client().tmdb.get_tv_detail(tv.id).await?;
                             self.tv_info_cache.insert(cache_key, tv.clone());
                             return Ok(tv);
                         }
