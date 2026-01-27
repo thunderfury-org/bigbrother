@@ -4,6 +4,7 @@ use tracing::info;
 
 use super::{
     Importer, category,
+    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
 use crate::{
@@ -59,7 +60,7 @@ impl Importer {
             ));
         }
 
-        Ok(self.group_video_and_subtitle_files(raw_files))
+        Ok(group_video_and_subtitle_files(raw_files))
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {

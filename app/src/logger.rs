@@ -56,11 +56,7 @@ pub fn init(log_dir: &str) {
             }
 
             // Exclude access log entries
-            if meta.is_event() && meta.target() == "bigbrother::server::log" {
-                false
-            } else {
-                true
-            }
+            !(meta.is_event() && meta.target() == "bigbrother::server::log")
         }));
 
     // Separate logger for access.log

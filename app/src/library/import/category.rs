@@ -56,13 +56,76 @@ pub(super) fn get_subcategory(original_country: &Vec<String>) -> &'static str {
 mod tests {
     use super::*;
 
+    // Tests for get_tv_category
     #[test]
-    fn test_get_tv_category() {
+    fn test_get_tv_category_animation() {
+        let genres = vec![Genre {
+            id: GENRE_ANIMATION,
+            name: "Animation".to_string(),
+        }];
+        assert_eq!(get_tv_category(&genres), CATEGORY_ANIMATION);
+    }
+
+    #[test]
+    fn test_get_tv_category_documentary() {
+        let genres = vec![Genre {
+            id: GENRE_DOCUMENTARY,
+            name: "Documentary".to_string(),
+        }];
+        assert_eq!(get_tv_category(&genres), CATEGORY_DOCUMENTARY);
+    }
+
+    #[test]
+    fn test_get_tv_category_reality() {
+        let genres = vec![Genre {
+            id: GENRE_REALITY,
+            name: "Reality".to_string(),
+        }];
+        assert_eq!(get_tv_category(&genres), CATEGORY_VARIETY);
+    }
+
+    #[test]
+    fn test_get_tv_category_talk() {
+        let genres = vec![Genre {
+            id: GENRE_TALK,
+            name: "Talk".to_string(),
+        }];
+        assert_eq!(get_tv_category(&genres), CATEGORY_VARIETY);
+    }
+
+    #[test]
+    fn test_get_tv_category_default() {
+        let genres = vec![Genre {
+            id: 1,
+            name: "Other".to_string(),
+        }];
+        assert_eq!(get_tv_category(&genres), CATEGORY_TV);
+    }
+
+    #[test]
+    fn test_get_tv_category_empty() {
+        let genres = vec![];
+        assert_eq!(get_tv_category(&genres), CATEGORY_TV);
+    }
+
+    #[test]
+    fn test_get_tv_category_first_match_wins() {
         let genres = vec![
             Genre {
-                id: GENRE_REALITY,
-                name: "Reality".to_string(),
+                id: 1,
+                name: "Other".to_string(),
             },
+            Genre {
+                id: GENRE_ANIMATION,
+                name: "Animation".to_string(),
+            },
+        ];
+        assert_eq!(get_tv_category(&genres), CATEGORY_ANIMATION);
+    }
+
+    #[test]
+    fn test_get_tv_category_animation_takes_precedence() {
+        let genres = vec![
             Genre {
                 id: GENRE_DOCUMENTARY,
                 name: "Documentary".to_string(),
@@ -72,12 +135,79 @@ mod tests {
                 name: "Animation".to_string(),
             },
         ];
-        assert_eq!(get_tv_category(&genres), CATEGORY_VARIETY);
+        assert_eq!(get_tv_category(&genres), CATEGORY_DOCUMENTARY);
+    }
+
+    // Tests for get_subcategory
+    #[test]
+    fn test_get_subcategory_china() {
+        let country = vec!["CN".to_string()];
+        assert_eq!(get_subcategory(&country), "国产");
     }
 
     #[test]
-    fn test_get_subcategory() {
-        let original_country = vec!["CN".to_string(), "TW".to_string()];
-        assert_eq!(get_subcategory(&original_country), "国产");
+    fn test_get_subcategory_taiwan() {
+        let country = vec!["TW".to_string()];
+        assert_eq!(get_subcategory(&country), "国产");
+    }
+
+    #[test]
+    fn test_get_subcategory_hongkong() {
+        let country = vec!["HK".to_string()];
+        assert_eq!(get_subcategory(&country), "国产");
+    }
+
+    #[test]
+    fn test_get_subcategory_japan() {
+        let country = vec!["JP".to_string()];
+        assert_eq!(get_subcategory(&country), "日韩");
+    }
+
+    #[test]
+    fn test_get_subcategory_korea() {
+        let country = vec!["KR".to_string()];
+        assert_eq!(get_subcategory(&country), "日韩");
+    }
+
+    #[test]
+    fn test_get_subcategory_usa() {
+        let country = vec!["US".to_string()];
+        assert_eq!(get_subcategory(&country), "欧美");
+    }
+
+    #[test]
+    fn test_get_subcategory_europe() {
+        let country = vec!["GB".to_string()];
+        assert_eq!(get_subcategory(&country), "欧美");
+    }
+
+    #[test]
+    fn test_get_subcategory_unknown() {
+        let country = vec!["XX".to_string()];
+        assert_eq!(get_subcategory(&country), SUBCATEGORY_OTHER);
+    }
+
+    #[test]
+    fn test_get_subcategory_empty() {
+        let country = vec![];
+        assert_eq!(get_subcategory(&country), SUBCATEGORY_OTHER);
+    }
+
+    #[test]
+    fn test_get_subcategory_multiple_countries() {
+        let country = vec!["US".to_string(), "CN".to_string()];
+        assert_eq!(get_subcategory(&country), "欧美");
+    }
+
+    #[test]
+    fn test_get_subcategory_case_insensitive() {
+        let country = vec!["cn".to_string()];
+        assert_eq!(get_subcategory(&country), "国产");
+    }
+
+    #[test]
+    fn test_get_subcategory_skips_unknown_countries() {
+        let country = vec!["XX".to_string(), "CN".to_string()];
+        assert_eq!(get_subcategory(&country), "国产");
     }
 }

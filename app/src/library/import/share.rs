@@ -3,6 +3,7 @@ use tracing::info;
 
 use super::{
     ImportedMedia, Importer,
+    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
 use crate::error::{AppError, AppResult};
@@ -130,7 +131,7 @@ impl Importer {
                 }
             }
 
-            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
+            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)
@@ -173,7 +174,7 @@ impl Importer {
                     },
                 ));
             }
-            all_files.extend(self.group_video_and_subtitle_files(media_files_in_dir));
+            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
         }
 
         Ok(all_files)
