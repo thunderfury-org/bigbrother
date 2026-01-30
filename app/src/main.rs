@@ -7,6 +7,7 @@ use crate::{state::AppState, util::signal::shutdown_signal};
 use migration::{Migrator, MigratorTrait};
 
 mod bot;
+mod cache;
 mod cli;
 mod client;
 mod config;
