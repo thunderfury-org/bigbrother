@@ -213,6 +213,7 @@ impl Client {
                     "etag": etag,
                     "size": size,
                     "type": 0,
+                    "duplicate": 2,
                 }
             )),
         )
@@ -245,6 +246,7 @@ impl Client {
                     "filename": file_name,
                     "sha1": sha1,
                     "size": size,
+                    "duplicate": 2,
                 }
             )),
         )
