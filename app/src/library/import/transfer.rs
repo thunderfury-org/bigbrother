@@ -59,12 +59,7 @@ impl Importer {
 
         if !existing_files.is_empty() {
             // existing files found, check if need overwrite
-            if need_overwrite_existing_files(&existing_files, media_file) {
-                // existing file size is smaller than new file, need overwrite
-                // delete existing files
-                self.delete_files_in_library(&existing_files).await?;
-                self.delete_files_in_local(&movie_path, &existing_files).await?;
-            } else {
+            if !need_overwrite_existing_files(&existing_files, media_file) {
                 // do not need overwrite existing files, skip
                 return Ok(None);
             }
@@ -75,15 +70,28 @@ impl Importer {
             detail.title,
             library::get_year_from_date(detail.release_date.as_str()),
         );
-        let success = self
+        let saved_filename = self
             .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
+        if let Some(name) = &saved_filename
+            && !existing_files.is_empty()
+        {
+            let files = existing_files
+                .iter()
+                .filter(|f| f.video.name != *name)
+                .collect::<Vec<_>>();
+            if !files.is_empty() {
+                // delete existing files
+                self.delete_files_in_library(&files).await?;
+                self.delete_files_in_local(movie_path.as_str(), &files).await?;
+            }
+        }
         Ok(Some(ImportedMedia::Movie {
             title: detail.title.to_owned(),
             year: library::get_year_from_date(detail.release_date.as_str()).to_owned(),
             size: media_file.video.size,
             cost: start_time.elapsed(),
-            has_failed: !success,
+            has_failed: saved_filename.is_none(),
         }))
     }
 
@@ -237,17 +245,12 @@ impl Importer {
                     args.detail.name, args.season_number, args.episode_number
                 ))
             })?;
+
         if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
             && !existing_files.is_empty()
         {
             // episode file already exists in library
-            if need_overwrite_existing_files(existing_files, media_file) {
-                // existing file size is smaller than new file, need overwrite
-                // delete existing files
-                self.delete_files_in_library(existing_files).await?;
-                self.delete_files_in_local(args.season_full_path, existing_files)
-                    .await?;
-            } else {
+            if !need_overwrite_existing_files(existing_files, media_file) {
                 // existing file size is larger than new file, skip
                 return Ok(None);
             }
@@ -261,7 +264,7 @@ impl Importer {
             args.season_number,
             args.episode_number
         );
-        let success = self
+        let saved_filename = self
             .transfer_media_file(
                 args.season_full_path,
                 args.season_dir_id,
@@ -269,10 +272,31 @@ impl Importer {
                 media_file,
             )
             .await?;
-        Ok(Some((success, media_file.video.size)))
+
+        match saved_filename {
+            Some(name) => {
+                if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
+                    && !existing_files.is_empty()
+                {
+                    let files = existing_files
+                        .iter()
+                        .filter(|f| f.video.name != name)
+                        .collect::<Vec<_>>();
+                    if !files.is_empty() {
+                        // delete existing files
+                        self.delete_files_in_library(&files).await?;
+                        self.delete_files_in_local(args.season_full_path, &files).await?;
+                    }
+                }
+
+                Ok(Some((true, media_file.video.size)))
+            }
+            // transfer failed
+            None => Ok(Some((false, 0))),
+        }
     }
 
-    async fn delete_files_in_library(&self, files: &[MediaFile]) -> AppResult<()> {
+    async fn delete_files_in_library(&self, files: &[&MediaFile]) -> AppResult<()> {
         let mut file_ids = Vec::new();
         for f in files {
             info!("Deleting file {} from library, file id: {:?}", f.video.name, f.video.id);
@@ -291,7 +315,7 @@ impl Importer {
         Ok(())
     }
 
-    async fn delete_files_in_local(&self, remote_parent_path: &str, files: &[MediaFile]) -> AppResult<()> {
+    async fn delete_files_in_local(&self, remote_parent_path: &str, files: &[&MediaFile]) -> AppResult<()> {
         let local_parent_path = remote_parent_path.replace(
             self.state.config().get_library_config().remote_path.as_str(),
             self.state.config().get_library_config().local_path.as_str(),
@@ -330,7 +354,7 @@ impl Importer {
         parent_dir_id: i64,
         name_prefix: &str,
         media_file: &MediaFile,
-    ) -> AppResult<bool> {
+    ) -> AppResult<Option<String>> {
         let video_file_name = format_video_file_name(name_prefix, media_file);
 
         if !media_file.subtitles.is_empty() {
@@ -353,7 +377,7 @@ impl Importer {
                     .await?;
                 if !success {
                     // subtitle file transfer failed, skip the whole media file transfer
-                    return Ok(false);
+                    return Ok(None);
                 }
             }
         }
@@ -368,9 +392,14 @@ impl Importer {
         parent_dir_id: i64,
         video_file_name: &str,
         media_file: &MediaFile,
-    ) -> AppResult<bool> {
+    ) -> AppResult<Option<String>> {
         let res = self
-            .transfer_raw_file(parent_dir_id, video_file_name, &media_file.video)
+            .transfer_raw_file(
+                parent_dir_id,
+                video_file_name,
+                media_file.video.size,
+                &media_file.video.etag,
+            )
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", video_file_name, e);
@@ -387,12 +416,12 @@ impl Importer {
                 )
                 .await?;
 
-                Ok(true)
+                Ok(Some(video_file_name.to_owned()))
             }
             None => {
                 info!("File {} not saved in library", video_file_name);
 
-                Ok(false)
+                Ok(None)
             }
         }
     }
@@ -430,7 +459,7 @@ impl Importer {
     ) -> AppResult<bool> {
         let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
         let res = self
-            .transfer_raw_file(parent_dir_id, file_name.as_str(), raw_file)
+            .transfer_raw_file(parent_dir_id, file_name.as_str(), raw_file.size, &raw_file.etag)
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", file_name, e);
@@ -465,21 +494,22 @@ impl Importer {
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        raw_file: &RawFile,
+        size: u64,
+        etag: &Etag,
     ) -> AppResult<Option<i64>> {
-        Ok(match &raw_file.etag {
+        Ok(match &etag {
             Etag::Md5(etag) => {
                 self.state
                     .client()
                     .pan123
-                    .fast_upload(parent_dir_id, file_name, etag, raw_file.size)
+                    .fast_upload(parent_dir_id, file_name, etag, size)
                     .await?
             }
             Etag::Sha1(sha1) => {
                 self.state
                     .client()
                     .pan123
-                    .fast_upload_with_sha1(parent_dir_id, file_name, sha1, raw_file.size)
+                    .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
                     .await?
             }
         })

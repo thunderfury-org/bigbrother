@@ -44,7 +44,7 @@ pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
                 return None;
             }
 
-            let size_gb = *size as f64 / 1_000_000_000.0;
+            let size_gb = *size as f64 / 1024.0 / 1024.0 / 1024.0;
             Some(format!(
                 "🎬 电影 {} ({}) 已入库\n\
                      📊 大小: {:.2} GB\n\
@@ -71,7 +71,7 @@ pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
                 return None;
             }
 
-            let total_size_gb = *total_size as f64 / 1_000_000_000.0;
+            let total_size_gb = *total_size as f64 / 1024.0 / 1024.0 / 1024.0;
             let missing_str = if missing_episodes.is_empty() {
                 "".to_owned()
             } else {
