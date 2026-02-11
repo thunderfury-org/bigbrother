@@ -14,12 +14,16 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(pan123_client_id: &str, pan123_client_secret: &str, pan123_cache_dir: &str, tmdb_api_key: &str) -> Self {
+    pub fn new(config: &config::Manager) -> Self {
         Self {
             pan115: client::pan115::Client::new(),
-            pan123: client::pan123::Client::new(pan123_client_id, pan123_client_secret, pan123_cache_dir),
+            pan123: client::pan123::Client::new(
+                &config.get_pan123_config().passport,
+                &config.get_pan123_config().password,
+                &format!("{}/pan123", config.get_cache_dir()),
+            ),
             pan189: client::pan189::Client::new(),
-            tmdb: client::tmdb::Client::new(tmdb_api_key),
+            tmdb: client::tmdb::Client::new(&config.get_tmdb_config().api_key),
         }
     }
 }
@@ -54,12 +58,7 @@ impl AppState {
 
         Ok(AppState {
             inner: Arc::new(InnerAppState {
-                client: Arc::new(Client::new(
-                    &config.get_pan123_config().client_id,
-                    &config.get_pan123_config().client_secret,
-                    &format!("{}/pan123", config.get_cache_dir()),
-                    &config.get_tmdb_config().api_key,
-                )),
+                client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
                 bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
                 db,

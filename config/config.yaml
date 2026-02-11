@@ -1,6 +1,6 @@
 pan123:
-  client_id: ""
-  client_secret: ""
+  passport: ""
+  password: ""
 
 tmdb:
   api_key: ""

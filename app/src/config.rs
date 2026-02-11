@@ -23,9 +23,8 @@ pub struct MediaServerConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 pub struct Pan123Config {
-    pub client_id: String,
-    pub client_secret: String,
-    pub file_id: i64,
+    pub passport: String,
+    pub password: String,
 }
 
 #[derive(Debug, Default, Deserialize)]

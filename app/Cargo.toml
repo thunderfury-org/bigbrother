@@ -29,4 +29,6 @@ teloxide = { workspace = true }
 futures = { workspace = true }
 sea-orm = { workspace = true }
 chrono = { workspace = true }
-anyhow = "1.0.100"
+
+[dev-dependencies]
+wiremock = { workspace = true }
