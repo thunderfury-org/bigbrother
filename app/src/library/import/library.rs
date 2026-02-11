@@ -64,6 +64,7 @@ impl Importer {
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {
+        info!("Checking if dir {} exists in library", path);
         let file_id = self.state.client().pan123.get_file_id_by_path(path).await?;
         match file_id {
             Some(id) => Ok(id),

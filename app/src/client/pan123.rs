@@ -7,9 +7,13 @@ use tokio::sync::RwLock;
 use super::{RequestError, RequestResult, http};
 
 const API_BASE: &str = "https://www.123pan.com/b";
-const OPEN_API_BASE: &str = "https://open-api.123pan.com";
+
+const APP_VERSION_KEY: &str = "App-Version";
+const APP_VERSION_VALUE: &str = "3";
 const PLATFORM_KEY: &str = "Platform";
-const PLATFORM_VALUE: &str = "open_platform";
+const PLATFORM_VALUE: &str = "web";
+const REFERER_KEY: &str = "Referer";
+const REFERER_VALUE: &str = "https://www.123pan.com/";
 
 const TOKEN_CACHE_FILE: &str = "token.json";
 
@@ -76,61 +80,82 @@ struct FastUploadWithSha1Response {
 }
 
 #[derive(Debug, Deserialize)]
-struct MkdirResponse {
-    #[serde(rename = "dirID")]
-    dir_id: i64,
-}
-
-#[derive(Debug, Deserialize)]
 struct TrashResponse {}
 
 #[derive(Debug, Deserialize)]
 pub struct FileDetail {
-    #[serde(rename = "fileId")]
+    #[serde(rename = "FileId")]
     pub file_id: i64,
-    #[serde(rename = "filename")]
+    #[serde(rename = "FileName")]
     pub file_name: String,
+    #[serde(rename = "Size")]
+    pub size: u64,
+    #[serde(rename = "Etag")]
+    pub etag: String,
+    #[serde(rename = "S3KeyFlag")]
+    pub s3_key_flag: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct MultiGetResponse {
-    #[serde(rename = "fileList")]
+    #[serde(rename = "infoList")]
     file_list: Vec<FileDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DownloadInfo {
+    #[serde(rename = "DownloadUrl")]
+    download_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AccessToken {
-    #[serde(rename = "accessToken")]
+    #[serde(rename = "token")]
     token: String,
-    #[serde(rename = "expiredAt", with = "time::serde::rfc3339")]
+    #[serde(rename = "expire", with = "time::serde::rfc3339")]
     expired_at: time::OffsetDateTime,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Client {
-    client_id: String,
-    client_secret: String,
+    passport: String,
+    password: String,
     cache_dir: String,
     token: Arc<RwLock<Option<AccessToken>>>,
 }
 
 impl Client {
-    pub fn new(client_id: &str, client_secret: &str, cache_dir: &str) -> Self {
+    pub fn new(passport: &str, password: &str, cache_dir: &str) -> Self {
         Self {
-            client_id: client_id.to_owned(),
-            client_secret: client_secret.to_owned(),
+            passport: passport.to_owned(),
+            password: password.to_owned(),
             cache_dir: cache_dir.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
-        self.get::<HashMap<String, String>>(
-            self.build_open_api_url("/api/v1/file/download_info"),
-            Some(vec![("fileId", file_id.to_string().as_str())]),
-        )
-        .await
-        .map(|r| r.get("downloadUrl").map_or_else(|| "".to_owned(), |s| s.to_owned()))
+        let files = self.mutli_get(&[file_id]).await?;
+        match files.get(&file_id) {
+            Some(f) => self
+                .post::<_, DownloadInfo>(
+                    self.build_api_url("/api/file/download_info"),
+                    None,
+                    Some(&json!(
+                        {
+                            "driveId": 0,
+                            "FileId": file_id,
+                            "Etag": f.etag,
+                            "Size": f.size,
+                            "S3KeyFlag": f.s3_key_flag,
+                            "FileName": f.file_name,
+                        }
+                    )),
+                )
+                .await
+                .map(|r| r.download_url),
+            None => Err(RequestError::NotFound(format!("file {} not found", file_id))),
+        }
     }
 
     pub async fn download_file(&self, file_id: i64, local_file_path: &str) -> RequestResult<()> {
@@ -230,6 +255,7 @@ impl Client {
         })
     }
 
+    /// 需要 openapi 才能使用
     pub async fn fast_upload_with_sha1(
         &self,
         parent_file_id: i64,
@@ -238,7 +264,8 @@ impl Client {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.post::<_, FastUploadWithSha1Response>(
-            self.build_open_api_url("/upload/v2/file/sha1_reuse"),
+            // 这里需要改成 openapi 的地址
+            self.build_api_url("/upload/v2/file/sha1_reuse"),
             None,
             Some(&json!(
                 {
@@ -255,28 +282,43 @@ impl Client {
     }
 
     pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
-        self.post::<_, MkdirResponse>(
-            self.build_open_api_url("/upload/v1/file/mkdir"),
+        self.post::<_, FastUploadResponse>(
+            self.build_api_url("/api/file/upload_request"),
             None,
             Some(&json!(
                 {
-                    "parentID": parent_file_id,
-                    "name": folder_name,
+                    "driveId": 0,
+                    "parentFileId": parent_file_id,
+                    "fileName": folder_name,
+                    "etag": "",
+                    "size": 0,
+                    "type": 1,
+                    "duplicate": 2,
+                    "NotReuse": false,
                 }
             )),
         )
         .await
-        .map(|r| r.dir_id)
+        .map(|r| match r.info {
+            Some(info) => info.file_id,
+            None => 0,
+        })
     }
 
     pub async fn trash_files(&self, file_ids: &[i64]) -> RequestResult<()> {
         for chunk in file_ids.chunks(100) {
+            let files = chunk.iter().map(|id| json!({"FileId": id})).collect::<Vec<_>>();
             self.post::<_, TrashResponse>(
-                self.build_open_api_url("/api/v1/file/trash"),
+                self.build_api_url("/api/file/trash"),
                 None,
                 Some(&json!(
                     {
-                        "fileIDs": chunk,
+                        "driveId": 0,
+                        "event": "intoRecycle",
+                        "fileTrashInfoList": files,
+                        "operatePlace": 1,
+                        "operation": true,
+                        "safeBox": false,
                     }
                 )),
             )
@@ -386,12 +428,13 @@ impl Client {
     }
 
     async fn mutli_get(&self, file_ids: &[i64]) -> RequestResult<HashMap<i64, FileDetail>> {
+        let files = file_ids.iter().map(|id| json!({"FileId": id})).collect::<Vec<_>>();
         self.post::<_, MultiGetResponse>(
-            self.build_open_api_url("/api/v1/file/infos"),
+            self.build_api_url("/api/file/info"),
             None,
             Some(&json!(
                 {
-                    "fileIds": file_ids,
+                    "fileIdList": files,
                 }
             )),
         )
@@ -401,8 +444,13 @@ impl Client {
 
     async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
-        let headers = Some(vec![(PLATFORM_KEY, PLATFORM_VALUE), (http::AUTH_KEY, token.as_str())]);
-        let response: CommonResponse<T> = http::get(url, query, headers).await?;
+        let headers = Some(vec![
+            (APP_VERSION_KEY, APP_VERSION_VALUE),
+            (PLATFORM_KEY, PLATFORM_VALUE),
+            (REFERER_KEY, REFERER_VALUE),
+            (http::AUTH_KEY, token.as_str()),
+        ]);
+        let response: CommonResponse<T> = http::get(url.as_str(), query, headers).await?;
         self.process_response(response)
     }
 
@@ -414,8 +462,9 @@ impl Client {
     ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
         let headers = Some(vec![
-            ("App-Version", "3"),
+            (APP_VERSION_KEY, APP_VERSION_VALUE),
             (PLATFORM_KEY, PLATFORM_VALUE),
+            (REFERER_KEY, REFERER_VALUE),
             (http::AUTH_KEY, token.as_str()),
         ]);
         let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
@@ -445,11 +494,6 @@ impl Client {
     #[inline]
     fn build_api_url(&self, path: &str) -> String {
         format!("{}{}", API_BASE, path)
-    }
-
-    #[inline]
-    fn build_open_api_url(&self, path: &str) -> String {
-        format!("{}{}", OPEN_API_BASE, path)
     }
 
     async fn get_token(&self) -> RequestResult<String> {
@@ -559,16 +603,33 @@ impl Client {
 
     async fn get_access_token(&self) -> RequestResult<AccessToken> {
         let response: CommonResponse<AccessToken> = http::post(
-            self.build_open_api_url("/api/v1/access_token"),
+            self.build_api_url("/api/user/sign_in"),
             None,
-            Some(vec![(PLATFORM_KEY, PLATFORM_VALUE)]),
+            Some(vec![
+                (APP_VERSION_KEY, APP_VERSION_VALUE),
+                (PLATFORM_KEY, PLATFORM_VALUE),
+                (REFERER_KEY, REFERER_VALUE),
+            ]),
             Some(&json!({
-                "clientID": self.client_id,
-                "clientSecret": self.client_secret,
+                "passport": self.passport,
+                "password": self.password,
+                "remember": true,
             })),
         )
         .await?;
 
-        self.process_response(response)
+        match response.code {
+            200 => match response.data {
+                Some(d) => Ok(d),
+                None => Err(RequestError::Error(format!(
+                    "pan123 sign_in error, data is empty, code: {}, message: {}",
+                    response.code, response.message
+                ))),
+            },
+            _ => Err(RequestError::Error(format!(
+                "pan123 sign_in error, code: {}, message: {}",
+                response.code, response.message
+            ))),
+        }
     }
 }
