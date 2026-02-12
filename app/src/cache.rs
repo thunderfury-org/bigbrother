@@ -7,39 +7,17 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::{entity::cache, error::AppResult};
 
 /// Cache trait for storing and retrieving data with optional TTL
-pub trait Cache: Send + Sync {
-    /// Get a value from cache by key
-    fn get<V: DeserializeOwned + Send>(
-        &self,
-        key: &str,
-    ) -> impl std::future::Future<Output = AppResult<Option<V>>> + Send;
-
-    /// Set a value in cache with optional TTL
-    fn set<V: Serialize + Send + Sync>(
-        &self,
-        key: &str,
-        value: &V,
-        ttl: Option<Duration>,
-    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
-
-    /// Clear all expired entries and return count deleted
-    fn clear_expired(&self) -> impl std::future::Future<Output = AppResult<u64>> + Send;
-}
-
-/// Database-backed cache implementation using SQLite/SeaORM
 #[derive(Clone)]
-pub struct DatabaseCache {
+pub struct Cache {
     db: DatabaseConnection,
 }
 
-impl DatabaseCache {
+impl Cache {
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
-}
 
-impl Cache for DatabaseCache {
-    async fn get<V: DeserializeOwned + Send>(&self, key: &str) -> AppResult<Option<V>> {
+    pub async fn get<V: DeserializeOwned + Send>(&self, key: &str) -> AppResult<Option<V>> {
         match cache::get_by_key(&self.db, key).await? {
             Some(record) => {
                 // Check expiration (lazy deletion)
@@ -58,7 +36,7 @@ impl Cache for DatabaseCache {
         }
     }
 
-    async fn set<V: Serialize + Send + Sync>(&self, key: &str, value: &V, ttl: Option<Duration>) -> AppResult<()> {
+    pub async fn set<V: Serialize + Send + Sync>(&self, key: &str, value: &V, ttl: Option<Duration>) -> AppResult<()> {
         let value_json = serde_json::to_string(value)?;
         let expired_at = ttl.map(|d| Utc::now() + chrono::Duration::from_std(d).unwrap());
 
@@ -66,7 +44,7 @@ impl Cache for DatabaseCache {
         Ok(())
     }
 
-    async fn clear_expired(&self) -> AppResult<u64> {
+    pub async fn clear_expired(&self) -> AppResult<u64> {
         Ok(cache::delete_expired(&self.db).await?)
     }
 }
@@ -101,13 +79,13 @@ mod tests {
     async fn test_cache_trait_bounds() {
         // This test verifies that Cache trait has correct Send + Sync bounds
         fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<DatabaseCache>();
+        assert_send_sync::<Cache>();
     }
 
     #[tokio::test]
     async fn test_set_and_get() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         let data = TestData {
             id: 42,
@@ -125,7 +103,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_nonexistent() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         let result: Option<TestData> = cache.get("nonexistent").await.unwrap();
         assert_eq!(result, None);
@@ -134,7 +112,7 @@ mod tests {
     #[tokio::test]
     async fn test_overwrite_existing() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set initial value
         cache.set("key", &"first", None).await.unwrap();
@@ -150,7 +128,7 @@ mod tests {
     #[tokio::test]
     async fn test_ttl_expiration() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set with very short TTL
         cache
@@ -172,7 +150,7 @@ mod tests {
     #[tokio::test]
     async fn test_ttl_not_expired() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set with long TTL
         cache
@@ -188,7 +166,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_expired() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set multiple keys with different TTLs
         cache.set("expired1", &1, Some(Duration::from_millis(1))).await.unwrap();
@@ -215,7 +193,7 @@ mod tests {
     #[tokio::test]
     async fn test_complex_data_types() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         let data = ComplexData {
             numbers: vec![1, 2, 3, 4, 5],
@@ -235,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_keys() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set multiple different keys
         cache.set("key1", &1, None).await.unwrap();
@@ -255,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_clone() {
         let db = setup_test_db().await;
-        let cache1 = DatabaseCache::new(db);
+        let cache1 = Cache::new(db);
         let cache2 = cache1.clone();
 
         // Set through cache1
@@ -269,7 +247,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_ttl() {
         let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
+        let cache = Cache::new(db);
 
         // Set with short TTL
         cache

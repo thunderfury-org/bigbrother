@@ -10,7 +10,7 @@ use axum::{
 use reqwest::StatusCode;
 use tracing::error;
 
-use crate::{cache::Cache, client::RequestError, state::AppState};
+use crate::{client::RequestError, state::AppState};
 
 pub(super) fn new_router(state: AppState) -> Router {
     let path = format!(

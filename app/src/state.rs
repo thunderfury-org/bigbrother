@@ -35,7 +35,7 @@ struct InnerAppState {
     pub client: Arc<Client>,
     pub bus: Arc<EventBus>,
     pub bot: Arc<teloxide::Bot>,
-    pub cache: cache::DatabaseCache,
+    pub cache: cache::Cache,
 }
 
 #[derive(Clone)]
@@ -62,7 +62,7 @@ impl AppState {
                 client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
                 bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
-                cache: cache::DatabaseCache::new(db.clone()),
+                cache: cache::Cache::new(db.clone()),
                 db,
                 config: Arc::new(config),
             }),
@@ -89,7 +89,7 @@ impl AppState {
         &self.inner.bot
     }
 
-    pub fn cache(&self) -> &cache::DatabaseCache {
+    pub fn cache(&self) -> &cache::Cache {
         &self.inner.cache
     }
 }

@@ -4,7 +4,6 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use tracing::{error, info};
 
-use cache::Cache;
 use migration::{Migrator, MigratorTrait};
 use state::AppState;
 use util::signal::shutdown_signal;
