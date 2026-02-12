@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use crate::{client, config, error::AppResult, event_bus::EventBus};
+use crate::{cache, client, config, error::AppResult, event_bus::EventBus};
+#[cfg(test)]
+use migration::MigratorTrait;
 
 /// Unified client struct containing all API clients
 #[derive(Clone)]
@@ -35,6 +37,7 @@ struct InnerAppState {
     pub client: Arc<Client>,
     pub bus: Arc<EventBus>,
     pub bot: Arc<teloxide::Bot>,
+    pub cache: cache::Cache,
 }
 
 #[derive(Clone)]
@@ -61,6 +64,7 @@ impl AppState {
                 client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
                 bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
+                cache: cache::Cache::new(db.clone()),
                 db,
                 config: Arc::new(config),
             }),
@@ -85,5 +89,31 @@ impl AppState {
 
     pub fn bot(&self) -> &teloxide::Bot {
         &self.inner.bot
+    }
+
+    pub fn cache(&self) -> &cache::Cache {
+        &self.inner.cache
+    }
+
+    #[cfg(test)]
+    pub async fn for_test() -> Self {
+        let config = config::Manager::default();
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+
+        AppState {
+            inner: Arc::new(InnerAppState {
+                client: Arc::new(Client::new(&config)),
+                bus: Arc::new(EventBus::new(db.clone())),
+                bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
+                cache: cache::Cache::new(db.clone()),
+                db,
+                config: Arc::new(config),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    pub async fn miggrate_db(&self) {
+        migration::Migrator::up(self.db(), None).await.unwrap();
     }
 }

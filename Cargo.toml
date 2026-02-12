@@ -56,4 +56,4 @@ sea-orm-migration = { version = "2.0.0-rc", features = [
 chrono = { version = "0.4", features = ["serde"] }
 
 # For testing
-wiremock = { version = "0.6" }
+wiremock = "0.6"
