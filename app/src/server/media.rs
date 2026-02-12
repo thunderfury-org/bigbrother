@@ -1,15 +1,16 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use axum::{
     Router,
     extract::{Path, Query, State},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::get,
 };
 use reqwest::StatusCode;
 use tracing::error;
 
-use crate::{client::RequestError, state::AppState};
+use crate::{cache::Cache, client::RequestError, state::AppState};
 
 pub(super) fn new_router(state: AppState) -> Router {
     let path = format!(
@@ -31,28 +32,46 @@ async fn redirect(
 
     match file_id.unwrap().parse::<i64>() {
         Err(e) => (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
-        Ok(id) => match state.client().pan123.get_download_url(id).await {
-            Ok(url) => {
-                if url.is_empty() {
-                    error!("Failed to get download url of file {}, id: {}", path, id);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
-                }
-                axum::response::Redirect::to(url.as_str()).into_response()
+        Ok(id) => {
+            // Try to get URL from cache first
+            let cache_key = format!("pan123:download_url:{}", id);
+
+            if let Ok(Some(cached_url)) = state.cache().get::<String>(&cache_key).await {
+                return Redirect::to(cached_url.as_str()).into_response();
             }
-            Err(e) => match e {
-                RequestError::Unauthorized => {
-                    error!("Unauthorized to get download url of file {}, id: {}", path, id);
-                    (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+
+            // Cache miss, fetch from API
+            match state.client().pan123.get_download_url(id).await {
+                Ok(url) => {
+                    if url.is_empty() {
+                        error!("Failed to get download url of file {}, id: {}", path, id);
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
+                    }
+
+                    // Cache the URL for 30 minutes on success
+                    let ttl = Duration::from_mins(30);
+                    if let Err(e) = state.cache().set(&cache_key, &url, Some(ttl)).await {
+                        error!("Failed to cache download url for file {}, id: {}, {}", path, id, e);
+                        // Continue even if caching fails
+                    }
+
+                    Redirect::to(url.as_str()).into_response()
                 }
-                RequestError::NotFound(_) => {
-                    error!("File {} not found, id: {}", path, id);
-                    (StatusCode::NOT_FOUND, "File not found").into_response()
-                }
-                _ => {
-                    error!("Failed to get download url of file {}, id: {}, {}", path, id, e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response()
-                }
-            },
-        },
+                Err(e) => match e {
+                    RequestError::Unauthorized => {
+                        error!("Unauthorized to get download url of file {}, id: {}", path, id);
+                        (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+                    }
+                    RequestError::NotFound(_) => {
+                        error!("File {} not found, id: {}", path, id);
+                        (StatusCode::NOT_FOUND, "File not found").into_response()
+                    }
+                    _ => {
+                        error!("Failed to get download url of file {}, id: {}, {}", path, id, e);
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response()
+                    }
+                },
+            }
+        }
     }
 }

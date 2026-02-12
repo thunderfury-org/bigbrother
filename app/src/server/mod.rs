@@ -16,7 +16,7 @@ pub async fn run(state: AppState) {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal("media server"))
         .await
         .unwrap();
     info!("Media server has shutdown gracefully.");

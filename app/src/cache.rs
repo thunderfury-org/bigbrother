@@ -22,12 +22,6 @@ pub trait Cache: Send + Sync {
         ttl: Option<Duration>,
     ) -> impl std::future::Future<Output = AppResult<()>> + Send;
 
-    /// Delete a value from cache by key
-    fn delete(&self, key: &str) -> impl std::future::Future<Output = AppResult<()>> + Send;
-
-    /// Check if a key exists in cache
-    fn exists(&self, key: &str) -> impl std::future::Future<Output = AppResult<bool>> + Send;
-
     /// Clear all expired entries and return count deleted
     fn clear_expired(&self) -> impl std::future::Future<Output = AppResult<u64>> + Send;
 }
@@ -49,11 +43,11 @@ impl Cache for DatabaseCache {
         match cache::get_by_key(&self.db, key).await? {
             Some(record) => {
                 // Check expiration (lazy deletion)
-                if let Some(expired_at) = record.expired_at {
-                    if expired_at <= Utc::now() {
-                        cache::delete_by_key(&self.db, key).await?;
-                        return Ok(None);
-                    }
+                if let Some(expired_at) = record.expired_at
+                    && expired_at <= Utc::now()
+                {
+                    cache::delete_by_key(&self.db, key).await?;
+                    return Ok(None);
                 }
 
                 // Deserialize value
@@ -70,15 +64,6 @@ impl Cache for DatabaseCache {
 
         cache::set_record(&self.db, key, &value_json, expired_at).await?;
         Ok(())
-    }
-
-    async fn delete(&self, key: &str) -> AppResult<()> {
-        cache::delete_by_key(&self.db, key).await?;
-        Ok(())
-    }
-
-    async fn exists(&self, key: &str) -> AppResult<bool> {
-        Ok(cache::exists(&self.db, key).await?)
     }
 
     async fn clear_expired(&self) -> AppResult<u64> {
@@ -163,39 +148,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete() {
-        let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
-
-        // Set and verify
-        cache.set("key", &42, None).await.unwrap();
-        assert!(cache.exists("key").await.unwrap());
-
-        // Delete
-        cache.delete("key").await.unwrap();
-
-        // Verify deleted
-        assert!(!cache.exists("key").await.unwrap());
-        let result: Option<i32> = cache.get("key").await.unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[tokio::test]
-    async fn test_exists() {
-        let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
-
-        // Non-existent key
-        assert!(!cache.exists("missing").await.unwrap());
-
-        // Set key
-        cache.set("present", &"value", None).await.unwrap();
-
-        // Verify exists
-        assert!(cache.exists("present").await.unwrap());
-    }
-
-    #[tokio::test]
     async fn test_ttl_expiration() {
         let db = setup_test_db().await;
         let cache = DatabaseCache::new(db);
@@ -214,7 +166,7 @@ mod tests {
         assert_eq!(result, None);
 
         // Key should not exist after lazy deletion
-        assert!(!cache.exists("ttl_key").await.unwrap());
+        assert!(cache.get::<String>("ttl_key").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -252,12 +204,12 @@ mod tests {
         assert_eq!(count, 2); // Only expired1 and expired2
 
         // Verify valid keys still exist
-        assert!(cache.exists("valid").await.unwrap());
-        assert!(cache.exists("no_ttl").await.unwrap());
+        assert!(cache.get::<i32>("valid").await.unwrap().is_some());
+        assert!(cache.get::<i32>("no_ttl").await.unwrap().is_some());
 
         // Verify expired keys are gone
-        assert!(!cache.exists("expired1").await.unwrap());
-        assert!(!cache.exists("expired2").await.unwrap());
+        assert!(cache.get::<i32>("expired1").await.unwrap().is_none());
+        assert!(cache.get::<i32>("expired2").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -290,11 +242,6 @@ mod tests {
         cache.set("key2", &2, None).await.unwrap();
         cache.set("key3", &3, None).await.unwrap();
 
-        // Verify all exist
-        assert!(cache.exists("key1").await.unwrap());
-        assert!(cache.exists("key2").await.unwrap());
-        assert!(cache.exists("key3").await.unwrap());
-
         // Verify correct values
         let v1: Option<i32> = cache.get("key1").await.unwrap();
         let v2: Option<i32> = cache.get("key2").await.unwrap();
@@ -303,23 +250,6 @@ mod tests {
         assert_eq!(v1, Some(1));
         assert_eq!(v2, Some(2));
         assert_eq!(v3, Some(3));
-    }
-
-    #[tokio::test]
-    async fn test_cache_trait_methods() {
-        let db = setup_test_db().await;
-        let cache = DatabaseCache::new(db);
-
-        // Test trait implementation
-        cache.set("trait_test", &"value", None).await.unwrap();
-
-        let result: Option<String> = cache.get("trait_test").await.unwrap();
-        assert_eq!(result, Some("value".to_string()));
-
-        assert!(cache.exists("trait_test").await.unwrap());
-
-        cache.delete("trait_test").await.unwrap();
-        assert!(!cache.exists("trait_test").await.unwrap());
     }
 
     #[tokio::test]

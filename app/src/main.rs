@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use clap::Parser;
-
 use cli::{Cli, Commands};
-use tracing::info;
+use tracing::{error, info};
 
-use crate::{state::AppState, util::signal::shutdown_signal};
+use cache::Cache;
 use migration::{Migrator, MigratorTrait};
+use state::AppState;
+use util::signal::shutdown_signal;
 
 mod bot;
 mod cache;
@@ -43,7 +46,8 @@ async fn run_server(data_dir: &str) {
     tokio::join!(
         server::run(state.clone()),
         bot::run(state.clone()),
-        run_event_bus(state.clone())
+        run_event_bus(state.clone()),
+        run_cache_cleanup(state.clone())
     );
 }
 
@@ -56,6 +60,32 @@ async fn run_event_bus(state: AppState) {
 
     info!("Event bus is running");
     // wait for shutdown signal
-    shutdown_signal().await;
+    shutdown_signal("event bus").await;
     info!("Shutting down event bus...");
+}
+
+async fn run_cache_cleanup(state: AppState) {
+    let cache = state.cache();
+    let interval = Duration::from_hours(12);
+
+    info!("Cache cleanup task started (interval: 12 hours)");
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {
+                match cache.clear_expired().await {
+                    Ok(count) => {
+                        info!("Cache cleanup completed: removed {} expired entries", count);
+                    }
+                    Err(e) => {
+                        error!("Cache cleanup failed: {}", e);
+                    }
+                }
+            }
+            _ = shutdown_signal("cache cleanup task") => {
+                info!("Shutting down cache cleanup task...");
+                break;
+            }
+        }
+    }
 }

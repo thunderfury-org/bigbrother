@@ -1,9 +1,5 @@
 use chrono::Utc;
-use sea_orm::{
-    ActiveValue::Set,
-    prelude::{DateTimeUtc, *},
-    sea_query::OnConflict,
-};
+use sea_orm::{ActiveValue::Set, prelude::*, sea_query::OnConflict};
 
 use super::model::cache;
 
@@ -66,15 +62,4 @@ where
         .await?;
 
     Ok(result.rows_affected)
-}
-
-pub async fn exists<C>(db: &C, key: &str) -> Result<bool, DbErr>
-where
-    C: ConnectionTrait,
-{
-    cache::Entity::find()
-        .filter(cache::Column::Key.eq(key))
-        .count(db)
-        .await
-        .map(|count| count > 0)
 }
