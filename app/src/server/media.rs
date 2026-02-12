@@ -75,3 +75,57 @@ async fn redirect(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode as HttpStatusCode;
+
+    #[tokio::test]
+    async fn test_redirect_missing_file_id() {
+        let state = AppState::for_test().await;
+
+        let params = HashMap::new();
+        let response = redirect(State(state), Path("test.mp4".to_string()), Query(params)).await;
+
+        let (parts, _body) = response.into_parts();
+        assert_eq!(parts.status, HttpStatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_redirect_invalid_file_id() {
+        let state = AppState::for_test().await;
+
+        let mut params = HashMap::new();
+        params.insert("file_id".to_string(), "not_a_number".to_string());
+
+        let response = redirect(State(state), Path("test.mp4".to_string()), Query(params)).await;
+
+        let (parts, body) = response.into_parts();
+        assert_eq!(parts.status, HttpStatusCode::BAD_REQUEST);
+
+        let body_bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let body_str = String::from_utf8_lossy(&body_bytes);
+        assert!(body_str.contains("file_id is invalid"));
+    }
+
+    #[tokio::test]
+    async fn test_redirect_from_cache() {
+        let state = AppState::for_test().await;
+        state.miggrate_db().await;
+
+        // Pre-populate cache with a URL
+        let cache_key = "pan123:download_url:12345";
+        let test_url = "https://example.com/download/test.mp4";
+        state.cache().set(cache_key, &test_url.to_string(), None).await.unwrap();
+
+        let mut params = HashMap::new();
+        params.insert("file_id".to_string(), "12345".to_string());
+
+        let response = redirect(State(state), Path("test.mp4".to_string()), Query(params)).await;
+
+        let (parts, _body) = response.into_parts();
+        assert_eq!(parts.status, HttpStatusCode::SEE_OTHER);
+        assert_eq!(parts.headers.get("location").unwrap(), test_url);
+    }
+}
