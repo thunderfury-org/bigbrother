@@ -103,9 +103,17 @@ struct MultiGetResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct DownloadDispatch {
+    #[serde(rename = "prefix")]
+    prefix: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct DownloadInfo {
-    #[serde(rename = "DownloadUrl")]
-    download_url: String,
+    #[serde(rename = "downloadPath")]
+    download_path: String,
+    #[serde(rename = "dispatchList")]
+    dispatch_list: Vec<DownloadDispatch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,23 +145,35 @@ impl Client {
     pub async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
         let files = self.mutli_get(&[file_id]).await?;
         match files.get(&file_id) {
-            Some(f) => self
-                .post::<_, DownloadInfo>(
-                    self.build_api_url("/api/file/download_info"),
-                    None,
-                    Some(&json!(
-                        {
-                            "driveId": 0,
-                            "FileId": file_id,
-                            "Etag": f.etag,
-                            "Size": f.size,
-                            "S3KeyFlag": f.s3_key_flag,
-                            "FileName": f.file_name,
-                        }
-                    )),
-                )
-                .await
-                .map(|r| r.download_url),
+            Some(f) => {
+                let download_info = self
+                    .post::<_, DownloadInfo>(
+                        self.build_api_url("/api/v2/file/download_info"),
+                        None,
+                        Some(&json!(
+                            {
+                                "driveId": 0,
+                                "fileId": file_id,
+                                "etag": f.etag,
+                                "size": f.size,
+                                "s3keyFlag": f.s3_key_flag,
+                                "fileName": f.file_name,
+                                "type": 0,
+                            }
+                        )),
+                    )
+                    .await?;
+                if download_info.dispatch_list.is_empty() {
+                    Err(RequestError::Error(
+                        "get download url failed, no dispatch available".to_string(),
+                    ))
+                } else {
+                    Ok(format!(
+                        "{}{}",
+                        download_info.dispatch_list[0].prefix, download_info.download_path
+                    ))
+                }
+            }
             None => Err(RequestError::NotFound(format!("file {} not found", file_id))),
         }
     }
