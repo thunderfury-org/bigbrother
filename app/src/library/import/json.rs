@@ -60,6 +60,43 @@ fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFile>> {
     Ok(files)
 }
 
+fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
+    // Try the object format first: { "commonPath": "...", "files": [...] }
+    if let Ok(resource) = serde_json::from_slice::<ResourceJson>(&json) {
+        return Ok(resource);
+    }
+
+    info!("Failed to parse JSON as object format, trying array-of-arrays format");
+
+    // Fallback: array-of-arrays format [[etag, size, path], ...]
+    let rows: Vec<Vec<serde_json::Value>> = serde_json::from_slice(&json)?;
+    let mut files = Vec::new();
+    for row in rows {
+        if row.len() != 3 {
+            return Err(AppError::InvalidParameter(format!(
+                "invalid json row: expected 3 elements, got {}",
+                row.len()
+            )));
+        }
+        let etag = row[0]
+            .as_str()
+            .ok_or_else(|| AppError::InvalidParameter("etag is not a string".into()))?
+            .to_owned();
+        let size = row[1]
+            .as_u64()
+            .ok_or_else(|| AppError::InvalidParameter("size is not a u64".into()))?;
+        let path = row[2]
+            .as_str()
+            .ok_or_else(|| AppError::InvalidParameter("path is not a string".into()))?
+            .to_owned();
+        files.push(ResourceFile { path, etag, size });
+    }
+    Ok(ResourceJson {
+        common_path: String::new(),
+        files,
+    })
+}
+
 impl Importer {
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from fslink");
@@ -78,7 +115,7 @@ impl Importer {
 
     pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from JSON");
-        let resource: ResourceJson = serde_json::from_slice(&json)?;
+        let resource: ResourceJson = parse_files_from_json(json)?;
         self.import_from_resource_json(&resource).await
     }
 
@@ -291,5 +328,56 @@ mod tests {
 
         // Should fail because it splits into more than 3 parts
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_from_json_1() {
+        let json = r#"
+        {
+            "commonPath": "/media",
+            "files": [
+                {
+                    "path": "movie.mp4",
+                    "etag": "etag123",
+                    "size": 1024
+                },
+                {
+                    "path": "subtitle.srt",
+                    "etag": "etag456",
+                    "size": 2048
+                }
+            ]
+        }
+        "#;
+
+        let resource = parse_files_from_json(json.as_bytes().to_vec()).unwrap();
+        assert_eq!(resource.common_path, "/media");
+        assert_eq!(resource.files.len(), 2);
+        assert_eq!(resource.files[0].path, "movie.mp4");
+        assert_eq!(resource.files[0].etag, "etag123");
+        assert_eq!(resource.files[0].size, 1024);
+        assert_eq!(resource.files[1].path, "subtitle.srt");
+        assert_eq!(resource.files[1].etag, "etag456");
+        assert_eq!(resource.files[1].size, 2048);
+    }
+
+    #[test]
+    fn test_parse_from_json_2() {
+        let json = r#"
+        [
+            [
+                "ffd9a9bc7616540fcd741afee223a12b",
+                1766233377,
+                "3 h.264.mkv"
+            ]
+        ]
+        "#;
+
+        let resource = parse_files_from_json(json.as_bytes().to_vec()).unwrap();
+        assert_eq!(resource.common_path, "");
+        assert_eq!(resource.files.len(), 1);
+        assert_eq!(resource.files[0].path, "3 h.264.mkv");
+        assert_eq!(resource.files[0].etag, "ffd9a9bc7616540fcd741afee223a12b");
+        assert_eq!(resource.files[0].size, 1766233377);
     }
 }

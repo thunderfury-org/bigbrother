@@ -64,7 +64,12 @@ impl MsgProcessor<'_> {
         }
 
         let file = self.bot.get_file(doc.file.id.to_owned()).await?;
-        let mut content = Vec::new();
+        if file.meta.size > 10 * 1024 * 1024 {
+            self.send_message("文件过大，无法处理").await;
+            return Ok(());
+        }
+
+        let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap());
         self.bot.download_file(&file.path, &mut content).await?;
 
         match library::import_from_json(self.state, content).await {
