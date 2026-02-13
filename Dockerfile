@@ -23,15 +23,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户（出于安全考虑）
-RUN useradd -m appuser
-USER appuser
+RUN addgroup -g 1001 appuser && \
+    adduser -D -u 1001 -G appuser appuser
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
 
 # 从编译阶段拷贝二进制文件
-COPY --from=builder /app/target/release/bigbrother ./
+COPY --from=builder --chown=appuser:appuser /app/target/release/bigbrother ./
+
+USER appuser
 
 # 数据卷挂载
 VOLUME ["/app/data"]
 
 # 运行命令
-ENTRYPOINT ["/app/bigbrother"]
-CMD ["server"]
+CMD ["/app/bigbrother", "server"]
