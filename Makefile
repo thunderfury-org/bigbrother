@@ -14,3 +14,6 @@ fmt:
 lint:
 	cargo fmt --all -- --check
 	cargo clippy -- -D warnings
+
+test:
+	cargo test
