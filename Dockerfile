@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户（出于安全考虑）
-RUN addgroup -g 1001 appuser && \
-    adduser -D -u 1001 -G appuser appuser
+RUN addgroup --gid 1001 appuser && \
+    adduser --gid 1001 --uid 1001 appuser
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
 
 # 从编译阶段拷贝二进制文件
