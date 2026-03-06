@@ -1,7 +1,7 @@
 use teloxide::{prelude::*, sugar::request::RequestReplyExt, types::MenuButton, utils::command::BotCommands};
 use tracing::{error, info};
 
-use crate::{entity, state::AppState};
+use crate::{entity, library, state::AppState};
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "snake_case", description = "BigBrother 可用命令:")]
@@ -14,6 +14,8 @@ pub(super) enum Command {
     AddKeyword(String),
     #[command(description = "删除指定的关键字")]
     DeleteKeyword(String),
+    #[command(description = "同步远程库到本地")]
+    SyncStrm,
 }
 
 pub(super) fn create_commands_in_background(bot: &Bot) {
@@ -48,6 +50,7 @@ pub(super) async fn handle_command(state: AppState, bot: Bot, msg: Message, cmd:
         Command::ListKeywords => list_keywords(&state, &bot, &msg).await?,
         Command::AddKeyword(keyword) => add_keyword(&state, &bot, &msg, &keyword).await?,
         Command::DeleteKeyword(keyword) => delete_keyword(&state, &bot, &msg, &keyword).await?,
+        Command::SyncStrm => sync_strm_cmd(&state, &bot, &msg).await?,
     }
     Ok(())
 }
@@ -126,5 +129,23 @@ async fn delete_keyword(state: &AppState, bot: &Bot, msg: &Message, keyword: &st
         }
     }
 
+    Ok(())
+}
+
+async fn sync_strm_cmd(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
+    info!("Starting strm sync");
+    bot.send_message(msg.chat.id, "开始同步远程库，请稍候...")
+        .reply_to(msg.id)
+        .await?;
+    match library::sync_strm(state).await {
+        Ok(()) => {
+            info!("Strm sync completed successfully");
+            bot.send_message(msg.chat.id, "同步完成").reply_to(msg.id).await?;
+        }
+        Err(e) => {
+            error!("Failed to sync strm: {}", e);
+            bot.send_message(msg.chat.id, "同步失败").reply_to(msg.id).await?;
+        }
+    }
     Ok(())
 }
