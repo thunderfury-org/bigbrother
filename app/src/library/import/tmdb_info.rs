@@ -9,7 +9,10 @@ use crate::{
 use super::Importer;
 
 impl Importer {
-    pub(super) async fn get_movie_info_from_tmdb(&mut self, meta: &Metadata) -> AppResult<Option<MovieDetail>> {
+    pub(super) async fn get_movie_info_from_tmdb(
+        &mut self,
+        meta: &Metadata,
+    ) -> AppResult<Option<MovieDetail>> {
         if !meta.tmdb_id.is_empty() {
             let cache_key = format!("movie:{}", meta.tmdb_id);
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
@@ -37,7 +40,12 @@ impl Importer {
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
                 return Ok(movie.clone());
             }
-            let movies = self.state.client().tmdb.search_movie(&title.title, &meta.year).await?;
+            let movies = self
+                .state
+                .client()
+                .tmdb
+                .search_movie(&title.title, &meta.year)
+                .await?;
             match movies.len() {
                 0 => {
                     self.movie_info_cache.insert(cache_key, None);
@@ -48,7 +56,12 @@ impl Importer {
                         "Movie found for title: {}, year: {}, id: {}",
                         title.title, meta.year, movies[0].id
                     );
-                    let movie = self.state.client().tmdb.get_movie_detail(movies[0].id).await?;
+                    let movie = self
+                        .state
+                        .client()
+                        .tmdb
+                        .get_movie_detail(movies[0].id)
+                        .await?;
                     self.movie_info_cache.insert(cache_key, movie.clone());
                     return Ok(movie);
                 }
@@ -73,7 +86,10 @@ impl Importer {
         Ok(None)
     }
 
-    pub(super) async fn get_tv_info_from_tmdb(&mut self, meta: &Metadata) -> AppResult<Option<TvDetail>> {
+    pub(super) async fn get_tv_info_from_tmdb(
+        &mut self,
+        meta: &Metadata,
+    ) -> AppResult<Option<TvDetail>> {
         if !meta.tmdb_id.is_empty() {
             let cache_key = format!("tv:{}", meta.tmdb_id);
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
@@ -102,7 +118,12 @@ impl Importer {
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
                 return Ok(tv.clone());
             }
-            let tvs = self.state.client().tmdb.search_tv(&title.title, &meta.year).await?;
+            let tvs = self
+                .state
+                .client()
+                .tmdb
+                .search_tv(&title.title, &meta.year)
+                .await?;
             match tvs.len() {
                 0 => {
                     self.tv_info_cache.insert(cache_key, None);

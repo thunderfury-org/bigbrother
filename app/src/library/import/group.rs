@@ -9,13 +9,16 @@ use super::{
 use crate::{error::AppResult, media::Metadata};
 
 /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
-pub(super) fn group_video_and_subtitle_files(raw_files: Vec<(Box<Metadata>, RawFile)>) -> Vec<MediaFile> {
+pub(super) fn group_video_and_subtitle_files(
+    raw_files: Vec<(Box<Metadata>, RawFile)>,
+) -> Vec<MediaFile> {
     if raw_files.is_empty() {
         return Vec::new();
     }
 
-    let (video_files, subtitle_files): (Vec<_>, Vec<_>) =
-        raw_files.into_iter().partition(|(metadata, _)| metadata.is_video());
+    let (video_files, subtitle_files): (Vec<_>, Vec<_>) = raw_files
+        .into_iter()
+        .partition(|(metadata, _)| metadata.is_video());
 
     if video_files.is_empty() {
         // 没有视频文件
@@ -65,7 +68,10 @@ pub(super) fn group_video_and_subtitle_files(raw_files: Vec<(Box<Metadata>, RawF
 
 impl Importer {
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
-    pub(super) async fn group_media_files<'a>(&mut self, files: &'a [MediaFile]) -> AppResult<Vec<Media<'a>>> {
+    pub(super) async fn group_media_files<'a>(
+        &mut self,
+        files: &'a [MediaFile],
+    ) -> AppResult<Vec<Media<'a>>> {
         // group files by tmdb_id
         let mut grouped_files = HashMap::new();
         for file in files {
@@ -115,10 +121,12 @@ impl Importer {
                         return Ok(());
                     }
                 };
-                let entry = grouped_files.entry(tv_info.id).or_insert_with(|| Media::Tv {
-                    detail: tv_info,
-                    files: BTreeMap::new(),
-                });
+                let entry = grouped_files
+                    .entry(tv_info.id)
+                    .or_insert_with(|| Media::Tv {
+                        detail: tv_info,
+                        files: BTreeMap::new(),
+                    });
                 if let Media::Tv { files, .. } = entry {
                     files
                         .entry(season_number)
@@ -149,10 +157,12 @@ impl Importer {
         let movie_info = self.get_movie_info_from_tmdb(&file.metadata).await?;
         match movie_info {
             Some(movie_info) => {
-                let entry = grouped_files.entry(movie_info.id).or_insert_with(|| Media::Movie {
-                    detail: movie_info,
-                    files: Vec::new(),
-                });
+                let entry = grouped_files
+                    .entry(movie_info.id)
+                    .or_insert_with(|| Media::Movie {
+                        detail: movie_info,
+                        files: Vec::new(),
+                    });
                 if let Media::Movie { files, .. } = entry {
                     files.push(file);
                 }
@@ -268,8 +278,14 @@ mod tests {
         assert_eq!(result.len(), 2);
 
         // Find the media files by video name
-        let video1_file = result.iter().find(|f| f.video.name == "video1.mp4").unwrap();
-        let video2_file = result.iter().find(|f| f.video.name == "video2.mp4").unwrap();
+        let video1_file = result
+            .iter()
+            .find(|f| f.video.name == "video1.mp4")
+            .unwrap();
+        let video2_file = result
+            .iter()
+            .find(|f| f.video.name == "video2.mp4")
+            .unwrap();
 
         assert_eq!(video1_file.subtitles.len(), 1);
         assert_eq!(video1_file.subtitles[0].name, "video1.srt");
@@ -292,7 +308,10 @@ mod tests {
     fn test_group_subtitle_matches_by_prefix() {
         let raw_files = vec![
             (create_video_metadata(), create_raw_file("movie.mp4")),
-            (create_subtitle_metadata(), create_raw_file("movie.en.forced.srt")),
+            (
+                create_subtitle_metadata(),
+                create_raw_file("movie.en.forced.srt"),
+            ),
         ];
         let result = group_video_and_subtitle_files(raw_files);
         assert_eq!(result.len(), 1);
@@ -325,9 +344,18 @@ mod tests {
         let result = group_video_and_subtitle_files(raw_files);
         assert_eq!(result.len(), 3);
 
-        let movie1 = result.iter().find(|f| f.video.name == "movie1.mp4").unwrap();
-        let movie2 = result.iter().find(|f| f.video.name == "movie2.mkv").unwrap();
-        let movie3 = result.iter().find(|f| f.video.name == "movie3.avi").unwrap();
+        let movie1 = result
+            .iter()
+            .find(|f| f.video.name == "movie1.mp4")
+            .unwrap();
+        let movie2 = result
+            .iter()
+            .find(|f| f.video.name == "movie2.mkv")
+            .unwrap();
+        let movie3 = result
+            .iter()
+            .find(|f| f.video.name == "movie3.avi")
+            .unwrap();
 
         assert_eq!(movie1.subtitles.len(), 2);
         assert_eq!(movie2.subtitles.len(), 1);

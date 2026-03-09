@@ -200,7 +200,10 @@ mod tests {
             "Anaconda.2025.2160p.iT.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.mkv"
         );
         assert_eq!(entry.size, 18617794907);
-        assert_eq!(entry.sha, Some("09619DF88530E74163823E54A78AD3412E2B82FC".to_string()));
+        assert_eq!(
+            entry.sha,
+            Some("09619DF88530E74163823E54A78AD3412E2B82FC".to_string())
+        );
         assert!(entry.is_file());
     }
 

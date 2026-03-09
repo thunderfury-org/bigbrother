@@ -1,8 +1,14 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QuerySelect};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter, QuerySelect,
+};
 
 use super::model::event;
 
-pub async fn list_next_records<C>(db: &C, name: &str, limit: u64) -> Result<Vec<event::Model>, DbErr>
+pub async fn list_next_records<C>(
+    db: &C,
+    name: &str,
+    limit: u64,
+) -> Result<Vec<event::Model>, DbErr>
 where
     C: ConnectionTrait,
 {

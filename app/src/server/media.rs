@@ -15,9 +15,14 @@ use crate::{client::RequestError, state::AppState};
 pub(super) fn new_router(state: AppState) -> Router {
     let path = format!(
         "{}/{{*path}}",
-        state.config().get_media_server_config().get_strm_path_prefix()
+        state
+            .config()
+            .get_media_server_config()
+            .get_strm_path_prefix()
     );
-    Router::new().route(path.as_str(), get(redirect)).with_state(state)
+    Router::new()
+        .route(path.as_str(), get(redirect))
+        .with_state(state)
 }
 
 async fn redirect(
@@ -31,7 +36,11 @@ async fn redirect(
     }
 
     match file_id.unwrap().parse::<i64>() {
-        Err(e) => (StatusCode::BAD_REQUEST, format!("file_id is invalid: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            format!("file_id is invalid: {}", e),
+        )
+            .into_response(),
         Ok(id) => {
             // Try to get URL from cache first
             let cache_key = format!("pan123:download_url:{}", id);
@@ -45,13 +54,20 @@ async fn redirect(
                 Ok(url) => {
                     if url.is_empty() {
                         error!("Failed to get download url of file {}, id: {}", path, id);
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response();
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to get download url",
+                        )
+                            .into_response();
                     }
 
                     // Cache the URL for 30 minutes on success
                     let ttl = Duration::from_mins(30);
                     if let Err(e) = state.cache().set(&cache_key, &url, Some(ttl)).await {
-                        error!("Failed to cache download url for file {}, id: {}, {}", path, id, e);
+                        error!(
+                            "Failed to cache download url for file {}, id: {}, {}",
+                            path, id, e
+                        );
                         // Continue even if caching fails
                     }
 
@@ -59,7 +75,10 @@ async fn redirect(
                 }
                 Err(e) => match e {
                     RequestError::Unauthorized => {
-                        error!("Unauthorized to get download url of file {}, id: {}", path, id);
+                        error!(
+                            "Unauthorized to get download url of file {}, id: {}",
+                            path, id
+                        );
                         (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
                     }
                     RequestError::NotFound(_) => {
@@ -67,8 +86,15 @@ async fn redirect(
                         (StatusCode::NOT_FOUND, "File not found").into_response()
                     }
                     _ => {
-                        error!("Failed to get download url of file {}, id: {}, {}", path, id, e);
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get download url").into_response()
+                        error!(
+                            "Failed to get download url of file {}, id: {}, {}",
+                            path, id, e
+                        );
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to get download url",
+                        )
+                            .into_response()
                     }
                 },
             }
@@ -117,7 +143,11 @@ mod tests {
         // Pre-populate cache with a URL
         let cache_key = "pan123:download_url:12345";
         let test_url = "https://example.com/download/test.mp4";
-        state.cache().set(cache_key, &test_url.to_string(), None).await.unwrap();
+        state
+            .cache()
+            .set(cache_key, &test_url.to_string(), None)
+            .await
+            .unwrap();
 
         let mut params = HashMap::new();
         params.insert("file_id".to_string(), "12345".to_string());

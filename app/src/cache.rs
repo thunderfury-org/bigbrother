@@ -36,7 +36,12 @@ impl Cache {
         }
     }
 
-    pub async fn set<V: Serialize + Send + Sync>(&self, key: &str, value: &V, ttl: Option<Duration>) -> AppResult<()> {
+    pub async fn set<V: Serialize + Send + Sync>(
+        &self,
+        key: &str,
+        value: &V,
+        ttl: Option<Duration>,
+    ) -> AppResult<()> {
         let value_json = serde_json::to_string(value)?;
         let expired_at = ttl.map(|d| Utc::now() + chrono::Duration::from_std(d).unwrap());
 
@@ -169,9 +174,18 @@ mod tests {
         let cache = Cache::new(db);
 
         // Set multiple keys with different TTLs
-        cache.set("expired1", &1, Some(Duration::from_millis(1))).await.unwrap();
-        cache.set("expired2", &2, Some(Duration::from_millis(1))).await.unwrap();
-        cache.set("valid", &3, Some(Duration::from_secs(3600))).await.unwrap();
+        cache
+            .set("expired1", &1, Some(Duration::from_millis(1)))
+            .await
+            .unwrap();
+        cache
+            .set("expired2", &2, Some(Duration::from_millis(1)))
+            .await
+            .unwrap();
+        cache
+            .set("valid", &3, Some(Duration::from_secs(3600)))
+            .await
+            .unwrap();
         cache.set("no_ttl", &4, None).await.unwrap();
 
         // Wait for expiration

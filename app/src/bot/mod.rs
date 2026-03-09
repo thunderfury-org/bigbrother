@@ -13,6 +13,7 @@ pub async fn run(state: AppState) {
 
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
+        .branch(Update::filter_callback_query().endpoint(cmd::handle_callback_query))
         .branch(
             Update::filter_message()
                 .filter_command::<cmd::Command>()
@@ -79,7 +80,14 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
 async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
     info!("Received message from {:?}", msg.chat);
 
-    let user_id = UserId(state.config().get_telegram_config().user_id.try_into().unwrap());
+    let user_id = UserId(
+        state
+            .config()
+            .get_telegram_config()
+            .user_id
+            .try_into()
+            .unwrap(),
+    );
     if msg.from.as_ref().is_none_or(|u| u.id != user_id) {
         info!("Ignoring message from unauthorized user: {:?}", msg.from);
         // Ignore messages not from the specified user

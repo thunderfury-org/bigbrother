@@ -83,7 +83,11 @@ impl Client {
         }
     }
 
-    async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
+    async fn get<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        query: Option<Vec<(&str, &str)>>,
+    ) -> RequestResult<T> {
         let mut request_query = vec![
             ("language", "zh-CN"),
             ("include_adult", "true"),
@@ -96,7 +100,11 @@ impl Client {
         super::http::get(format!("{TMDB_HOST}{url}"), Some(request_query), None).await
     }
 
-    pub async fn search_movie(&self, query: &str, year: &str) -> RequestResult<Vec<SearchMovieResult>> {
+    pub async fn search_movie(
+        &self,
+        query: &str,
+        year: &str,
+    ) -> RequestResult<Vec<SearchMovieResult>> {
         self.get::<SearchMovieResponse>(
             "/search/movie",
             Some(vec![("query", query), ("primary_release_year", year)]),

@@ -7,10 +7,18 @@ pub async fn get_by_key<C>(db: &C, key: &str) -> Result<Option<cache::Model>, Db
 where
     C: ConnectionTrait,
 {
-    cache::Entity::find().filter(cache::Column::Key.eq(key)).one(db).await
+    cache::Entity::find()
+        .filter(cache::Column::Key.eq(key))
+        .one(db)
+        .await
 }
 
-pub async fn set_record<C>(db: &C, key: &str, value: &str, expired_at: Option<DateTimeUtc>) -> Result<(), DbErr>
+pub async fn set_record<C>(
+    db: &C,
+    key: &str,
+    value: &str,
+    expired_at: Option<DateTimeUtc>,
+) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {

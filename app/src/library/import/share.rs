@@ -26,7 +26,11 @@ impl<'a> ShareUrl<'a> {
             && (url.path().starts_with("/t/") || url.path() == "/web/share")
         {
             Some(Self::Pan189(url))
-        } else if url.host_str().is_some_and(|h| h == "115.com" || h == "115cdn.com") && url.path().starts_with("/s/") {
+        } else if url
+            .host_str()
+            .is_some_and(|h| h == "115.com" || h == "115cdn.com")
+            && url.path().starts_with("/s/")
+        {
             Some(Self::Pan115(url))
         } else {
             None
@@ -43,7 +47,10 @@ impl<'a> ShareUrl<'a> {
 }
 
 impl Importer {
-    pub async fn import_from_share_url(&mut self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
+    pub async fn import_from_share_url(
+        &mut self,
+        url: &ShareUrl<'_>,
+    ) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from share URL: {}", url.get_url());
         match url {
             ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
@@ -63,7 +70,9 @@ impl Importer {
             .map(|(_, v)| v.to_string())
             .unwrap_or_default();
 
-        let media_files = self.list_files_from_pan123_share(share_key, &share_password).await?;
+        let media_files = self
+            .list_files_from_pan123_share(share_key, &share_password)
+            .await?;
         info!("found {} media files from pan123 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
@@ -114,7 +123,9 @@ impl Importer {
             )));
         }
 
-        let media_files = self.list_files_from_pan115_share(share_code, &receive_code).await?;
+        let media_files = self
+            .list_files_from_pan115_share(share_code, &receive_code)
+            .await?;
         info!("found {} media files from pan115 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
@@ -167,8 +178,16 @@ impl Importer {
         Ok(all_files)
     }
 
-    async fn list_files_from_pan189_share(&mut self, share_code: &str) -> AppResult<Vec<MediaFile>> {
-        let share_info = self.state.client().pan189.get_share_info(share_code).await?;
+    async fn list_files_from_pan189_share(
+        &mut self,
+        share_code: &str,
+    ) -> AppResult<Vec<MediaFile>> {
+        let share_info = self
+            .state
+            .client()
+            .pan189
+            .get_share_info(share_code)
+            .await?;
 
         let mut all_files = Vec::new();
         let mut stack = vec![(share_info.file_id, share_info.file_name.to_owned())];
@@ -182,7 +201,10 @@ impl Importer {
                 .await?;
 
             for folder in &folders {
-                stack.push((folder.id.to_owned(), format!("{}/{}", parent_path, folder.name)));
+                stack.push((
+                    folder.id.to_owned(),
+                    format!("{}/{}", parent_path, folder.name),
+                ));
             }
 
             let mut media_files_in_dir = Vec::new();

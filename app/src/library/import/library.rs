@@ -30,7 +30,10 @@ impl Importer {
         Ok(grouped_files)
     }
 
-    pub(super) async fn list_movie_files_in_library(&mut self, movie_dir_id: i64) -> AppResult<Vec<MediaFile>> {
+    pub(super) async fn list_movie_files_in_library(
+        &mut self,
+        movie_dir_id: i64,
+    ) -> AppResult<Vec<MediaFile>> {
         self.list_media_files_in_library(movie_dir_id).await
     }
 
@@ -191,12 +194,19 @@ mod tests {
     #[test]
     fn test_get_movie_base_name() {
         let movie = create_test_movie(98765, "The Matrix", "1999-03-31", vec![], vec![]);
-        assert_eq!(get_movie_base_name(&movie), "The Matrix (1999) {tmdb-98765}");
+        assert_eq!(
+            get_movie_base_name(&movie),
+            "The Matrix (1999) {tmdb-98765}"
+        );
 
         let movie_no_date = create_test_movie(11111, "Unknown", "", vec![], vec![]);
-        assert_eq!(get_movie_base_name(&movie_no_date), "Unknown () {tmdb-11111}");
+        assert_eq!(
+            get_movie_base_name(&movie_no_date),
+            "Unknown () {tmdb-11111}"
+        );
 
-        let movie_special_chars = create_test_movie(22222, "Star Wars: Episode IV", "1977-05-25", vec![], vec![]);
+        let movie_special_chars =
+            create_test_movie(22222, "Star Wars: Episode IV", "1977-05-25", vec![], vec![]);
         assert_eq!(
             get_movie_base_name(&movie_special_chars),
             "Star Wars: Episode IV (1977) {tmdb-22222}"
@@ -210,12 +220,24 @@ mod tests {
             id: 16,
             name: "Animation".to_string(),
         }];
-        let tv = create_test_tv(12345, "进击的巨人", "2013-04-07", genres, vec!["JP".to_string()]);
+        let tv = create_test_tv(
+            12345,
+            "进击的巨人",
+            "2013-04-07",
+            genres,
+            vec!["JP".to_string()],
+        );
         let path = get_tv_path_in_library("/media", &tv);
         assert_eq!(path, "/media/动漫/日韩/进击的巨人 (2013) {tmdb-12345}");
 
         // Test with regular TV series (no special genre) and US origin
-        let tv_regular = create_test_tv(67890, "Friends", "1994-09-22", vec![], vec!["US".to_string()]);
+        let tv_regular = create_test_tv(
+            67890,
+            "Friends",
+            "1994-09-22",
+            vec![],
+            vec!["US".to_string()],
+        );
         let path = get_tv_path_in_library("/library", &tv_regular);
         assert_eq!(path, "/library/电视剧/欧美/Friends (1994) {tmdb-67890}");
 
@@ -224,7 +246,13 @@ mod tests {
             id: 99,
             name: "Documentary".to_string(),
         }];
-        let tv_doc = create_test_tv(111, "舌尖上的中国", "2012-05-14", genres_doc, vec!["CN".to_string()]);
+        let tv_doc = create_test_tv(
+            111,
+            "舌尖上的中国",
+            "2012-05-14",
+            genres_doc,
+            vec!["CN".to_string()],
+        );
         let path = get_tv_path_in_library("/data", &tv_doc);
         assert_eq!(path, "/data/纪录片/国产/舌尖上的中国 (2012) {tmdb-111}");
 
@@ -233,7 +261,13 @@ mod tests {
             id: 10764,
             name: "Reality".to_string(),
         }];
-        let tv_variety = create_test_tv(222, "Running Man", "2010-07-11", genres_variety, vec!["XX".to_string()]);
+        let tv_variety = create_test_tv(
+            222,
+            "Running Man",
+            "2010-07-11",
+            genres_variety,
+            vec!["XX".to_string()],
+        );
         let path = get_tv_path_in_library("/shows", &tv_variety);
         assert_eq!(path, "/shows/综艺/其它/Running Man (2010) {tmdb-222}");
     }
@@ -241,22 +275,46 @@ mod tests {
     #[test]
     fn test_get_movie_path_in_library() {
         // Test with US origin
-        let movie = create_test_movie(98765, "Inception", "2010-07-16", vec![], vec!["US".to_string()]);
+        let movie = create_test_movie(
+            98765,
+            "Inception",
+            "2010-07-16",
+            vec![],
+            vec!["US".to_string()],
+        );
         let path = get_movie_path_in_library("/media", &movie);
         assert_eq!(path, "/media/电影/欧美/Inception (2010) {tmdb-98765}");
 
         // Test with Chinese origin
-        let movie_cn = create_test_movie(11111, "流浪地球", "2019-02-05", vec![], vec!["CN".to_string()]);
+        let movie_cn = create_test_movie(
+            11111,
+            "流浪地球",
+            "2019-02-05",
+            vec![],
+            vec!["CN".to_string()],
+        );
         let path = get_movie_path_in_library("/library", &movie_cn);
         assert_eq!(path, "/library/电影/国产/流浪地球 (2019) {tmdb-11111}");
 
         // Test with Japanese origin
-        let movie_jp = create_test_movie(22222, "君の名は", "2016-08-26", vec![], vec!["JP".to_string()]);
+        let movie_jp = create_test_movie(
+            22222,
+            "君の名は",
+            "2016-08-26",
+            vec![],
+            vec!["JP".to_string()],
+        );
         let path = get_movie_path_in_library("/movies", &movie_jp);
         assert_eq!(path, "/movies/电影/日韩/君の名は (2016) {tmdb-22222}");
 
         // Test with unknown origin country
-        let movie_other = create_test_movie(33333, "Some Movie", "2020-01-01", vec![], vec!["ZZ".to_string()]);
+        let movie_other = create_test_movie(
+            33333,
+            "Some Movie",
+            "2020-01-01",
+            vec![],
+            vec!["ZZ".to_string()],
+        );
         let path = get_movie_path_in_library("/data", &movie_other);
         assert_eq!(path, "/data/电影/其它/Some Movie (2020) {tmdb-33333}");
 
@@ -285,7 +343,13 @@ mod tests {
                 name: "Documentary".to_string(),
             },
         ];
-        let tv = create_test_tv(333, "Reality Doc", "2020-01-01", genres, vec!["US".to_string()]);
+        let tv = create_test_tv(
+            333,
+            "Reality Doc",
+            "2020-01-01",
+            genres,
+            vec!["US".to_string()],
+        );
         let path = get_tv_path_in_library("/media", &tv);
         // Should be 综艺 (variety) because reality genre comes first
         assert_eq!(path, "/media/综艺/欧美/Reality Doc (2020) {tmdb-333}");
@@ -293,13 +357,22 @@ mod tests {
 
     #[test]
     fn test_paths_with_different_remote_paths() {
-        let movie = create_test_movie(123, "Test Movie", "2020-01-01", vec![], vec!["US".to_string()]);
+        let movie = create_test_movie(
+            123,
+            "Test Movie",
+            "2020-01-01",
+            vec![],
+            vec!["US".to_string()],
+        );
 
         let path1 = get_movie_path_in_library("/mnt/media", &movie);
         assert_eq!(path1, "/mnt/media/电影/欧美/Test Movie (2020) {tmdb-123}");
 
         let path2 = get_movie_path_in_library("/data/library", &movie);
-        assert_eq!(path2, "/data/library/电影/欧美/Test Movie (2020) {tmdb-123}");
+        assert_eq!(
+            path2,
+            "/data/library/电影/欧美/Test Movie (2020) {tmdb-123}"
+        );
 
         let path3 = get_movie_path_in_library(".", &movie);
         assert_eq!(path3, "./电影/欧美/Test Movie (2020) {tmdb-123}");

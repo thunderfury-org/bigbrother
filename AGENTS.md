@@ -1,156 +1,27 @@
-# Development Guidelines
+# Repository Guidelines
 
-## Philosophy
+## Project Structure & Module Organization
+This repository is a Rust workspace. The main application lives in `app/`, and database migrations live in `migration/`. Application code is organized by responsibility under `app/src/`, including `bot/`, `client/`, `library/`, `media/`, `server/`, and `entity/`. Configuration defaults live in `config/config.yaml`; helper scripts are in `tools/`; request notes and other reference material are in `doc/`. Tests are mostly inline unit tests within each Rust module, with fixture data under `app/src/media/testdata/`.
 
-### Core Beliefs
+## Build, Test, and Development Commands
+Use the `Makefile` for common tasks:
 
-- **Incremental progress over big bangs** - Small changes that compile and pass tests
-- **Learning from existing code** - Study and plan before implementing
-- **Pragmatic over dogmatic** - Adapt to project reality
-- **Clear intent over clever code** - Be boring and obvious
+- `make build`: build the default workspace member (`app`).
+- `make build-release`: compile the optimized release binary.
+- `make test`: run all workspace tests with `cargo test`.
+- `make fmt`: format all Rust code with `cargo fmt --all`.
+- `make lint`: enforce formatting and fail on Clippy warnings.
 
-### Simplicity Means
+For local execution, run `cargo run -- server --data-dir ./data`. For container builds, the repo includes a multi-stage `Dockerfile`.
 
-- Single responsibility per function/class
-- Avoid premature abstractions
-- No clever tricks - choose the boring solution
-- If you need to explain it, it's too complex
+## Coding Style & Naming Conventions
+Rust uses edition 2024. Follow `.editorconfig`: 4-space indentation for `*.rs`, LF line endings, UTF-8, and a final newline. Keep modules and files in `snake_case`; use `CamelCase` for types and `SCREAMING_SNAKE_CASE` for constants. Prefer small, focused modules and derive-based Clap/Serde patterns consistent with the existing codebase. Run `make fmt` and `make lint` before opening a PR.
 
-## Process
+## Testing Guidelines
+Add unit tests next to the code they validate using `#[cfg(test)]`. Use `#[tokio::test]` for async flows and `wiremock` when covering HTTP clients. Keep test names descriptive, such as `parses_episode_filename` or `returns_cached_entry`. When parser behavior depends on fixtures, place sample data in `app/src/media/testdata/`.
 
-### 1. Planning & Staging
+## Commit & Pull Request Guidelines
+Recent history uses short, imperative commit subjects such as `sync strm` and `fix download url`, often followed by a PR number in parentheses. Keep subjects concise and lowercase when possible; separate unrelated changes into distinct commits. Pull requests should summarize behavior changes, mention config or migration impacts, link the relevant issue, and include logs or screenshots when bot/server output changes user-visible behavior.
 
-Break complex work into 3-5 stages. Document in `IMPLEMENTATION_PLAN.md`:
-
-```markdown
-## Stage N: [Name]
-
-**Goal**: [Specific deliverable]
-**Success Criteria**: [Testable outcomes]
-**Tests**: [Specific test cases]
-**Status**: [Not Started|In Progress|Complete]
-```
-
-- Update status as you progress
-- Remove file when all stages are done
-
-### 2. Implementation Flow
-
-1. **Understand** - Study existing patterns in codebase
-2. **Test** - Write test first (red)
-3. **Implement** - Minimal code to pass (green)
-4. **Refactor** - Clean up with tests passing
-5. **Commit** - With clear message linking to plan
-
-### 3. When Stuck (After 3 Attempts)
-
-**CRITICAL**: Maximum 3 attempts per issue, then STOP.
-
-1. **Document what failed**:
-   - What you tried
-   - Specific error messages
-   - Why you think it failed
-
-2. **Research alternatives**:
-   - Find 2-3 similar implementations
-   - Note different approaches used
-
-3. **Question fundamentals**:
-   - Is this the right abstraction level?
-   - Can this be split into smaller problems?
-   - Is there a simpler approach entirely?
-
-4. **Try different angle**:
-   - Different library/framework feature?
-   - Different architectural pattern?
-   - Remove abstraction instead of adding?
-
-## Technical Standards
-
-### Architecture Principles
-
-- **Composition over inheritance** - Use dependency injection
-- **Interfaces over singletons** - Enable testing and flexibility
-- **Explicit over implicit** - Clear data flow and dependencies
-- **Test-driven when possible** - Never disable tests, fix them
-
-### Code Quality
-
-- **Every commit must**:
-  - Compile successfully
-  - Pass all existing tests
-  - Include tests for new functionality
-  - Follow project formatting/linting
-
-- **Before committing**:
-  - Run formatters/linters
-  - Self-review changes
-  - Ensure commit message explains "why"
-
-### Error Handling
-
-- Fail fast with descriptive messages
-- Include context for debugging
-- Handle errors at appropriate level
-- Never silently swallow exceptions
-
-## Decision Framework
-
-When multiple valid approaches exist, choose based on:
-
-1. **Testability** - Can I easily test this?
-2. **Readability** - Will someone understand this in 6 months?
-3. **Consistency** - Does this match project patterns?
-4. **Simplicity** - Is this the simplest solution that works?
-5. **Reversibility** - How hard to change later?
-
-## Project Integration
-
-### Learning the Codebase
-
-- Find 3 similar features/components
-- Identify common patterns and conventions
-- Use same libraries/utilities when possible
-- Follow existing test patterns
-
-### Tooling
-
-- Use project's existing build system
-- Use project's test framework
-- Use project's formatter/linter settings
-- Don't introduce new tools without strong justification
-
-## Quality Gates
-
-### Definition of Done
-
-- [ ] Tests written and passing
-- [ ] Code follows project conventions
-- [ ] No linter/formatter warnings
-- [ ] Commit messages are clear
-- [ ] Implementation matches plan
-- [ ] No TODOs without issue numbers
-
-### Test Guidelines
-
-- Test behavior, not implementation
-- One assertion per test when possible
-- Clear test names describing scenario
-- Use existing test utilities/helpers
-- Tests should be deterministic
-
-## Important Reminders
-
-**NEVER**:
-
-- Use `--no-verify` to bypass commit hooks
-- Disable tests instead of fixing them
-- Commit code that doesn't compile
-- Make assumptions - verify with existing code
-
-**ALWAYS**:
-
-- Commit working code incrementally
-- Update plan documentation as you go
-- Learn from existing implementations
-- Stop after 3 failed attempts and reassess
+## Configuration & Data
+Do not commit secrets or local data directories. Keep API keys and service credentials in local config only, and use `--data-dir` to isolate test data from real state.

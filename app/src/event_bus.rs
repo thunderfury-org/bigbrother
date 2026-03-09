@@ -90,8 +90,13 @@ impl EventBus {
                                     event_name, record.payload, e
                                 );
                                 // Mark as acknowledged to prevent infinite retry of malformed data
-                                if let Err(ack_err) = event::mark_as_acknowledged(&db, record.id).await {
-                                    error!("Failed to mark malformed event as acknowledged, {}", ack_err);
+                                if let Err(ack_err) =
+                                    event::mark_as_acknowledged(&db, record.id).await
+                                {
+                                    error!(
+                                        "Failed to mark malformed event as acknowledged, {}",
+                                        ack_err
+                                    );
                                 }
                                 break;
                             }
@@ -102,7 +107,10 @@ impl EventBus {
                             Ok(_) => {
                                 // Success: mark as acknowledged
                                 if let Err(e) = event::mark_as_acknowledged(&db, record.id).await {
-                                    error!("Failed to mark event as acknowledged after processing, {}", e);
+                                    error!(
+                                        "Failed to mark event as acknowledged after processing, {}",
+                                        e
+                                    );
                                 }
                                 break;
                             }

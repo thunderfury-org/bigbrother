@@ -119,7 +119,10 @@ impl Importer {
         self.import_from_resource_json(&resource).await
     }
 
-    async fn import_from_resource_json(&mut self, resource: &ResourceJson) -> AppResult<Vec<ImportedMedia>> {
+    async fn import_from_resource_json(
+        &mut self,
+        resource: &ResourceJson,
+    ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.list_files_from_json(resource);
         self.transfer_media_files(&media_files).await
     }

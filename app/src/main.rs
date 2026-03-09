@@ -41,7 +41,9 @@ async fn run_server(data_dir: &str) {
         .expect("Failed to initialize application state");
     logger::init(state.config().get_log_dir().as_str());
 
-    Migrator::up(state.db(), None).await.expect("Migration failed");
+    Migrator::up(state.db(), None)
+        .await
+        .expect("Migration failed");
     tokio::join!(
         server::run(state.clone()),
         bot::run(state.clone()),
