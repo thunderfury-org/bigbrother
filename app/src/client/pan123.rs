@@ -174,7 +174,10 @@ impl Client {
                     ))
                 }
             }
-            None => Err(RequestError::NotFound(format!("file {} not found", file_id))),
+            None => Err(RequestError::NotFound(format!(
+                "file {} not found",
+                file_id
+            ))),
         }
     }
 
@@ -327,7 +330,10 @@ impl Client {
 
     pub async fn trash_files(&self, file_ids: &[i64]) -> RequestResult<()> {
         for chunk in file_ids.chunks(100) {
-            let files = chunk.iter().map(|id| json!({"FileId": id})).collect::<Vec<_>>();
+            let files = chunk
+                .iter()
+                .map(|id| json!({"FileId": id}))
+                .collect::<Vec<_>>();
             self.post::<_, TrashResponse>(
                 self.build_api_url("/api/file/trash"),
                 None,
@@ -354,7 +360,10 @@ impl Client {
             return Ok(0);
         }
 
-        let parts = folder_path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        let parts = folder_path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
         let mut current_file_id = 0;
         for part in parts {
             match self.mkdir(current_file_id, part).await {
@@ -410,7 +419,10 @@ impl Client {
             return Ok(None);
         }
 
-        let parts = path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        let parts = path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
         let last_part = parts.last().unwrap();
         let search_results = self.search(last_part).await?;
 
@@ -448,7 +460,10 @@ impl Client {
     }
 
     async fn mutli_get(&self, file_ids: &[i64]) -> RequestResult<HashMap<i64, FileDetail>> {
-        let files = file_ids.iter().map(|id| json!({"FileId": id})).collect::<Vec<_>>();
+        let files = file_ids
+            .iter()
+            .map(|id| json!({"FileId": id}))
+            .collect::<Vec<_>>();
         self.post::<_, MultiGetResponse>(
             self.build_api_url("/api/file/info"),
             None,
@@ -462,7 +477,11 @@ impl Client {
         .map(|r| r.file_list.into_iter().map(|f| (f.file_id, f)).collect())
     }
 
-    async fn get<T: DeserializeOwned>(&self, url: String, query: Option<Vec<(&str, &str)>>) -> RequestResult<T> {
+    async fn get<T: DeserializeOwned>(
+        &self,
+        url: String,
+        query: Option<Vec<(&str, &str)>>,
+    ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
         let headers = Some(vec![
             (APP_VERSION_KEY, APP_VERSION_VALUE),
@@ -601,8 +620,12 @@ impl Client {
 
         let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
         if !Path::new(&self.cache_dir).exists() {
-            fs::create_dir_all(&self.cache_dir)
-                .map_err(|e| RequestError::Error(format!("create cache dir [{}] failed, {}", self.cache_dir, e)))?;
+            fs::create_dir_all(&self.cache_dir).map_err(|e| {
+                RequestError::Error(format!(
+                    "create cache dir [{}] failed, {}",
+                    self.cache_dir, e
+                ))
+            })?;
         }
 
         match serde_json::to_string(token) {
@@ -613,7 +636,10 @@ impl Client {
                     path, e
                 ))),
             },
-            Err(e) => Err(RequestError::Error(format!("serialize token failed, {}", e))),
+            Err(e) => Err(RequestError::Error(format!(
+                "serialize token failed, {}",
+                e
+            ))),
         }
     }
 

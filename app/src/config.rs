@@ -92,7 +92,9 @@ impl TryFrom<&str> for Manager {
 
     fn try_from(data_dir: &str) -> Result<Self, Self::Error> {
         if data_dir.is_empty() {
-            return Err(AppError::InvalidParameter("config dir is empty".to_string()));
+            return Err(AppError::InvalidParameter(
+                "config dir is empty".to_string(),
+            ));
         }
 
         let config_file = format!("{data_dir}/config/config.yaml");
@@ -108,7 +110,10 @@ impl TryFrom<&str> for Manager {
                 data_dir: data_dir.to_owned(),
                 app_config: Box::new(config),
             }),
-            Err(e) => Err(AppError::InvalidParameter(format!("parse config file error, {}", e))),
+            Err(e) => Err(AppError::InvalidParameter(format!(
+                "parse config file error, {}",
+                e
+            ))),
         }
     }
 }
@@ -140,6 +145,10 @@ impl MediaServerConfig {
     }
 
     pub fn get_strm_download_url(&self) -> String {
-        format!("{}{}", self.get_advertise_base_url(), self.get_strm_path_prefix())
+        format!(
+            "{}{}",
+            self.get_advertise_base_url(),
+            self.get_strm_path_prefix()
+        )
     }
 }

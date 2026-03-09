@@ -63,7 +63,9 @@ impl AppState {
             inner: Arc::new(InnerAppState {
                 client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
-                bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
+                bot: Arc::new(teloxide::Bot::new(
+                    config.get_telegram_config().bot_token.as_str(),
+                )),
                 cache: cache::Cache::new(db.clone()),
                 db,
                 config: Arc::new(config),
@@ -104,7 +106,9 @@ impl AppState {
             inner: Arc::new(InnerAppState {
                 client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
-                bot: Arc::new(teloxide::Bot::new(config.get_telegram_config().bot_token.as_str())),
+                bot: Arc::new(teloxide::Bot::new(
+                    config.get_telegram_config().bot_token.as_str(),
+                )),
                 cache: cache::Cache::new(db.clone()),
                 db,
                 config: Arc::new(config),

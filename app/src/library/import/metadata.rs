@@ -19,21 +19,26 @@ impl Importer {
             return meta.clone();
         }
 
-        let parts = parent_path.split('/').filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        let parts = parent_path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
         if parts.is_empty() {
             return Box::new(Metadata::default());
         }
 
         let mut meta = Metadata::parse(parts.last().unwrap());
         if !is_tv || parts.len() < 2 {
-            self.metadata_cache.insert(parent_path.to_string(), meta.clone());
+            self.metadata_cache
+                .insert(parent_path.to_string(), meta.clone());
             return meta;
         }
 
         let path_meta = Metadata::parse(parts[parts.len() - 2]);
         meta.merge_metadata(&path_meta);
 
-        self.metadata_cache.insert(parent_path.to_string(), meta.clone());
+        self.metadata_cache
+            .insert(parent_path.to_string(), meta.clone());
         meta
     }
 }

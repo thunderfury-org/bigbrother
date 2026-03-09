@@ -49,16 +49,22 @@ impl Syncer {
                 } else if meta.is_video() {
                     let local_path = self.remote_to_local_strm_path(&file_path, &meta.extension);
                     expected_files_in_dir.insert(local_path.clone());
-                    self.sync_strm_file(&file_path, file.file_id, &local_path).await?;
+                    self.sync_strm_file(&file_path, file.file_id, &local_path)
+                        .await?;
                 } else if meta.file_type == FileType::Subtitle {
                     let local_path = self.remote_to_local_path(&file_path);
                     expected_files_in_dir.insert(local_path.clone());
-                    self.sync_subtitle_file(file.file_id, file.size, &local_path).await?;
+                    self.sync_subtitle_file(file.file_id, file.size, &local_path)
+                        .await?;
                 }
             }
 
-            self.reconcile_local_dir(current_local_dir.as_str(), &expected_files_in_dir, &expected_sub_dirs)
-                .await?;
+            self.reconcile_local_dir(
+                current_local_dir.as_str(),
+                &expected_files_in_dir,
+                &expected_sub_dirs,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -66,7 +72,11 @@ impl Syncer {
     fn remote_to_local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
         remote_file_path
             .replace(
-                self.state.config().get_library_config().remote_path.as_str(),
+                self.state
+                    .config()
+                    .get_library_config()
+                    .remote_path
+                    .as_str(),
                 self.state.config().get_library_config().local_path.as_str(),
             )
             .trim_end_matches(extension)
@@ -76,15 +86,27 @@ impl Syncer {
 
     fn remote_to_local_path(&self, remote_file_path: &str) -> String {
         remote_file_path.replace(
-            self.state.config().get_library_config().remote_path.as_str(),
+            self.state
+                .config()
+                .get_library_config()
+                .remote_path
+                .as_str(),
             self.state.config().get_library_config().local_path.as_str(),
         )
     }
 
-    async fn sync_strm_file(&self, remote_file_path: &str, file_id: i64, local_path: &str) -> AppResult<()> {
+    async fn sync_strm_file(
+        &self,
+        remote_file_path: &str,
+        file_id: i64,
+        local_path: &str,
+    ) -> AppResult<()> {
         let expected_url = format!(
             "{}{}?file_id={}",
-            self.state.config().get_media_server_config().get_strm_download_url(),
+            self.state
+                .config()
+                .get_media_server_config()
+                .get_strm_download_url(),
             remote_file_path,
             file_id
         );
@@ -108,13 +130,22 @@ impl Syncer {
         Ok(())
     }
 
-    async fn sync_subtitle_file(&self, file_id: i64, remote_size: u64, local_path: &str) -> AppResult<()> {
+    async fn sync_subtitle_file(
+        &self,
+        file_id: i64,
+        remote_size: u64,
+        local_path: &str,
+    ) -> AppResult<()> {
         match tokio::fs::metadata(local_path).await {
             Ok(metadata) => {
                 if metadata.len() == remote_size {
                     return Ok(());
                 }
-                self.state.client().pan123.download_file(file_id, local_path).await?;
+                self.state
+                    .client()
+                    .pan123
+                    .download_file(file_id, local_path)
+                    .await?;
                 info!("Subtitle file updated: {}", local_path);
                 return Ok(());
             }
@@ -123,7 +154,11 @@ impl Syncer {
         }
 
         tokio::fs::create_dir_all(Path::new(local_path).parent().unwrap()).await?;
-        self.state.client().pan123.download_file(file_id, local_path).await?;
+        self.state
+            .client()
+            .pan123
+            .download_file(file_id, local_path)
+            .await?;
         info!("Subtitle file created: {}", local_path);
         Ok(())
     }

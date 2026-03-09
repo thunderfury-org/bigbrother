@@ -11,5 +11,8 @@ pub async fn shutdown_signal(desc: &str) {
         _ = term.recv() => {},
     }
 
-    info!("Signal received, starting graceful shutdown for {}...", desc);
+    info!(
+        "Signal received, starting graceful shutdown for {}...",
+        desc
+    );
 }

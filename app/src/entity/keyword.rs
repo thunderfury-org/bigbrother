@@ -28,16 +28,6 @@ where
     Ok(())
 }
 
-pub async fn get_keyword<C>(db: &C, value: &str) -> Result<Option<keyword::Model>, DbErr>
-where
-    C: ConnectionTrait,
-{
-    keyword::Entity::find()
-        .filter(keyword::Column::Value.eq(value))
-        .one(db)
-        .await
-}
-
 pub async fn delete_keyword_by_id<C>(db: &C, id: i64) -> Result<(), DbErr>
 where
     C: ConnectionTrait,

@@ -97,7 +97,12 @@ pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
                 request = request.header("content-type", "application/json");
                 request = request.body(body);
             }
-            Err(err) => return Err(RequestError::Error(format!("serialize http payload failed, {}", err))),
+            Err(err) => {
+                return Err(RequestError::Error(format!(
+                    "serialize http payload failed, {}",
+                    err
+                )));
+            }
         }
     }
 
@@ -124,7 +129,10 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
 
     match status {
         StatusCode::UNAUTHORIZED => Err(RequestError::Unauthorized),
-        StatusCode::NOT_FOUND => Err(RequestError::NotFound(format!("resource not found, url: {}", url))),
+        StatusCode::NOT_FOUND => Err(RequestError::NotFound(format!(
+            "resource not found, url: {}",
+            url
+        ))),
         _ => Err(RequestError::Error(format!(
             "http request to {url} failed, status: {status}, payload: {payload}",
         ))),
@@ -444,7 +452,10 @@ mod tests {
             .await;
 
         let temp_dir = std::env::temp_dir();
-        let nested_path = temp_dir.join("test_nested_dir").join("subdir").join("file.txt");
+        let nested_path = temp_dir
+            .join("test_nested_dir")
+            .join("subdir")
+            .join("file.txt");
         let file_path_str = nested_path.to_str().unwrap();
 
         // Clean up if exists

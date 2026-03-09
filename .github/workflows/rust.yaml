@@ -28,13 +28,10 @@ jobs:
           channel: stable
           components: rustfmt, clippy
 
-      - name: Build
-        run: cargo build
+      - name: Build & Test
+        run: cargo build && cargo test
 
       - name: Lint
         run: |
           cargo fmt --all -- --check
           cargo clippy -- -D warnings
-
-      - name: Test
-        run: cargo test

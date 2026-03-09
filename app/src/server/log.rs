@@ -28,7 +28,9 @@ where
 {
     type Response = Response;
     type Error = S::Error;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -52,7 +54,11 @@ where
             .map(|s| s.to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        let trace_id = req.extensions().get::<TraceId>().cloned().unwrap_or_default();
+        let trace_id = req
+            .extensions()
+            .get::<TraceId>()
+            .cloned()
+            .unwrap_or_default();
         let span = info_span!(
             "request",
             trace_id = %trace_id.as_str()

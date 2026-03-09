@@ -14,14 +14,21 @@ impl MigrationTrait for Migration {
                     .col(pk_auto(Keyword::Id))
                     .col(string(Keyword::Value))
                     .col(timestamp(Keyword::CreateTime))
-                    .index(Index::create().unique().name("idx-keyword-value").col(Keyword::Value))
+                    .index(
+                        Index::create()
+                            .unique()
+                            .name("idx-keyword-value")
+                            .col(Keyword::Value),
+                    )
                     .to_owned(),
             )
             .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.drop_table(Table::drop().table(Keyword::Table).to_owned()).await
+        manager
+            .drop_table(Table::drop().table(Keyword::Table).to_owned())
+            .await
     }
 }
 

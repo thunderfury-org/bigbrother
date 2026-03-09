@@ -9,14 +9,26 @@ use super::{Metadata, normalize::*};
 const RE_BEGIN: &str = r"(?i)[\. \-\[\{\(@]\s*";
 const RE_END: &str = r"\s*[\. \-\]\}\)@]";
 
-static TMDB_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!("{}{}{}", RE_BEGIN, r"tmdb(?:id)?[-=](?P<value>\d+)", RE_END)).unwrap());
-static FRAME_RATE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!("{}{}{}", RE_BEGIN, r"(?P<value>\d{2,3}fps)", RE_END)).unwrap());
+static TMDB_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        "{}{}{}",
+        RE_BEGIN, r"tmdb(?:id)?[-=](?P<value>\d+)", RE_END
+    ))
+    .unwrap()
+});
+static FRAME_RATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        "{}{}{}",
+        RE_BEGIN, r"(?P<value>\d{2,3}fps)", RE_END
+    ))
+    .unwrap()
+});
 static QUALITY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         "{}{}{}",
-        RE_BEGIN, r"(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)", RE_END
+        RE_BEGIN,
+        r"(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)",
+        RE_END
     ))
     .unwrap()
 });
@@ -50,8 +62,13 @@ static RESOLUTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .unwrap()
 });
-static YEAR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!("{}{}{}", RE_BEGIN, r"(?P<year>19\d{2}|20\d{2})", RE_END)).unwrap());
+static YEAR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        "{}{}{}",
+        RE_BEGIN, r"(?P<year>19\d{2}|20\d{2})", RE_END
+    ))
+    .unwrap()
+});
 static SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)([\.\s\[]S(?:eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)([E#-\[]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?)?")
         .unwrap()
@@ -59,11 +76,14 @@ static SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
 static EPISODE_ONLY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         "{}{}{}",
-        RE_BEGIN, r"[#第E]?\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[集]?", RE_END
+        RE_BEGIN,
+        r"[#第E]?\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[集]?",
+        RE_END
     ))
     .unwrap()
 });
-static RELEASE_GROUP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\s*(?P<value>[^\[\]]+)\s*\]").unwrap());
+static RELEASE_GROUP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\s*(?P<value>[^\[\]]+)\s*\]").unwrap());
 
 static NAME_NORMALIZE_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
@@ -85,9 +105,9 @@ static OTHER_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"第[^.\
 
 static VIDEO_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let extensions = [
-        ".3g2", ".3gp", ".3gp2", ".asf", ".avi", ".divx", ".flv", ".iso", ".m4v", ".mk2", ".mk3d", ".mka", ".mkv",
-        ".mov", ".mp4", ".mp4a", ".mpeg", ".mpg", ".ogg", ".ogm", ".ogv", ".qt", ".ra", ".ram", ".rm", ".ts", ".m2ts",
-        ".vob", ".wav", ".webm", ".wma", ".wmv",
+        ".3g2", ".3gp", ".3gp2", ".asf", ".avi", ".divx", ".flv", ".iso", ".m4v", ".mk2", ".mk3d",
+        ".mka", ".mkv", ".mov", ".mp4", ".mp4a", ".mpeg", ".mpg", ".ogg", ".ogm", ".ogv", ".qt",
+        ".ra", ".ram", ".rm", ".ts", ".m2ts", ".vob", ".wav", ".webm", ".wma", ".wmv",
     ];
     HashSet::from(extensions)
 });
@@ -98,7 +118,10 @@ static SUBTITLE_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 
 static LANG_MAP: LazyLock<Vec<(&'static str, Vec<&'static str>)>> = LazyLock::new(|| {
     vec![
-        (super::LANGUAGE_CHINESE_SIMPLIFIED, vec!["简", "chs", "gb", "zh-hans"]),
+        (
+            super::LANGUAGE_CHINESE_SIMPLIFIED,
+            vec!["简", "chs", "gb", "zh-hans"],
+        ),
         (
             super::LANGUAGE_CHINESE_TRADITIONAL,
             vec!["繁", "cht", "big5", "zh-hant"],
@@ -145,7 +168,11 @@ impl MetadataParser {
         self.update_title_index_end(start + 1);
     }
 
-    fn parse_value_from_name(&mut self, re: &Regex, normalizer: Option<fn(&str) -> String>) -> String {
+    fn parse_value_from_name(
+        &mut self,
+        re: &Regex,
+        normalizer: Option<fn(&str) -> String>,
+    ) -> String {
         if let Some(caps) = re.captures_iter(&self.name).last()
             && let Some(value_match) = caps.name("value")
         {
@@ -164,11 +191,14 @@ impl MetadataParser {
         self.normalize_name();
 
         self.info.tmdb_id = self.parse_value_from_name(&TMDB_RE, None);
-        self.info.frame_rate = self.parse_value_from_name(&FRAME_RATE_RE, Some(|s| s.to_lowercase()));
+        self.info.frame_rate =
+            self.parse_value_from_name(&FRAME_RATE_RE, Some(|s| s.to_lowercase()));
         self.info.quality = self.parse_value_from_name(&QUALITY_RE, Some(normalize_quality));
         self.info.hdr = self.parse_value_from_name(&HDR_RE, Some(normalize_hdr));
-        self.info.video_codec = self.parse_value_from_name(&VIDEO_CODEC_RE, Some(normalize_video_codec));
-        self.info.audio_codec = self.parse_value_from_name(&AUDIO_CODEC_RE, Some(normalize_audio_codec));
+        self.info.video_codec =
+            self.parse_value_from_name(&VIDEO_CODEC_RE, Some(normalize_video_codec));
+        self.info.audio_codec =
+            self.parse_value_from_name(&AUDIO_CODEC_RE, Some(normalize_audio_codec));
 
         self.parse_resolution();
         self.parse_year();
@@ -333,7 +363,10 @@ impl MetadataParser {
                 if r.language() == Language::Chinese {
                     titles.push(super::Title {
                         language: normalize_language(r.language()),
-                        title: part[r.start_index()..r.end_index()].replace("-", "").trim().to_owned(),
+                        title: part[r.start_index()..r.end_index()]
+                            .replace("-", "")
+                            .trim()
+                            .to_owned(),
                     });
                 } else {
                     titles.push(super::Title {

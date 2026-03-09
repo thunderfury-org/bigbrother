@@ -18,7 +18,10 @@ use crate::{
 };
 
 impl Importer {
-    pub(super) async fn transfer_media_files(&mut self, media_files: &[MediaFile]) -> AppResult<Vec<ImportedMedia>> {
+    pub(super) async fn transfer_media_files(
+        &mut self,
+        media_files: &[MediaFile],
+    ) -> AppResult<Vec<ImportedMedia>> {
         let mut results = Vec::with_capacity(media_files.len());
 
         let medias = self.group_media_files(media_files).await?;
@@ -45,17 +48,32 @@ impl Importer {
         detail: &MovieDetail,
         media_files: &[&MediaFile],
     ) -> AppResult<Option<ImportedMedia>> {
-        log_time!(format!("transfer movie {}", library::get_movie_base_name(detail)));
+        log_time!(format!(
+            "transfer movie {}",
+            library::get_movie_base_name(detail)
+        ));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.state.config().get_library_config().remote_path.as_str();
+        let remote_path = self
+            .state
+            .config()
+            .get_library_config()
+            .remote_path
+            .as_str();
         let movie_path = library::get_movie_path_in_library(remote_path, detail);
-        let movie_dir_id = self.get_or_create_dir_in_library(movie_path.as_str()).await?;
+        let movie_dir_id = self
+            .get_or_create_dir_in_library(movie_path.as_str())
+            .await?;
         let existing_files = self.list_movie_files_in_library(movie_dir_id).await?;
         let media_file = media_files
             .iter()
             .max_by(|a, b| a.video.size.cmp(&b.video.size))
-            .ok_or_else(|| AppError::NotFound(format!("no video file found when transfer movie {}", detail.title)))?;
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "no video file found when transfer movie {}",
+                    detail.title
+                ))
+            })?;
 
         if !existing_files.is_empty() {
             // existing files found, check if need overwrite
@@ -83,7 +101,8 @@ impl Importer {
             if !files.is_empty() {
                 // delete existing files
                 self.delete_files_in_library(&files).await?;
-                self.delete_files_in_local(movie_path.as_str(), &files).await?;
+                self.delete_files_in_local(movie_path.as_str(), &files)
+                    .await?;
             }
         }
         Ok(Some(ImportedMedia::Movie {
@@ -102,7 +121,12 @@ impl Importer {
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let remote_path = self.state.config().get_library_config().remote_path.as_str();
+        let remote_path = self
+            .state
+            .config()
+            .get_library_config()
+            .remote_path
+            .as_str();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
         let season_dir_ids = self.state.client().pan123.list_dir_ids(tv_dir_id).await?;
@@ -146,7 +170,12 @@ impl Importer {
             Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
             None => {
                 // create season folder if not exists
-                let id = self.state.client().pan123.mkdir(tv_dir_id, season_dir.as_str()).await?;
+                let id = self
+                    .state
+                    .client()
+                    .pan123
+                    .mkdir(tv_dir_id, season_dir.as_str())
+                    .await?;
                 info!(
                     "Tv series {} season {} folder {} created in library, id: {}",
                     detail.name, season_number, season_dir, id
@@ -188,7 +217,11 @@ impl Importer {
             name: detail.name.to_owned(),
             year: library::get_year_from_date(detail.first_air_date.as_str()).to_owned(),
             season: *season_number,
-            missing_episodes: self.get_missing_episodes(max_episode_number, &episodes, &existing_episode_files),
+            missing_episodes: self.get_missing_episodes(
+                max_episode_number,
+                &episodes,
+                &existing_episode_files,
+            ),
             episodes,
             max_episode_number,
             total_size,
@@ -207,7 +240,11 @@ impl Importer {
         0
     }
 
-    fn get_max_episode_number(&self, episodes: &[u32], existing_episode_files: &HashMap<u32, Vec<MediaFile>>) -> u32 {
+    fn get_max_episode_number(
+        &self,
+        episodes: &[u32],
+        existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
+    ) -> u32 {
         std::cmp::max(
             *episodes.iter().max().unwrap_or(&0),
             *existing_episode_files.keys().max().unwrap_or(&0),
@@ -234,7 +271,10 @@ impl Importer {
         missing_episodes
     }
 
-    async fn transfer_episode(&self, args: &TransferEpisodeArgs<'_>) -> AppResult<Option<(bool, u64)>> {
+    async fn transfer_episode(
+        &self,
+        args: &TransferEpisodeArgs<'_>,
+    ) -> AppResult<Option<(bool, u64)>> {
         let media_file = args
             .files
             .iter()
@@ -285,7 +325,8 @@ impl Importer {
                     if !files.is_empty() {
                         // delete existing files
                         self.delete_files_in_library(&files).await?;
-                        self.delete_files_in_local(args.season_full_path, &files).await?;
+                        self.delete_files_in_local(args.season_full_path, &files)
+                            .await?;
                     }
                 }
 
@@ -299,7 +340,10 @@ impl Importer {
     async fn delete_files_in_library(&self, files: &[&MediaFile]) -> AppResult<()> {
         let mut file_ids = Vec::new();
         for f in files {
-            info!("Deleting file {} from library, file id: {:?}", f.video.name, f.video.id);
+            info!(
+                "Deleting file {} from library, file id: {:?}",
+                f.video.name, f.video.id
+            );
             if let Some(id) = f.video.id {
                 file_ids.push(id);
             }
@@ -311,13 +355,25 @@ impl Importer {
             }
         }
 
-        self.state.client().pan123.trash_files(file_ids.as_slice()).await?;
+        self.state
+            .client()
+            .pan123
+            .trash_files(file_ids.as_slice())
+            .await?;
         Ok(())
     }
 
-    async fn delete_files_in_local(&self, remote_parent_path: &str, files: &[&MediaFile]) -> AppResult<()> {
+    async fn delete_files_in_local(
+        &self,
+        remote_parent_path: &str,
+        files: &[&MediaFile],
+    ) -> AppResult<()> {
         let local_parent_path = remote_parent_path.replace(
-            self.state.config().get_library_config().remote_path.as_str(),
+            self.state
+                .config()
+                .get_library_config()
+                .remote_path
+                .as_str(),
             self.state.config().get_library_config().local_path.as_str(),
         );
 
@@ -331,7 +387,10 @@ impl Importer {
             if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
                 && e.kind() != io::ErrorKind::NotFound
             {
-                return Err(AppError::Internal(format!("Failed to delete local file, error: {}", e)));
+                return Err(AppError::Internal(format!(
+                    "Failed to delete local file, error: {}",
+                    e
+                )));
             }
 
             for s in &f.subtitles {
@@ -340,7 +399,10 @@ impl Importer {
                 if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
                     && e.kind() != io::ErrorKind::NotFound
                 {
-                    return Err(AppError::Internal(format!("Failed to delete local file, error: {}", e)));
+                    return Err(AppError::Internal(format!(
+                        "Failed to delete local file, error: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -382,8 +444,13 @@ impl Importer {
             }
         }
 
-        self.transfer_video_file(parent_path, parent_dir_id, video_file_name.as_str(), media_file)
-            .await
+        self.transfer_video_file(
+            parent_path,
+            parent_dir_id,
+            video_file_name.as_str(),
+            media_file,
+        )
+        .await
     }
 
     async fn transfer_video_file(
@@ -426,17 +493,29 @@ impl Importer {
         }
     }
 
-    async fn create_strm_file(&self, remote_file_path: &str, extension: &str, file_id: i64) -> AppResult<()> {
+    async fn create_strm_file(
+        &self,
+        remote_file_path: &str,
+        extension: &str,
+        file_id: i64,
+    ) -> AppResult<()> {
         let strm_file_content = format!(
             "{}{}?file_id={}",
-            self.state.config().get_media_server_config().get_strm_download_url(),
+            self.state
+                .config()
+                .get_media_server_config()
+                .get_strm_download_url(),
             remote_file_path,
             file_id
         );
 
         let local_file_path = remote_file_path
             .replace(
-                self.state.config().get_library_config().remote_path.as_str(),
+                self.state
+                    .config()
+                    .get_library_config()
+                    .remote_path
+                    .as_str(),
                 self.state.config().get_library_config().local_path.as_str(),
             )
             .trim_end_matches(extension)
@@ -457,9 +536,16 @@ impl Importer {
         file_name_replace_from: &str,
         file_name_replace_to: &str,
     ) -> AppResult<bool> {
-        let file_name = raw_file.name.replace(file_name_replace_from, file_name_replace_to);
+        let file_name = raw_file
+            .name
+            .replace(file_name_replace_from, file_name_replace_to);
         let res = self
-            .transfer_raw_file(parent_dir_id, file_name.as_str(), raw_file.size, &raw_file.etag)
+            .transfer_raw_file(
+                parent_dir_id,
+                file_name.as_str(),
+                raw_file.size,
+                &raw_file.etag,
+            )
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", file_name, e);
@@ -470,7 +556,11 @@ impl Importer {
 
                 // download subtitle file
                 let local_file_path = format!("{}/{}", parent_path, file_name).replace(
-                    self.state.config().get_library_config().remote_path.as_str(),
+                    self.state
+                        .config()
+                        .get_library_config()
+                        .remote_path
+                        .as_str(),
                     self.state.config().get_library_config().local_path.as_str(),
                 );
                 self.state
@@ -542,7 +632,11 @@ fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
 
         let prefix = format!("{}{}", name_prefix, parts.join("."));
         if file.metadata.release_group.is_empty() {
-            format!("{}{}", prefix.trim_end_matches("."), file.metadata.extension)
+            format!(
+                "{}{}",
+                prefix.trim_end_matches("."),
+                file.metadata.extension
+            )
         } else {
             format!(
                 "{}-{}{}",
@@ -555,7 +649,9 @@ fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
 }
 
 fn need_overwrite_existing_files(existing_files: &[MediaFile], media_file: &MediaFile) -> bool {
-    existing_files.iter().all(|f| f.video.size < media_file.video.size)
+    existing_files
+        .iter()
+        .all(|f| f.video.size < media_file.video.size)
 }
 
 #[cfg(test)]
@@ -672,7 +768,8 @@ mod tests {
     #[test]
     fn test_format_video_file_name_minimal_metadata() {
         let prefix = "Movie.2020.";
-        let file = create_media_file_with_metadata("file.mkv", ".mkv", "720p", "", "", "", "", "", "");
+        let file =
+            create_media_file_with_metadata("file.mkv", ".mkv", "720p", "", "", "", "", "", "");
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Movie.2020.720p.mkv");
     }
@@ -716,22 +813,32 @@ mod tests {
             "GROUP",
         );
         let result_dv = format_video_file_name(prefix, &file_dv);
-        assert_eq!(result_dv, "HDR Movie.2022.2160p.BluRay.DV.H265.Atmos-GROUP.mkv");
+        assert_eq!(
+            result_dv,
+            "HDR Movie.2022.2160p.BluRay.DV.H265.Atmos-GROUP.mkv"
+        );
     }
 
     #[test]
     fn test_format_video_file_name_special_characters_in_prefix() {
         let prefix = "Star Wars: Episode IV.1977.";
-        let file = create_media_file_with_metadata("file.mkv", ".mkv", "1080p", "", "BluRay", "", "H264", "", "YTS");
+        let file = create_media_file_with_metadata(
+            "file.mkv", ".mkv", "1080p", "", "BluRay", "", "H264", "", "YTS",
+        );
         let result = format_video_file_name(prefix, &file);
-        assert_eq!(result, "Star Wars: Episode IV.1977.1080p.BluRay.H264-YTS.mkv");
+        assert_eq!(
+            result,
+            "Star Wars: Episode IV.1977.1080p.BluRay.H264-YTS.mkv"
+        );
     }
 
     #[test]
     fn test_format_video_file_name_partial_metadata() {
         // Test with only some metadata fields populated
         let prefix = "Series.2023.S02E05.";
-        let file = create_media_file_with_metadata("ep.mkv", ".mkv", "", "30fps", "", "", "H264", "", "AMZN");
+        let file = create_media_file_with_metadata(
+            "ep.mkv", ".mkv", "", "30fps", "", "", "H264", "", "AMZN",
+        );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Series.2023.S02E05.30fps.H264-AMZN.mkv");
     }
@@ -741,16 +848,28 @@ mod tests {
         let prefix = "Video.2024.";
 
         // Test .mp4
-        let file_mp4 = create_media_file_with_metadata("file.mp4", ".mp4", "1080p", "", "", "", "", "", "");
-        assert_eq!(format_video_file_name(prefix, &file_mp4), "Video.2024.1080p.mp4");
+        let file_mp4 =
+            create_media_file_with_metadata("file.mp4", ".mp4", "1080p", "", "", "", "", "", "");
+        assert_eq!(
+            format_video_file_name(prefix, &file_mp4),
+            "Video.2024.1080p.mp4"
+        );
 
         // Test .avi
-        let file_avi = create_media_file_with_metadata("file.avi", ".avi", "720p", "", "", "", "", "", "");
-        assert_eq!(format_video_file_name(prefix, &file_avi), "Video.2024.720p.avi");
+        let file_avi =
+            create_media_file_with_metadata("file.avi", ".avi", "720p", "", "", "", "", "", "");
+        assert_eq!(
+            format_video_file_name(prefix, &file_avi),
+            "Video.2024.720p.avi"
+        );
 
         // Test .webm
-        let file_webm = create_media_file_with_metadata("file.webm", ".webm", "480p", "", "", "", "", "", "");
-        assert_eq!(format_video_file_name(prefix, &file_webm), "Video.2024.480p.webm");
+        let file_webm =
+            create_media_file_with_metadata("file.webm", ".webm", "480p", "", "", "", "", "", "");
+        assert_eq!(
+            format_video_file_name(prefix, &file_webm),
+            "Video.2024.480p.webm"
+        );
     }
 
     #[test]
@@ -758,21 +877,33 @@ mod tests {
         // Case 1: New file is larger than all existing files
         let existing_files_1 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_1 = create_mock_media_file(300);
-        assert!(need_overwrite_existing_files(&existing_files_1, &new_file_1));
+        assert!(need_overwrite_existing_files(
+            &existing_files_1,
+            &new_file_1
+        ));
 
         // Case 2: New file is smaller than an existing file
         let existing_files_2 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_2 = create_mock_media_file(50);
-        assert!(!need_overwrite_existing_files(&existing_files_2, &new_file_2));
+        assert!(!need_overwrite_existing_files(
+            &existing_files_2,
+            &new_file_2
+        ));
 
         // Case 3: New file is the same size as an existing file
         let existing_files_3 = vec![create_mock_media_file(100), create_mock_media_file(200)];
         let new_file_3 = create_mock_media_file(200);
-        assert!(!need_overwrite_existing_files(&existing_files_3, &new_file_3));
+        assert!(!need_overwrite_existing_files(
+            &existing_files_3,
+            &new_file_3
+        ));
 
         // Case 4: No existing files
         let existing_files_4 = vec![];
         let new_file_4 = create_mock_media_file(100);
-        assert!(need_overwrite_existing_files(&existing_files_4, &new_file_4));
+        assert!(need_overwrite_existing_files(
+            &existing_files_4,
+            &new_file_4
+        ));
     }
 }

@@ -16,8 +16,9 @@ use crate::{
     state::AppState,
 };
 
-static URL_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"https?://[^\s/$.?#].[^\s]*").expect("Failed to compile URL regex"));
+static URL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"https?://[^\s/$.?#].[^\s]*").expect("Failed to compile URL regex")
+});
 
 pub(super) struct MsgProcessor<'a> {
     pub state: &'a AppState,
@@ -124,7 +125,9 @@ impl MsgProcessor<'_> {
 
     fn extract_fslink(&self) -> Vec<&str> {
         let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
-        text.lines().filter(|line| library::is_fslink(line)).collect()
+        text.lines()
+            .filter(|line| library::is_fslink(line))
+            .collect()
     }
 
     fn extract_urls(&self) -> Vec<Url> {

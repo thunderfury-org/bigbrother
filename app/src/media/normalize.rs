@@ -132,7 +132,10 @@ mod tests {
     fn test_normalize_audio_codec() {
         assert_eq!(normalize_audio_codec("TRUEHD"), "TrueHD");
         assert_eq!(normalize_audio_codec("TRUEHD.7.1"), "TrueHD.7.1");
-        assert_eq!(normalize_audio_codec("TRUEHD.7.1.ATMOS"), "TrueHD.7.1.Atmos");
+        assert_eq!(
+            normalize_audio_codec("TRUEHD.7.1.ATMOS"),
+            "TrueHD.7.1.Atmos"
+        );
         assert_eq!(normalize_audio_codec("DTS-HD.MA.7.1"), "DTS-HD.MA.7.1");
         assert_eq!(normalize_audio_codec("DTSHD.MA.7.1"), "DTS-HD.MA.7.1");
     }

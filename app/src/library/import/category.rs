@@ -20,7 +20,10 @@ static SUB_CATALOG: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::ne
     let mapping = vec![
         ("国产", vec!["CN", "TW", "HK"]),
         ("日韩", vec!["JP", "KP", "KR", "TH", "IN", "SG"]),
-        ("欧美", vec!["US", "FR", "GB", "DE", "ES", "IT", "NL", "PT", "RU", "UK"]),
+        (
+            "欧美",
+            vec!["US", "FR", "GB", "DE", "ES", "IT", "NL", "PT", "RU", "UK"],
+        ),
     ];
     for (k, v) in mapping {
         for c in v {
