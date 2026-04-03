@@ -8,6 +8,7 @@ use migration::{Migrator, MigratorTrait};
 use state::AppState;
 use util::signal::shutdown_signal;
 
+mod application;
 mod bot;
 mod cache;
 mod cli;
@@ -17,6 +18,7 @@ mod entity;
 mod error;
 mod event;
 mod event_bus;
+mod infrastructure;
 mod library;
 mod logger;
 mod media;

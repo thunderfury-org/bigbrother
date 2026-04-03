@@ -6,7 +6,10 @@ use teloxide::{
 };
 use tracing::{error, info};
 
-use crate::{entity, library, state::AppState};
+use crate::{
+    application::manage_keywords::ManageKeywordsService,
+    infrastructure::repo::keyword::SeaOrmKeywordRepository, library, state::AppState,
+};
 
 const DELETE_KEYWORD_PREFIX: &str = "delete_keyword:";
 const DELETE_KEYWORD_CANCEL: &str = "delete_keyword:cancel";
@@ -130,13 +133,17 @@ pub(super) async fn handle_callback_query(
         return Ok(());
     };
 
-    let result_text = match entity::keyword::delete_keyword_by_id(state.db(), keyword_id).await {
-        Ok(_) => "关键字删除成功",
-        Err(e) => {
-            error!("Failed to delete keyword by id '{}': {}", keyword_id, e);
-            "删除关键字失败"
-        }
-    };
+    let result_text =
+        match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
+            .delete(keyword_id)
+            .await
+        {
+            Ok(_) => "关键字删除成功",
+            Err(e) => {
+                error!("Failed to delete keyword by id '{}': {}", keyword_id, e);
+                "删除关键字失败"
+            }
+        };
 
     bot.answer_callback_query(query.id.clone())
         .text(result_text)
@@ -151,16 +158,20 @@ pub(super) async fn handle_callback_query(
 }
 
 async fn list_keywords(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    let keywords = match entity::keyword::list_all_keywords(state.db()).await {
-        Ok(ks) => ks,
-        Err(e) => {
-            error!("Failed to list keywords: {}", e);
-            bot.send_message(msg.chat.id, "查询关键字失败")
-                .reply_to(msg.id)
-                .await?;
-            return Ok(());
-        }
-    };
+    let keywords =
+        match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
+            .list()
+            .await
+        {
+            Ok(ks) => ks,
+            Err(e) => {
+                error!("Failed to list keywords: {}", e);
+                bot.send_message(msg.chat.id, "查询关键字失败")
+                    .reply_to(msg.id)
+                    .await?;
+                return Ok(());
+            }
+        };
 
     if keywords.is_empty() {
         bot.send_message(msg.chat.id, "没有关键字")
@@ -193,9 +204,12 @@ async fn add_keyword(
         return Ok(());
     }
 
-    match entity::keyword::add_new_keyword(state.db(), kw).await {
-        Ok(_) => {
-            bot.send_message(msg.chat.id, format!("关键字 '{}' 添加成功", kw))
+    match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
+        .add(kw)
+        .await
+    {
+        Ok(keyword) => {
+            bot.send_message(msg.chat.id, format!("关键字 '{}' 添加成功", keyword))
                 .reply_to(msg.id)
                 .await?;
         }
@@ -210,16 +224,20 @@ async fn add_keyword(
 }
 
 async fn prompt_delete_keyword(state: &AppState, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    let keywords = match entity::keyword::list_all_keywords(state.db()).await {
-        Ok(ks) => ks,
-        Err(e) => {
-            error!("Failed to list keywords for delete: {}", e);
-            bot.send_message(msg.chat.id, "查询关键字失败")
-                .reply_to(msg.id)
-                .await?;
-            return Ok(());
-        }
-    };
+    let keywords =
+        match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
+            .list()
+            .await
+        {
+            Ok(ks) => ks,
+            Err(e) => {
+                error!("Failed to list keywords for delete: {}", e);
+                bot.send_message(msg.chat.id, "查询关键字失败")
+                    .reply_to(msg.id)
+                    .await?;
+                return Ok(());
+            }
+        };
 
     if keywords.is_empty() {
         bot.send_message(msg.chat.id, "没有关键字可删除")

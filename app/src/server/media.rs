@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use axum::{
     Router,
@@ -10,7 +9,13 @@ use axum::{
 use reqwest::StatusCode;
 use tracing::error;
 
-use crate::{client::RequestError, state::AppState};
+use crate::{
+    application::resolve_download_url::{ResolveDownloadUrlResult, ResolveDownloadUrlService},
+    infrastructure::{
+        cache::string_store::StringCacheStore, client::library_remote::Pan123LibraryRemote,
+    },
+    state::AppState,
+};
 
 pub(super) fn new_router(state: AppState) -> Router {
     let path = format!(
@@ -42,61 +47,38 @@ async fn redirect(
         )
             .into_response(),
         Ok(id) => {
-            // Try to get URL from cache first
-            let cache_key = format!("pan123:download_url:{}", id);
-
-            if let Ok(Some(cached_url)) = state.cache().get::<String>(&cache_key).await {
-                return Redirect::to(cached_url.as_str()).into_response();
-            }
-
-            // Cache miss, fetch from API
-            match state.client().pan123.get_download_url(id).await {
-                Ok(url) => {
-                    if url.is_empty() {
-                        error!("Failed to get download url of file {}, id: {}", path, id);
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to get download url",
-                        )
-                            .into_response();
-                    }
-
-                    // Cache the URL for 30 minutes on success
-                    let ttl = Duration::from_mins(30);
-                    if let Err(e) = state.cache().set(&cache_key, &url, Some(ttl)).await {
-                        error!(
-                            "Failed to cache download url for file {}, id: {}, {}",
-                            path, id, e
-                        );
-                        // Continue even if caching fails
-                    }
-
+            match ResolveDownloadUrlService::new(
+                StringCacheStore::new(state.cache().clone()),
+                Pan123LibraryRemote::new(state.client().pan123.clone()),
+            )
+            .resolve(id)
+            .await
+            {
+                Ok(ResolveDownloadUrlResult::Redirect(url)) => {
                     Redirect::to(url.as_str()).into_response()
                 }
-                Err(e) => match e {
-                    RequestError::Unauthorized => {
-                        error!(
-                            "Unauthorized to get download url of file {}, id: {}",
-                            path, id
-                        );
-                        (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
-                    }
-                    RequestError::NotFound(_) => {
-                        error!("File {} not found, id: {}", path, id);
-                        (StatusCode::NOT_FOUND, "File not found").into_response()
-                    }
-                    _ => {
-                        error!(
-                            "Failed to get download url of file {}, id: {}, {}",
-                            path, id, e
-                        );
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to get download url",
-                        )
-                            .into_response()
-                    }
-                },
+                Ok(ResolveDownloadUrlResult::Unauthorized) => {
+                    error!(
+                        "Unauthorized to get download url of file {}, id: {}",
+                        path, id
+                    );
+                    (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+                }
+                Ok(ResolveDownloadUrlResult::NotFound) => {
+                    error!("File {} not found, id: {}", path, id);
+                    (StatusCode::NOT_FOUND, "File not found").into_response()
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to get download url of file {}, id: {}, {}",
+                        path, id, e
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to get download url",
+                    )
+                        .into_response()
+                }
             }
         }
     }

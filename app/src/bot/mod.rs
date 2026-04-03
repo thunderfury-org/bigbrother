@@ -1,7 +1,10 @@
 use teloxide::prelude::*;
 use tracing::{error, info};
 
-use crate::{entity::keyword, state::AppState};
+use crate::{
+    application::manage_keywords::ManageKeywordsService,
+    infrastructure::repo::keyword::SeaOrmKeywordRepository, state::AppState,
+};
 
 mod cmd;
 mod format;
@@ -30,22 +33,23 @@ pub async fn run(state: AppState) {
 }
 
 async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    let keywords = match keyword::list_all_keywords(state.db()).await {
-        Ok(keywords) => keywords,
-        Err(e) => {
-            error!("Failed to query keywords from database: {e}");
-            return Ok(());
-        }
-    };
+    let keywords =
+        match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
+            .list_values()
+            .await
+        {
+            Ok(keywords) => keywords,
+            Err(e) => {
+                error!("Failed to query keywords from database: {e}");
+                return Ok(());
+            }
+        };
 
     if keywords.is_empty() {
         return Ok(());
     }
-
-    let filters: Vec<String> = keywords.into_iter().map(|k| k.value).collect();
-
     let text = msg.text().or(msg.caption()).unwrap_or_default();
-    for keyword in &filters {
+    for keyword in &keywords {
         if text.contains(keyword) {
             let processor = msg::MsgProcessor {
                 state: &state,
@@ -61,7 +65,7 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         && let Some(text) = doc.file_name.as_ref()
         && text.ends_with(".json")
     {
-        for keyword in &filters {
+        for keyword in &keywords {
             if text.contains(keyword) {
                 let processor = msg::MsgProcessor {
                     state: &state,
