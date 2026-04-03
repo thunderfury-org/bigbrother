@@ -54,12 +54,7 @@ impl Importer {
         ));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self
-            .state
-            .config()
-            .get_library_config()
-            .remote_path
-            .as_str();
+        let remote_path = self.ctx.remote_path.as_str();
         let movie_path = library::get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .get_or_create_dir_in_library(movie_path.as_str())
@@ -121,15 +116,10 @@ impl Importer {
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let remote_path = self
-            .state
-            .config()
-            .get_library_config()
-            .remote_path
-            .as_str();
+        let remote_path = self.ctx.remote_path.as_str();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.state.client().pan123.list_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.ctx.pan123.list_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -171,8 +161,7 @@ impl Importer {
             None => {
                 // create season folder if not exists
                 let id = self
-                    .state
-                    .client()
+                    .ctx
                     .pan123
                     .mkdir(tv_dir_id, season_dir.as_str())
                     .await?;
@@ -355,11 +344,7 @@ impl Importer {
             }
         }
 
-        self.state
-            .client()
-            .pan123
-            .trash_files(file_ids.as_slice())
-            .await?;
+        self.ctx.pan123.trash_files(file_ids.as_slice()).await?;
         Ok(())
     }
 
@@ -368,14 +353,8 @@ impl Importer {
         remote_parent_path: &str,
         files: &[&MediaFile],
     ) -> AppResult<()> {
-        let local_parent_path = remote_parent_path.replace(
-            self.state
-                .config()
-                .get_library_config()
-                .remote_path
-                .as_str(),
-            self.state.config().get_library_config().local_path.as_str(),
-        );
+        let local_parent_path =
+            remote_parent_path.replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str());
 
         for f in files {
             let local_file_path = format!(
@@ -501,23 +480,11 @@ impl Importer {
     ) -> AppResult<()> {
         let strm_file_content = format!(
             "{}{}?file_id={}",
-            self.state
-                .config()
-                .get_media_server_config()
-                .get_strm_download_url(),
-            remote_file_path,
-            file_id
+            self.ctx.strm_download_url, remote_file_path, file_id
         );
 
         let local_file_path = remote_file_path
-            .replace(
-                self.state
-                    .config()
-                    .get_library_config()
-                    .remote_path
-                    .as_str(),
-                self.state.config().get_library_config().local_path.as_str(),
-            )
+            .replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str())
             .trim_end_matches(extension)
             .to_owned()
             + ".strm";
@@ -555,16 +522,9 @@ impl Importer {
                 info!("File {} saved in library, file id: {}", file_name, id);
 
                 // download subtitle file
-                let local_file_path = format!("{}/{}", parent_path, file_name).replace(
-                    self.state
-                        .config()
-                        .get_library_config()
-                        .remote_path
-                        .as_str(),
-                    self.state.config().get_library_config().local_path.as_str(),
-                );
-                self.state
-                    .client()
+                let local_file_path = format!("{}/{}", parent_path, file_name)
+                    .replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str());
+                self.ctx
                     .pan123
                     .download_file(id, local_file_path.as_str())
                     .await?;
@@ -589,15 +549,13 @@ impl Importer {
     ) -> AppResult<Option<i64>> {
         Ok(match &etag {
             Etag::Md5(etag) => {
-                self.state
-                    .client()
+                self.ctx
                     .pan123
                     .fast_upload(parent_dir_id, file_name, etag, size)
                     .await?
             }
             Etag::Sha1(sha1) => {
-                self.state
-                    .client()
+                self.ctx
                     .pan123
                     .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
                     .await?

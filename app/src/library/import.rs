@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    client::tmdb::{MovieDetail, TvDetail},
+    client::{
+        pan115, pan123, pan189,
+        tmdb::{self, MovieDetail, TvDetail},
+    },
     media::Metadata,
     state::AppState,
 };
@@ -39,8 +42,19 @@ pub enum ImportedMedia {
     },
 }
 
+#[derive(Clone)]
+pub(crate) struct ImportContext {
+    pub pan115: pan115::Client,
+    pub pan123: pan123::Client,
+    pub pan189: pan189::Client,
+    pub tmdb: tmdb::Client,
+    pub remote_path: String,
+    pub local_path: String,
+    pub strm_download_url: String,
+}
+
 pub(crate) struct Importer {
-    state: AppState,
+    ctx: ImportContext,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
     metadata_cache: HashMap<String, Box<Metadata>>,
@@ -49,7 +63,18 @@ pub(crate) struct Importer {
 impl Importer {
     pub fn new(state: AppState) -> Self {
         Self {
-            state,
+            ctx: ImportContext {
+                pan115: state.client().pan115.clone(),
+                pan123: state.client().pan123.clone(),
+                pan189: state.client().pan189.clone(),
+                tmdb: state.client().tmdb.clone(),
+                remote_path: state.config().get_library_config().remote_path.clone(),
+                local_path: state.config().get_library_config().local_path.clone(),
+                strm_download_url: state
+                    .config()
+                    .get_media_server_config()
+                    .get_strm_download_url(),
+            },
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             metadata_cache: HashMap::new(),

@@ -140,8 +140,7 @@ impl Importer {
 
         while let Some((parent_id, parent_path)) = stack.pop() {
             let files = self
-                .state
-                .client()
+                .ctx
                 .pan123
                 .list_share_files(share_key, share_password, parent_id)
                 .await?;
@@ -182,20 +181,14 @@ impl Importer {
         &mut self,
         share_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let share_info = self
-            .state
-            .client()
-            .pan189
-            .get_share_info(share_code)
-            .await?;
+        let share_info = self.ctx.pan189.get_share_info(share_code).await?;
 
         let mut all_files = Vec::new();
         let mut stack = vec![(share_info.file_id, share_info.file_name.to_owned())];
 
         while let Some((parent_id, parent_path)) = stack.pop() {
             let (folders, files) = self
-                .state
-                .client()
+                .ctx
                 .pan189
                 .list_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
@@ -243,8 +236,7 @@ impl Importer {
 
         while let Some((cid, parent_path)) = stack.pop() {
             let entries = self
-                .state
-                .client()
+                .ctx
                 .pan115
                 .list_share_files(share_code, receive_code, &cid)
                 .await?;
