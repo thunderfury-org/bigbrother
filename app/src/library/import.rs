@@ -15,6 +15,7 @@ mod inner;
 pub(super) mod json;
 mod library;
 mod metadata;
+mod remote;
 pub(super) mod share;
 mod tmdb_info;
 mod transfer;
@@ -44,17 +45,17 @@ pub enum ImportedMedia {
 
 #[derive(Clone)]
 pub(crate) struct ImportContext {
-    pub pan115: pan115::Client,
-    pub pan123: pan123::Client,
-    pub pan189: pan189::Client,
-    pub tmdb: tmdb::Client,
-    pub remote_path: String,
-    pub local_path: String,
-    pub strm_download_url: String,
+    pan115: pan115::Client,
+    pan123: pan123::Client,
+    pan189: pan189::Client,
+    tmdb: tmdb::Client,
+    remote_path: String,
+    local_path: String,
+    strm_download_url: String,
 }
 
 pub(crate) struct Importer {
-    ctx: ImportContext,
+    remote: remote::ImportRemote,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
     metadata_cache: HashMap<String, Box<Metadata>>,
@@ -63,7 +64,7 @@ pub(crate) struct Importer {
 impl Importer {
     pub fn new(state: AppState) -> Self {
         Self {
-            ctx: ImportContext {
+            remote: remote::ImportRemote::new(ImportContext {
                 pan115: state.client().pan115.clone(),
                 pan123: state.client().pan123.clone(),
                 pan189: state.client().pan189.clone(),
@@ -74,7 +75,7 @@ impl Importer {
                     .config()
                     .get_media_server_config()
                     .get_strm_download_url(),
-            },
+            }),
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             metadata_cache: HashMap::new(),

@@ -20,8 +20,7 @@ impl Importer {
             }
 
             if let Some(movie) = self
-                .ctx
-                .tmdb
+                .remote
                 .get_movie_detail(meta.tmdb_id.parse().unwrap())
                 .await?
             {
@@ -39,7 +38,7 @@ impl Importer {
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
                 return Ok(movie.clone());
             }
-            let movies = self.ctx.tmdb.search_movie(&title.title, &meta.year).await?;
+            let movies = self.remote.search_movie(&title.title, &meta.year).await?;
             match movies.len() {
                 0 => {
                     self.movie_info_cache.insert(cache_key, None);
@@ -50,7 +49,7 @@ impl Importer {
                         "Movie found for title: {}, year: {}, id: {}",
                         title.title, meta.year, movies[0].id
                     );
-                    let movie = self.ctx.tmdb.get_movie_detail(movies[0].id).await?;
+                    let movie = self.remote.get_movie_detail(movies[0].id).await?;
                     self.movie_info_cache.insert(cache_key, movie.clone());
                     return Ok(movie);
                 }
@@ -61,7 +60,7 @@ impl Importer {
                                 "Movie found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, movie.id
                             );
-                            let movie = self.ctx.tmdb.get_movie_detail(movie.id).await?;
+                            let movie = self.remote.get_movie_detail(movie.id).await?;
                             self.movie_info_cache.insert(cache_key, movie.clone());
                             return Ok(movie);
                         }
@@ -86,8 +85,7 @@ impl Importer {
             }
 
             if let Some(tv) = self
-                .ctx
-                .tmdb
+                .remote
                 .get_tv_detail(meta.tmdb_id.parse().unwrap())
                 .await?
             {
@@ -106,7 +104,7 @@ impl Importer {
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
                 return Ok(tv.clone());
             }
-            let tvs = self.ctx.tmdb.search_tv(&title.title, &meta.year).await?;
+            let tvs = self.remote.search_tv(&title.title, &meta.year).await?;
             match tvs.len() {
                 0 => {
                     self.tv_info_cache.insert(cache_key, None);
@@ -117,7 +115,7 @@ impl Importer {
                         "Tv found for title: {}, year: {}, id: {}",
                         title.title, meta.year, tvs[0].id
                     );
-                    let tv = self.ctx.tmdb.get_tv_detail(tvs[0].id).await?;
+                    let tv = self.remote.get_tv_detail(tvs[0].id).await?;
                     self.tv_info_cache.insert(cache_key, tv.clone());
                     return Ok(tv);
                 }
@@ -128,7 +126,7 @@ impl Importer {
                                 "Tv found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, tv.id
                             );
-                            let tv = self.ctx.tmdb.get_tv_detail(tv.id).await?;
+                            let tv = self.remote.get_tv_detail(tv.id).await?;
                             self.tv_info_cache.insert(cache_key, tv.clone());
                             return Ok(tv);
                         }

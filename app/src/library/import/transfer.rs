@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    io,
-    path::Path,
-};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tracing::{error, info};
 
@@ -54,7 +50,7 @@ impl Importer {
         ));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.ctx.remote_path.as_str();
+        let remote_path = self.remote.library_remote_path();
         let movie_path = library::get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .get_or_create_dir_in_library(movie_path.as_str())
@@ -116,10 +112,10 @@ impl Importer {
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let remote_path = self.ctx.remote_path.as_str();
+        let remote_path = self.remote.library_remote_path();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.ctx.pan123.list_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.remote.list_library_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -161,9 +157,8 @@ impl Importer {
             None => {
                 // create season folder if not exists
                 let id = self
-                    .ctx
-                    .pan123
-                    .mkdir(tv_dir_id, season_dir.as_str())
+                    .remote
+                    .mkdir_library_dir(tv_dir_id, season_dir.as_str())
                     .await?;
                 info!(
                     "Tv series {} season {} folder {} created in library, id: {}",
@@ -344,7 +339,7 @@ impl Importer {
             }
         }
 
-        self.ctx.pan123.trash_files(file_ids.as_slice()).await?;
+        self.remote.trash_library_files(file_ids.as_slice()).await?;
         Ok(())
     }
 
@@ -353,8 +348,7 @@ impl Importer {
         remote_parent_path: &str,
         files: &[&MediaFile],
     ) -> AppResult<()> {
-        let local_parent_path =
-            remote_parent_path.replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str());
+        let local_parent_path = self.remote.local_path_for_remote(remote_parent_path);
 
         for f in files {
             let local_file_path = format!(
@@ -363,26 +357,16 @@ impl Importer {
                 f.video.name.trim_end_matches(f.metadata.extension.as_str())
             );
             info!("Deleting local file {}", local_file_path);
-            if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
-                && e.kind() != io::ErrorKind::NotFound
-            {
-                return Err(AppError::Internal(format!(
-                    "Failed to delete local file, error: {}",
-                    e
-                )));
-            }
+            self.remote
+                .remove_local_file_if_exists(local_file_path.as_str())
+                .await?;
 
             for s in &f.subtitles {
                 let local_file_path = format!("{}/{}", local_parent_path, s.name);
                 info!("Deleting local file {}", local_file_path);
-                if let Err(e) = tokio::fs::remove_file(local_file_path.as_str()).await
-                    && e.kind() != io::ErrorKind::NotFound
-                {
-                    return Err(AppError::Internal(format!(
-                        "Failed to delete local file, error: {}",
-                        e
-                    )));
-                }
+                self.remote
+                    .remove_local_file_if_exists(local_file_path.as_str())
+                    .await?;
             }
         }
 
@@ -478,19 +462,10 @@ impl Importer {
         extension: &str,
         file_id: i64,
     ) -> AppResult<()> {
-        let strm_file_content = format!(
-            "{}{}?file_id={}",
-            self.ctx.strm_download_url, remote_file_path, file_id
-        );
-
-        let local_file_path = remote_file_path
-            .replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str())
-            .trim_end_matches(extension)
-            .to_owned()
-            + ".strm";
-
-        tokio::fs::create_dir_all(Path::new(&local_file_path).parent().unwrap()).await?;
-        tokio::fs::write(local_file_path.as_str(), strm_file_content.as_bytes()).await?;
+        let local_file_path = self.remote.local_strm_path(remote_file_path, extension);
+        self.remote
+            .write_strm_file(remote_file_path, extension, file_id)
+            .await?;
         info!("Strm file {} created", local_file_path);
         Ok(())
     }
@@ -522,11 +497,11 @@ impl Importer {
                 info!("File {} saved in library, file id: {}", file_name, id);
 
                 // download subtitle file
-                let local_file_path = format!("{}/{}", parent_path, file_name)
-                    .replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str());
-                self.ctx
-                    .pan123
-                    .download_file(id, local_file_path.as_str())
+                let local_file_path = self
+                    .remote
+                    .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
+                self.remote
+                    .download_library_file(id, local_file_path.as_str())
                     .await?;
                 info!("Subtitle file {} downloaded", local_file_path);
 
@@ -549,15 +524,13 @@ impl Importer {
     ) -> AppResult<Option<i64>> {
         Ok(match &etag {
             Etag::Md5(etag) => {
-                self.ctx
-                    .pan123
-                    .fast_upload(parent_dir_id, file_name, etag, size)
+                self.remote
+                    .fast_upload_md5(parent_dir_id, file_name, etag, size)
                     .await?
             }
             Etag::Sha1(sha1) => {
-                self.ctx
-                    .pan123
-                    .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
+                self.remote
+                    .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
                     .await?
             }
         })
