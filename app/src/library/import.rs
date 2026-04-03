@@ -39,7 +39,7 @@ pub enum ImportedMedia {
     },
 }
 
-pub(super) struct Importer {
+pub(crate) struct Importer {
     state: AppState,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
