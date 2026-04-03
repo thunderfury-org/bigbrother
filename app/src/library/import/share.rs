@@ -60,38 +60,17 @@ impl Importer {
     }
 
     async fn import_pan123_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
-        let share_key = url
-            .path_segments()
-            .map(|mut s| s.next_back().unwrap_or_default())
-            .unwrap_or_default();
-        let share_password = url
-            .query_pairs()
-            .find(|(k, _)| k == "pwd")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or_default();
+        let (share_key, share_password) = parse_pan123_share_parts(url);
 
         let media_files = self
-            .list_files_from_pan123_share(share_key, &share_password)
+            .list_files_from_pan123_share(share_key.as_str(), share_password.as_str())
             .await?;
         info!("found {} media files from pan123 share", media_files.len());
         self.transfer_media_files(&media_files).await
     }
 
     async fn import_pan189_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
-        let share_code = url
-            .query_pairs()
-            .find(|(k, _)| k == "code")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or_else(|| {
-                if url.path().starts_with("/t/") {
-                    url.path_segments()
-                        .map(|mut s| s.next_back().unwrap_or_default())
-                        .unwrap_or_default()
-                        .to_owned()
-                } else {
-                    String::new()
-                }
-            });
+        let share_code = parse_pan189_share_code(url);
         if share_code.is_empty() {
             return Err(AppError::NotFound(format!(
                 "Can not extract share code from URL: {}",
@@ -105,16 +84,7 @@ impl Importer {
     }
 
     async fn import_pan115_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
-        let share_code = url
-            .path_segments()
-            .map(|mut s| s.next_back().unwrap_or_default())
-            .unwrap_or_default();
-
-        let receive_code = url
-            .query_pairs()
-            .find(|(k, _)| k == "password")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or_default();
+        let (share_code, receive_code) = parse_pan115_share_parts(url);
 
         if share_code.is_empty() {
             return Err(AppError::NotFound(format!(
@@ -124,7 +94,7 @@ impl Importer {
         }
 
         let media_files = self
-            .list_files_from_pan115_share(share_code, &receive_code)
+            .list_files_from_pan115_share(&share_code, &receive_code)
             .await?;
         info!("found {} media files from pan115 share", media_files.len());
         self.transfer_media_files(&media_files).await
@@ -273,6 +243,50 @@ impl Importer {
     }
 }
 
+fn parse_pan123_share_parts(url: &Url) -> (String, String) {
+    let share_key = url
+        .path_segments()
+        .map(|mut segments| segments.next_back().unwrap_or_default())
+        .unwrap_or_default()
+        .to_owned();
+    let share_password = url
+        .query_pairs()
+        .find(|(key, _)| key == "pwd")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    (share_key, share_password)
+}
+
+fn parse_pan189_share_code(url: &Url) -> String {
+    url.query_pairs()
+        .find(|(key, _)| key == "code")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_else(|| {
+            if url.path().starts_with("/t/") {
+                url.path_segments()
+                    .map(|mut segments| segments.next_back().unwrap_or_default())
+                    .unwrap_or_default()
+                    .to_owned()
+            } else {
+                String::new()
+            }
+        })
+}
+
+fn parse_pan115_share_parts(url: &Url) -> (String, String) {
+    let share_code = url
+        .path_segments()
+        .map(|mut segments| segments.next_back().unwrap_or_default())
+        .unwrap_or_default()
+        .to_owned();
+    let receive_code = url
+        .query_pairs()
+        .find(|(key, _)| key == "password")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    (share_code, receive_code)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +342,43 @@ mod tests {
         let share_url = ShareUrl::from(&url);
 
         assert!(share_url.is_none());
+    }
+
+    #[test]
+    fn test_parse_pan123_share_parts() {
+        let url = Url::parse("https://www.123pan.com/s/share123?pwd=pass456").unwrap();
+
+        let (share_key, share_password) = parse_pan123_share_parts(&url);
+
+        assert_eq!(share_key, "share123");
+        assert_eq!(share_password, "pass456");
+    }
+
+    #[test]
+    fn test_parse_pan189_share_code_prefers_query_code() {
+        let url = Url::parse("https://cloud.189.cn/web/share?code=abc123").unwrap();
+
+        let share_code = parse_pan189_share_code(&url);
+
+        assert_eq!(share_code, "abc123");
+    }
+
+    #[test]
+    fn test_parse_pan189_share_code_from_path() {
+        let url = Url::parse("https://cloud.189.cn/t/pathcode").unwrap();
+
+        let share_code = parse_pan189_share_code(&url);
+
+        assert_eq!(share_code, "pathcode");
+    }
+
+    #[test]
+    fn test_parse_pan115_share_parts() {
+        let url = Url::parse("https://115.com/s/share115?password=recv").unwrap();
+
+        let (share_code, receive_code) = parse_pan115_share_parts(&url);
+
+        assert_eq!(share_code, "share115");
+        assert_eq!(receive_code, "recv");
     }
 }
