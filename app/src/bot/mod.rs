@@ -3,7 +3,11 @@ use tracing::{error, info};
 
 use crate::{
     application::manage_keywords::ManageKeywordsService,
-    infrastructure::repo::keyword::SeaOrmKeywordRepository, state::AppState,
+    infrastructure::{
+        event::publisher::EventBusPublisher, import::gateway::AppStateImportGateway,
+        repo::keyword::SeaOrmKeywordRepository,
+    },
+    state::AppState,
 };
 
 mod cmd;
@@ -52,7 +56,12 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
     for keyword in &keywords {
         if text.contains(keyword) {
             let processor = msg::MsgProcessor {
-                state: &state,
+                import_service: crate::application::import_media::ImportMediaService::new(
+                    AppStateImportGateway::new(state.clone()),
+                ),
+                notify_service: crate::application::notify::PublishTelegramMessageService::new(
+                    EventBusPublisher::new(state.bus().clone()),
+                ),
                 bot: &bot,
                 msg: &msg,
                 from_monitor: true,
@@ -68,7 +77,12 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         for keyword in &keywords {
             if text.contains(keyword) {
                 let processor = msg::MsgProcessor {
-                    state: &state,
+                    import_service: crate::application::import_media::ImportMediaService::new(
+                        AppStateImportGateway::new(state.clone()),
+                    ),
+                    notify_service: crate::application::notify::PublishTelegramMessageService::new(
+                        EventBusPublisher::new(state.bus().clone()),
+                    ),
                     bot: &bot,
                     msg: &msg,
                     from_monitor: true,
@@ -99,7 +113,12 @@ async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResu
     }
 
     let processor = msg::MsgProcessor {
-        state: &state,
+        import_service: crate::application::import_media::ImportMediaService::new(
+            AppStateImportGateway::new(state.clone()),
+        ),
+        notify_service: crate::application::notify::PublishTelegramMessageService::new(
+            EventBusPublisher::new(state.bus().clone()),
+        ),
         bot: &bot,
         msg: &msg,
         from_monitor: false,

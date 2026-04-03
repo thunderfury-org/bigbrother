@@ -10,10 +10,10 @@ use tracing::{error, info};
 
 use super::format::format_imported_media;
 use crate::{
-    event::SendTelegramMessage,
+    application::{import_media::ImportMediaService, notify::PublishTelegramMessageService},
+    infrastructure::{event::publisher::EventBusPublisher, import::gateway::AppStateImportGateway},
     library::{self, ImportedMedia, ShareUrl},
     log_time,
-    state::AppState,
 };
 
 static URL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -21,7 +21,8 @@ static URL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 
 pub(super) struct MsgProcessor<'a> {
-    pub state: &'a AppState,
+    pub import_service: ImportMediaService<AppStateImportGateway>,
+    pub notify_service: PublishTelegramMessageService<EventBusPublisher>,
     pub bot: &'a Bot,
     pub msg: &'a Message,
     pub from_monitor: bool,
@@ -73,7 +74,7 @@ impl MsgProcessor<'_> {
         let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap());
         self.bot.download_file(&file.path, &mut content).await?;
 
-        match library::import_from_json(self.state, content).await {
+        match self.import_service.import_from_json(content).await {
             Ok(imported) => {
                 self.handle_imported_medias(imported).await?;
             }
@@ -92,7 +93,7 @@ impl MsgProcessor<'_> {
             self.send_message(&reply).await;
         }
 
-        match library::import_from_share_url(self.state, url).await {
+        match self.import_service.import_from_share_url(url).await {
             Ok(imported) => {
                 self.handle_imported_medias(imported).await?;
             }
@@ -110,7 +111,7 @@ impl MsgProcessor<'_> {
             self.send_message("开始处理秒传").await;
         }
 
-        match library::import_from_fslink(self.state, fslink).await {
+        match self.import_service.import_from_fslink(fslink).await {
             Ok(imported) => {
                 self.handle_imported_medias(imported).await?;
             }
@@ -188,15 +189,7 @@ impl MsgProcessor<'_> {
     }
 
     async fn send_message<T: Into<String>>(&self, text: T) {
-        let msg = SendTelegramMessage {
-            message: text.into(),
-            reply_to: if self.msg.from.is_none() {
-                None
-            } else {
-                Some(self.msg.id.0)
-            },
-        };
-        if let Err(e) = self.state.bus().publish(&msg).await {
+        if let Err(e) = self.notify_service.send_message(text, self.msg).await {
             error!("Failed publish send telegram message event: {}", e);
         }
     }

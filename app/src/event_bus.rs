@@ -20,7 +20,7 @@ pub trait Event: Serialize + DeserializeOwned + Send + 'static {
     const NAME: &'static str;
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct EventBus {
     db: DatabaseConnection,
     notifiers: Arc<RwLock<HashMap<String, watch::Sender<()>>>>,

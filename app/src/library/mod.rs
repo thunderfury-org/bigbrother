@@ -1,12 +1,8 @@
 use crate::{
-    application::{
-        import_media::ImportMediaService,
-        sync_strm::{SyncStrmConfig, SyncStrmService},
-    },
+    application::sync_strm::{SyncStrmConfig, SyncStrmService},
     error::AppResult,
     infrastructure::{
         client::library_remote::Pan123LibraryRemote, fs::tokio_file_store::TokioFileStore,
-        import::gateway::AppStateImportGateway,
     },
     state::AppState,
 };
@@ -16,27 +12,6 @@ pub(crate) mod import;
 pub use import::ImportedMedia;
 pub use import::json::is_fslink;
 pub use import::share::ShareUrl;
-
-pub async fn import_from_share_url(
-    state: &AppState,
-    url: &ShareUrl<'_>,
-) -> AppResult<Vec<ImportedMedia>> {
-    ImportMediaService::new(AppStateImportGateway::new(state.clone()))
-        .import_from_share_url(url)
-        .await
-}
-
-pub async fn import_from_fslink(state: &AppState, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-    ImportMediaService::new(AppStateImportGateway::new(state.clone()))
-        .import_from_fslink(fslink)
-        .await
-}
-
-pub async fn import_from_json(state: &AppState, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-    ImportMediaService::new(AppStateImportGateway::new(state.clone()))
-        .import_from_json(json)
-        .await
-}
 
 pub async fn sync_strm(state: &AppState) -> AppResult<()> {
     SyncStrmService::new(

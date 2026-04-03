@@ -56,8 +56,12 @@ async fn run_server(data_dir: &str) {
 
 async fn run_event_bus(state: AppState) {
     let bus = state.bus();
+    let delivery_ctx = bot::handler::TelegramDeliveryContext {
+        bot: state.bot().clone(),
+        user_id: state.config().get_telegram_config().user_id,
+    };
 
-    bus.subscribe(state.clone(), bot::handler::on_send_telegram_message)
+    bus.subscribe(delivery_ctx, bot::handler::on_send_telegram_message)
         .await
         .unwrap();
 
