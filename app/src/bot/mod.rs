@@ -31,7 +31,7 @@ pub(crate) struct BotRuntime {
 }
 
 impl BotRuntime {
-    fn from_state(state: AppState) -> Self {
+    pub(crate) fn from_state(state: AppState) -> Self {
         Self {
             user_id: UserId(
                 state
@@ -78,9 +78,8 @@ impl BotRuntime {
     }
 }
 
-pub async fn run(state: AppState) {
-    cmd::create_commands_in_background(state.bot());
-    let runtime = BotRuntime::from_state(state.clone());
+pub async fn run(bot: teloxide::Bot, runtime: BotRuntime) {
+    cmd::create_commands_in_background(&bot);
 
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
@@ -92,7 +91,7 @@ pub async fn run(state: AppState) {
         )
         .branch(Update::filter_message().endpoint(handle_message));
 
-    Dispatcher::builder(state.bot().clone(), handler)
+    Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()
         .dependencies(dptree::deps![runtime])
         .build()

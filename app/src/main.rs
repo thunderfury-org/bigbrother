@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use bootstrap::AppRuntime;
 use clap::Parser;
 use cli::{Cli, Commands};
 use tracing::{error, info};
@@ -9,6 +10,7 @@ use state::AppState;
 use util::signal::shutdown_signal;
 
 mod application;
+mod bootstrap;
 mod bot;
 mod cache;
 mod cli;
@@ -41,26 +43,24 @@ async fn run_server(data_dir: &str) {
     let state = AppState::new(data_dir)
         .await
         .expect("Failed to initialize application state");
-    logger::init(state.config().get_log_dir().as_str());
+    let runtime = AppRuntime::from_state(state);
+    logger::init(runtime.log_dir.as_str());
 
-    Migrator::up(state.db(), None)
+    Migrator::up(&runtime.db, None)
         .await
         .expect("Migration failed");
     tokio::join!(
-        server::run(state.clone()),
-        bot::run(state.clone()),
-        run_event_bus(state.clone()),
-        run_cache_cleanup(state.clone())
+        server::run(runtime.media_server_addr, runtime.media_server_ctx),
+        bot::run(runtime.bot, runtime.bot_runtime),
+        run_event_bus(runtime.event_bus, runtime.telegram_delivery),
+        run_cache_cleanup(runtime.cache)
     );
 }
 
-async fn run_event_bus(state: AppState) {
-    let bus = state.bus();
-    let delivery_ctx = bot::handler::TelegramDeliveryContext {
-        bot: state.bot().clone(),
-        user_id: state.config().get_telegram_config().user_id,
-    };
-
+async fn run_event_bus(
+    bus: event_bus::EventBus,
+    delivery_ctx: bot::handler::TelegramDeliveryContext,
+) {
     bus.subscribe(delivery_ctx, bot::handler::on_send_telegram_message)
         .await
         .unwrap();
@@ -71,8 +71,7 @@ async fn run_event_bus(state: AppState) {
     info!("Shutting down event bus...");
 }
 
-async fn run_cache_cleanup(state: AppState) {
-    let cache = state.cache();
+async fn run_cache_cleanup(cache: cache::Cache) {
     let interval = Duration::from_hours(12);
 
     info!("Cache cleanup task started (interval: 12 hours)");

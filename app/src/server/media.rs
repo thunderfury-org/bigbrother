@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub(super) struct MediaServerContext {
+pub(crate) struct MediaServerContext {
     pub path_prefix: String,
     pub cache: StringCacheStore,
     pub remote: Pan123LibraryRemote,
