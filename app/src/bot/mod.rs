@@ -2,9 +2,13 @@ use teloxide::prelude::*;
 use tracing::{error, info};
 
 use crate::{
-    application::manage_keywords::ManageKeywordsService,
+    application::{
+        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
+    },
     infrastructure::{
-        event::publisher::EventBusPublisher, import::gateway::AppStateImportGateway,
+        client::library_remote::Pan123LibraryRemote, event::publisher::EventBusPublisher,
+        fs::tokio_file_store::TokioFileStore, import::gateway::AppStateImportGateway,
         repo::keyword::SeaOrmKeywordRepository,
     },
     state::AppState,
@@ -15,8 +19,68 @@ mod format;
 pub mod handler;
 mod msg;
 
+#[derive(Clone)]
+pub(crate) struct BotRuntime {
+    pub user_id: UserId,
+    pub keyword_repo: SeaOrmKeywordRepository,
+    pub import_gateway: AppStateImportGateway,
+    pub notify_publisher: EventBusPublisher,
+    pub sync_remote: Pan123LibraryRemote,
+    pub sync_file_store: TokioFileStore,
+    pub sync_config: crate::application::sync_strm::SyncStrmConfig,
+}
+
+impl BotRuntime {
+    fn from_state(state: AppState) -> Self {
+        Self {
+            user_id: UserId(
+                state
+                    .config()
+                    .get_telegram_config()
+                    .user_id
+                    .try_into()
+                    .unwrap(),
+            ),
+            keyword_repo: SeaOrmKeywordRepository::new(state.db().clone()),
+            import_gateway: AppStateImportGateway::new(state.clone()),
+            notify_publisher: EventBusPublisher::new(state.bus().clone()),
+            sync_remote: Pan123LibraryRemote::new(state.client().pan123.clone()),
+            sync_file_store: TokioFileStore,
+            sync_config: crate::application::sync_strm::SyncStrmConfig {
+                remote_path: state.config().get_library_config().remote_path.clone(),
+                local_path: state.config().get_library_config().local_path.clone(),
+                strm_download_url: state
+                    .config()
+                    .get_media_server_config()
+                    .get_strm_download_url(),
+            },
+        }
+    }
+
+    fn keyword_service(&self) -> ManageKeywordsService<SeaOrmKeywordRepository> {
+        ManageKeywordsService::new(self.keyword_repo.clone())
+    }
+
+    fn import_service(&self) -> ImportMediaService<AppStateImportGateway> {
+        ImportMediaService::new(self.import_gateway.clone())
+    }
+
+    fn notify_service(&self) -> PublishTelegramMessageService<EventBusPublisher> {
+        PublishTelegramMessageService::new(self.notify_publisher.clone())
+    }
+
+    fn sync_service(&self) -> SyncStrmService<Pan123LibraryRemote, TokioFileStore> {
+        SyncStrmService::new(
+            self.sync_remote.clone(),
+            self.sync_file_store,
+            self.sync_config.clone(),
+        )
+    }
+}
+
 pub async fn run(state: AppState) {
     cmd::create_commands_in_background(state.bot());
+    let runtime = BotRuntime::from_state(state.clone());
 
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
@@ -30,24 +94,20 @@ pub async fn run(state: AppState) {
 
     Dispatcher::builder(state.bot().clone(), handler)
         .enable_ctrlc_handler()
-        .dependencies(dptree::deps![state])
+        .dependencies(dptree::deps![runtime])
         .build()
         .dispatch()
         .await;
 }
 
-async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
-    let keywords =
-        match ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone()))
-            .list_values()
-            .await
-        {
-            Ok(keywords) => keywords,
-            Err(e) => {
-                error!("Failed to query keywords from database: {e}");
-                return Ok(());
-            }
-        };
+async fn handle_channel_post(runtime: BotRuntime, bot: Bot, msg: Message) -> ResponseResult<()> {
+    let keywords = match runtime.keyword_service().list_values().await {
+        Ok(keywords) => keywords,
+        Err(e) => {
+            error!("Failed to query keywords from database: {e}");
+            return Ok(());
+        }
+    };
 
     if keywords.is_empty() {
         return Ok(());
@@ -56,12 +116,8 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
     for keyword in &keywords {
         if text.contains(keyword) {
             let processor = msg::MsgProcessor {
-                import_service: crate::application::import_media::ImportMediaService::new(
-                    AppStateImportGateway::new(state.clone()),
-                ),
-                notify_service: crate::application::notify::PublishTelegramMessageService::new(
-                    EventBusPublisher::new(state.bus().clone()),
-                ),
+                import_service: runtime.import_service(),
+                notify_service: runtime.notify_service(),
                 bot: &bot,
                 msg: &msg,
                 from_monitor: true,
@@ -77,12 +133,8 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
         for keyword in &keywords {
             if text.contains(keyword) {
                 let processor = msg::MsgProcessor {
-                    import_service: crate::application::import_media::ImportMediaService::new(
-                        AppStateImportGateway::new(state.clone()),
-                    ),
-                    notify_service: crate::application::notify::PublishTelegramMessageService::new(
-                        EventBusPublisher::new(state.bus().clone()),
-                    ),
+                    import_service: runtime.import_service(),
+                    notify_service: runtime.notify_service(),
                     bot: &bot,
                     msg: &msg,
                     from_monitor: true,
@@ -95,30 +147,18 @@ async fn handle_channel_post(state: AppState, bot: Bot, msg: Message) -> Respons
     Ok(())
 }
 
-async fn handle_message(state: AppState, bot: Bot, msg: Message) -> ResponseResult<()> {
+async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> ResponseResult<()> {
     info!("Received message from {:?}", msg.chat);
 
-    let user_id = UserId(
-        state
-            .config()
-            .get_telegram_config()
-            .user_id
-            .try_into()
-            .unwrap(),
-    );
-    if msg.from.as_ref().is_none_or(|u| u.id != user_id) {
+    if msg.from.as_ref().is_none_or(|u| u.id != runtime.user_id) {
         info!("Ignoring message from unauthorized user: {:?}", msg.from);
         // Ignore messages not from the specified user
         return Ok(());
     }
 
     let processor = msg::MsgProcessor {
-        import_service: crate::application::import_media::ImportMediaService::new(
-            AppStateImportGateway::new(state.clone()),
-        ),
-        notify_service: crate::application::notify::PublishTelegramMessageService::new(
-            EventBusPublisher::new(state.bus().clone()),
-        ),
+        import_service: runtime.import_service(),
+        notify_service: runtime.notify_service(),
         bot: &bot,
         msg: &msg,
         from_monitor: false,
