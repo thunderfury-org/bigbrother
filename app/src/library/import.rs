@@ -6,7 +6,6 @@ use crate::{
         tmdb::{self, MovieDetail, TvDetail},
     },
     media::Metadata,
-    state::AppState,
 };
 
 mod category;
@@ -62,23 +61,34 @@ pub(crate) struct Importer {
 }
 
 impl Importer {
-    pub fn new(state: AppState) -> Self {
+    pub(crate) fn from_context(ctx: ImportContext) -> Self {
         Self {
-            remote: remote::ImportRemote::new(ImportContext {
-                pan115: state.client().pan115.clone(),
-                pan123: state.client().pan123.clone(),
-                pan189: state.client().pan189.clone(),
-                tmdb: state.client().tmdb.clone(),
-                remote_path: state.config().get_library_config().remote_path.clone(),
-                local_path: state.config().get_library_config().local_path.clone(),
-                strm_download_url: state
-                    .config()
-                    .get_media_server_config()
-                    .get_strm_download_url(),
-            }),
+            remote: remote::ImportRemote::new(ctx),
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             metadata_cache: HashMap::new(),
+        }
+    }
+}
+
+impl ImportContext {
+    pub(crate) fn new(
+        pan115: pan115::Client,
+        pan123: pan123::Client,
+        pan189: pan189::Client,
+        tmdb: tmdb::Client,
+        remote_path: String,
+        local_path: String,
+        strm_download_url: String,
+    ) -> Self {
+        Self {
+            pan115,
+            pan123,
+            pan189,
+            tmdb,
+            remote_path,
+            local_path,
+            strm_download_url,
         }
     }
 }

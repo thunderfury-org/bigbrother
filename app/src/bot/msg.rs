@@ -11,7 +11,7 @@ use tracing::{error, info};
 use super::format::format_imported_media;
 use crate::{
     application::{import_media::ImportMediaService, notify::PublishTelegramMessageService},
-    infrastructure::{event::publisher::EventBusPublisher, import::gateway::AppStateImportGateway},
+    infrastructure::{event::publisher::EventBusPublisher, import::gateway::ImportGateway},
     library::{self, ImportedMedia, ShareUrl},
     log_time,
 };
@@ -21,7 +21,7 @@ static URL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 
 pub(super) struct MsgProcessor<'a> {
-    pub import_service: ImportMediaService<AppStateImportGateway>,
+    pub import_service: ImportMediaService<ImportGateway>,
     pub notify_service: PublishTelegramMessageService<EventBusPublisher>,
     pub bot: &'a Bot,
     pub msg: &'a Message,
