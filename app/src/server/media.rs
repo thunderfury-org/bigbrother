@@ -23,6 +23,20 @@ pub(crate) struct MediaServerContext {
     pub remote: Pan123LibraryRemote,
 }
 
+impl MediaServerContext {
+    pub(crate) fn new(
+        path_prefix: String,
+        cache: StringCacheStore,
+        remote: Pan123LibraryRemote,
+    ) -> Self {
+        Self {
+            path_prefix,
+            cache,
+            remote,
+        }
+    }
+}
+
 pub(super) fn new_router(ctx: MediaServerContext) -> Router {
     let path = format!("{}/{{*path}}", ctx.path_prefix);
     Router::new()
@@ -84,28 +98,33 @@ async fn redirect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
+    use crate::{
+        application::ports::DownloadUrlCache,
+        cache::Cache,
+        client::pan123,
+        infrastructure::{
+            cache::string_store::StringCacheStore, client::library_remote::Pan123LibraryRemote,
+        },
+    };
     use axum::http::StatusCode as HttpStatusCode;
+    use migration::MigratorTrait;
+    use sea_orm::Database;
 
-    fn media_server_context(state: &AppState) -> MediaServerContext {
-        MediaServerContext {
-            path_prefix: state
-                .config()
-                .get_media_server_config()
-                .get_strm_path_prefix()
-                .to_string(),
-            cache: StringCacheStore::new(state.cache().clone()),
-            remote: Pan123LibraryRemote::new(state.client().pan123.clone()),
-        }
+    async fn media_server_context() -> MediaServerContext {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        migration::Migrator::up(&db, None).await.unwrap();
+        MediaServerContext::new(
+            "/d".to_string(),
+            StringCacheStore::new(Cache::new(db)),
+            Pan123LibraryRemote::new(pan123::Client::new("", "", "/tmp/pan123-test")),
+        )
     }
 
     #[tokio::test]
     async fn test_redirect_missing_file_id() {
-        let state = AppState::for_test().await;
-
         let params = HashMap::new();
         let response = redirect(
-            State(media_server_context(&state)),
+            State(media_server_context().await),
             Path("test.mp4".to_string()),
             Query(params),
         )
@@ -117,13 +136,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_redirect_invalid_file_id() {
-        let state = AppState::for_test().await;
-
         let mut params = HashMap::new();
         params.insert("file_id".to_string(), "not_a_number".to_string());
 
         let response = redirect(
-            State(media_server_context(&state)),
+            State(media_server_context().await),
             Path("test.mp4".to_string()),
             Query(params),
         )
@@ -139,27 +156,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_redirect_from_cache() {
-        let state = AppState::for_test().await;
-        state.miggrate_db().await;
+        let ctx = media_server_context().await;
 
         // Pre-populate cache with a URL
         let cache_key = "pan123:download_url:12345";
         let test_url = "https://example.com/download/test.mp4";
-        state
-            .cache()
-            .set(cache_key, &test_url.to_string(), None)
+        ctx.cache
+            .set_download_url(cache_key, test_url, std::time::Duration::from_secs(60))
             .await
             .unwrap();
 
         let mut params = HashMap::new();
         params.insert("file_id".to_string(), "12345".to_string());
 
-        let response = redirect(
-            State(media_server_context(&state)),
-            Path("test.mp4".to_string()),
-            Query(params),
-        )
-        .await;
+        let response = redirect(State(ctx), Path("test.mp4".to_string()), Query(params)).await;
 
         let (parts, _body) = response.into_parts();
         assert_eq!(parts.status, HttpStatusCode::SEE_OTHER);

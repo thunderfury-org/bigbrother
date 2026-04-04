@@ -31,6 +31,8 @@ impl AppRuntime {
         let bot = state.bot().clone();
         let cache = state.cache().clone();
         let event_bus = state.bus().clone();
+        let import_context = import_context(&state);
+        let sync_config = sync_config(&state);
 
         Self {
             log_dir: state.config().get_log_dir(),
@@ -46,40 +48,14 @@ impl AppRuntime {
                         .unwrap(),
                 ),
                 SeaOrmKeywordRepository::new(state.db().clone()),
-                ImportGateway::new(ImportContext::new(
-                    state.client().pan115.clone(),
-                    state.client().pan123.clone(),
-                    state.client().pan189.clone(),
-                    state.client().tmdb.clone(),
-                    state.config().get_library_config().remote_path.clone(),
-                    state.config().get_library_config().local_path.clone(),
-                    state
-                        .config()
-                        .get_media_server_config()
-                        .get_strm_download_url(),
-                )),
+                ImportGateway::new(import_context),
                 EventBusPublisher::new(event_bus.clone()),
                 Pan123LibraryRemote::new(state.client().pan123.clone()),
                 TokioFileStore,
-                crate::application::sync_strm::SyncStrmConfig {
-                    remote_path: state.config().get_library_config().remote_path.clone(),
-                    local_path: state.config().get_library_config().local_path.clone(),
-                    strm_download_url: state
-                        .config()
-                        .get_media_server_config()
-                        .get_strm_download_url(),
-                },
+                sync_config,
             ),
             media_server_addr: state.config().get_media_server_config().get_addr(),
-            media_server_ctx: MediaServerContext {
-                path_prefix: state
-                    .config()
-                    .get_media_server_config()
-                    .get_strm_path_prefix()
-                    .to_string(),
-                cache: StringCacheStore::new(cache.clone()),
-                remote: Pan123LibraryRemote::new(state.client().pan123.clone()),
-            },
+            media_server_ctx: media_server_context(&state, cache.clone()),
             event_bus: event_bus.clone(),
             telegram_delivery: TelegramDeliveryContext {
                 bot,
@@ -88,4 +64,42 @@ impl AppRuntime {
             cache,
         }
     }
+}
+
+fn import_context(state: &AppState) -> ImportContext {
+    ImportContext::new(
+        state.client().pan115.clone(),
+        state.client().pan123.clone(),
+        state.client().pan189.clone(),
+        state.client().tmdb.clone(),
+        state.config().get_library_config().remote_path.clone(),
+        state.config().get_library_config().local_path.clone(),
+        state
+            .config()
+            .get_media_server_config()
+            .get_strm_download_url(),
+    )
+}
+
+fn sync_config(state: &AppState) -> crate::application::sync_strm::SyncStrmConfig {
+    crate::application::sync_strm::SyncStrmConfig {
+        remote_path: state.config().get_library_config().remote_path.clone(),
+        local_path: state.config().get_library_config().local_path.clone(),
+        strm_download_url: state
+            .config()
+            .get_media_server_config()
+            .get_strm_download_url(),
+    }
+}
+
+fn media_server_context(state: &AppState, cache: Cache) -> MediaServerContext {
+    MediaServerContext::new(
+        state
+            .config()
+            .get_media_server_config()
+            .get_strm_path_prefix()
+            .to_string(),
+        StringCacheStore::new(cache),
+        Pan123LibraryRemote::new(state.client().pan123.clone()),
+    )
 }
