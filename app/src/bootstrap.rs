@@ -6,7 +6,10 @@ use crate::{
     event_bus::EventBus,
     infrastructure::{
         cache::string_store::StringCacheStore, client::library_remote::Pan123LibraryRemote,
+        event::publisher::EventBusPublisher, fs::tokio_file_store::TokioFileStore,
+        import::gateway::ImportGateway, repo::keyword::SeaOrmKeywordRepository,
     },
+    library::import::ImportContext,
     server::media::MediaServerContext,
     state::AppState,
 };
@@ -33,7 +36,40 @@ impl AppRuntime {
             log_dir: state.config().get_log_dir(),
             db: state.db().clone(),
             bot: bot.clone(),
-            bot_runtime: bot::BotRuntime::from_state(state.clone()),
+            bot_runtime: bot::BotRuntime::new(
+                teloxide::types::UserId(
+                    state
+                        .config()
+                        .get_telegram_config()
+                        .user_id
+                        .try_into()
+                        .unwrap(),
+                ),
+                SeaOrmKeywordRepository::new(state.db().clone()),
+                ImportGateway::new(ImportContext::new(
+                    state.client().pan115.clone(),
+                    state.client().pan123.clone(),
+                    state.client().pan189.clone(),
+                    state.client().tmdb.clone(),
+                    state.config().get_library_config().remote_path.clone(),
+                    state.config().get_library_config().local_path.clone(),
+                    state
+                        .config()
+                        .get_media_server_config()
+                        .get_strm_download_url(),
+                )),
+                EventBusPublisher::new(event_bus.clone()),
+                Pan123LibraryRemote::new(state.client().pan123.clone()),
+                TokioFileStore,
+                crate::application::sync_strm::SyncStrmConfig {
+                    remote_path: state.config().get_library_config().remote_path.clone(),
+                    local_path: state.config().get_library_config().local_path.clone(),
+                    strm_download_url: state
+                        .config()
+                        .get_media_server_config()
+                        .get_strm_download_url(),
+                },
+            ),
             media_server_addr: state.config().get_media_server_config().get_addr(),
             media_server_ctx: MediaServerContext {
                 path_prefix: state

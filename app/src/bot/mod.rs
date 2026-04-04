@@ -11,8 +11,6 @@ use crate::{
         fs::tokio_file_store::TokioFileStore, import::gateway::ImportGateway,
         repo::keyword::SeaOrmKeywordRepository,
     },
-    library::import::ImportContext,
-    state::AppState,
 };
 
 mod cmd;
@@ -32,40 +30,23 @@ pub(crate) struct BotRuntime {
 }
 
 impl BotRuntime {
-    pub(crate) fn from_state(state: AppState) -> Self {
+    pub(crate) fn new(
+        user_id: UserId,
+        keyword_repo: SeaOrmKeywordRepository,
+        import_gateway: ImportGateway,
+        notify_publisher: EventBusPublisher,
+        sync_remote: Pan123LibraryRemote,
+        sync_file_store: TokioFileStore,
+        sync_config: crate::application::sync_strm::SyncStrmConfig,
+    ) -> Self {
         Self {
-            user_id: UserId(
-                state
-                    .config()
-                    .get_telegram_config()
-                    .user_id
-                    .try_into()
-                    .unwrap(),
-            ),
-            keyword_repo: SeaOrmKeywordRepository::new(state.db().clone()),
-            import_gateway: ImportGateway::new(ImportContext::new(
-                state.client().pan115.clone(),
-                state.client().pan123.clone(),
-                state.client().pan189.clone(),
-                state.client().tmdb.clone(),
-                state.config().get_library_config().remote_path.clone(),
-                state.config().get_library_config().local_path.clone(),
-                state
-                    .config()
-                    .get_media_server_config()
-                    .get_strm_download_url(),
-            )),
-            notify_publisher: EventBusPublisher::new(state.bus().clone()),
-            sync_remote: Pan123LibraryRemote::new(state.client().pan123.clone()),
-            sync_file_store: TokioFileStore,
-            sync_config: crate::application::sync_strm::SyncStrmConfig {
-                remote_path: state.config().get_library_config().remote_path.clone(),
-                local_path: state.config().get_library_config().local_path.clone(),
-                strm_download_url: state
-                    .config()
-                    .get_media_server_config()
-                    .get_strm_download_url(),
-            },
+            user_id,
+            keyword_repo,
+            import_gateway,
+            notify_publisher,
+            sync_remote,
+            sync_file_store,
+            sync_config,
         }
     }
 
