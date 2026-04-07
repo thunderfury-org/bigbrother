@@ -56,7 +56,7 @@ pub fn init(log_dir: &str) {
             }
 
             // Exclude access log entries
-            !(meta.is_event() && meta.target() == "bigbrother::server::log")
+            !(meta.is_event() && meta.target() == "bigbrother::interface::http::log")
         }));
 
     // Separate logger for access.log
@@ -64,7 +64,7 @@ pub fn init(log_dir: &str) {
         .with_writer(access_log_writer)
         .with_timer(OffsetTime::new(offset, well_known::Iso8601::<CONFIG>))
         .with_ansi(false)
-        .with_filter(EnvFilter::new("off,bigbrother::server::log=info"));
+        .with_filter(EnvFilter::new("off,bigbrother::interface::http::log=info"));
 
     tracing_subscriber::registry()
         .with(access_logger)
