@@ -21,19 +21,21 @@
 - `domain/library/path_mapping.rs` 与 `domain/library/sync_plan.rs` 已承担同步链路里的纯规则计算，`SyncStrmService` 主要负责编排与执行。
 - `main.rs` 已把运行时组装收口到 `bootstrap::AppRuntime`，Bot 与媒体服务器分别拿到 `BotRuntime`、`MediaServerContext` 这样的专用上下文，而不是直接透传整个 `AppState`。
 - `server/media.rs` 和多个 `application/*` 模块已经有 fake 驱动测试，说明“先抽边界再测用例”的方向是可行的。
+- `domain` / `application` / `infrastructure` / `interface` 这四个目标目录都已经落地，`bot`、`server` 目前主要承担兼容性 re-export，说明目录收敛方向已基本成型。
 
 但这轮 review 也确认了几处还未完全收口的耦合点：
 
-- `AppState` 仍然一次性持有 DB、cache、bot、event bus、全部 client 和配置，本质上还是 bootstrap 阶段的宽依赖容器。
+- `bootstrap/app.rs` 里的 `AppContext` 仍然一次性持有 DB、cache、bot、event bus、全部 client 和配置，本质上还是 bootstrap 阶段的宽依赖容器。
 - `import` 链路目前通过 `ImportContext` / `ImportGateway` 传递一组外部依赖，距离“显式端口 + 最小能力集”还有一步。
-- `bot` 与 `server` 模块内部仍保留部分对具体 infrastructure 类型的命名耦合，入口层虽然变薄了，但还没有完全做到只依赖抽象。
+- 顶层 `cli.rs`、`event_bus.rs` 以及 `bot` / `server` shim 还没有完全收拢到目标目录，入口结构已经变薄，但目录收口仍留有最后一段兼容层。
+- `bot` 与 `server` 入口内部仍保留部分对具体 infrastructure 类型的命名耦合，虽然运行时对象已经收窄，但还没有完全做到只依赖抽象。
 - 文档中的“下一步落地建议”仍停留在最初切片，已经落后于仓库现状，需要按当前进度继续推进。
 
 ## 2. 当前问题总结
 
-### 2.1 `AppState` 变成了 service locator
+### 2.1 `AppState` / `AppContext` 仍像 service locator
 
-当前 [`app/src/state.rs`](../app/src/state.rs) 负责：
+当前 [`app/src/bootstrap/app.rs`](../app/src/bootstrap/app.rs) 里的 `AppContext` 负责：
 
 - 读取配置
 - 初始化数据库连接
@@ -42,12 +44,12 @@
 - 初始化事件总线
 - 初始化 Telegram Bot
 
-随后整个系统都通过 `AppState` 访问这些对象。
+随后运行时组装仍需要从这个宽上下文中分发依赖。
 
 这会带来两个直接后果：
 
 - 业务函数的真实依赖不显式，阅读签名看不出它到底需要 DB、网络、缓存还是 Bot
-- 测试必须先造出一个“足够完整”的 `AppState`，哪怕只想验证一小段业务规则
+- 测试必须先造出一个“足够完整”的 `AppContext`，哪怕只想验证一小段业务规则
 
 ### 2.2 业务流程和 IO 操作混在一起
 
@@ -296,7 +298,8 @@ app/src/
 - 现有 `library` 下的纯规则迁进 `domain/library`
 - 现有 `client`、`entity`、`cache` 等接入型代码迁进 `infrastructure`
 - 原 `bot` 和 `server` 入口型代码迁进 `interface`
-- `state.rs` 不再承担全局依赖访问，改造成 `bootstrap`
+- `bootstrap/app.rs` 已替代旧式全局状态入口；后续目标是继续缩小它，而不是恢复新的全家桶上下文
+- `cli.rs`、`event_bus.rs` 以及 `bot` / `server` shim 仍可在最后一轮目录收敛时再并入目标结构，避免过早整理表层文件名
 
 ## 7. 端口设计原则
 
@@ -801,8 +804,9 @@ pub async fn sync_strm(state: &AppState) -> AppResult<()>
 
 1. 把 `import` 链路继续拆成显式 port，逐步替换 `ImportContext` 这种“打包依赖”对象。
 2. 让 `AppState` 进一步收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
-3. 清理 `bot` / `server` 模块里对具体 infrastructure 类型的直连命名，让入口层真正只关心 runtime/context 与 service。
-4. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
-5. 当依赖边界稳定后，再统一考虑 `AppState` 的重命名和目录收敛，避免过早做表面整理。
+3. 把 `cli.rs`、`event_bus.rs` 和 `bot` / `server` compatibility shim 继续收口到目标目录，减少“目录已迁、入口仍绕行”的认知负担。
+4. 清理 `bot` / `server` 模块里对具体 infrastructure 类型的直连命名，让入口层真正只关心 runtime/context 与 service。
+5. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
+6. 当依赖边界稳定后，再统一考虑 `AppState` 的重命名和最终目录收敛，避免过早做表面整理。
 
 这样更符合仓库现在的真实阶段：核心切片已经验证可行，接下来要做的是把剩余的宽依赖入口继续压缩掉。
