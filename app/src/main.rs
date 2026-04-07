@@ -1,12 +1,11 @@
 use std::time::Duration;
 
-use bootstrap::AppRuntime;
+use bootstrap::{AppContext, AppRuntime};
 use clap::Parser;
 use cli::{Cli, Commands};
 use tracing::{error, info};
 
 use migration::{Migrator, MigratorTrait};
-use state::AppState;
 use util::signal::shutdown_signal;
 
 mod application;
@@ -24,9 +23,7 @@ mod event_bus;
 mod infrastructure;
 mod library;
 mod logger;
-mod media;
 mod server;
-mod state;
 mod util;
 
 #[tokio::main]
@@ -41,10 +38,10 @@ async fn main() {
 }
 
 async fn run_server(data_dir: &str) {
-    let state = AppState::new(data_dir)
+    let app = AppContext::new(data_dir)
         .await
         .expect("Failed to initialize application state");
-    let runtime = AppRuntime::from_state(state);
+    let runtime = AppRuntime::from_app(app);
     logger::init(runtime.log_dir.as_str());
 
     Migrator::up(&runtime.db, None)
