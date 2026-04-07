@@ -1,6 +1,11 @@
 use sea_orm::DatabaseConnection;
 
 use crate::{
+    application::{
+        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService, resolve_download_url::ResolveDownloadUrlService,
+        sync_strm::SyncStrmService,
+    },
     bot::{self, handler::TelegramDeliveryContext},
     cache::Cache,
     event_bus::EventBus,
@@ -20,7 +25,7 @@ pub struct AppRuntime {
     pub bot: teloxide::Bot,
     pub bot_runtime: bot::BotRuntime,
     pub media_server_addr: String,
-    pub media_server_ctx: MediaServerContext,
+    pub media_server: axum::Router,
     pub event_bus: EventBus,
     pub telegram_delivery: TelegramDeliveryContext,
     pub cache: Cache,
@@ -47,15 +52,20 @@ impl AppRuntime {
                         .try_into()
                         .unwrap(),
                 ),
-                SeaOrmKeywordRepository::new(state.db().clone()),
-                ImportGateway::new(import_context),
-                EventBusPublisher::new(event_bus.clone()),
-                Pan123LibraryRemote::new(state.client().pan123.clone()),
-                TokioFileStore,
-                sync_config,
+                ManageKeywordsService::new(SeaOrmKeywordRepository::new(state.db().clone())),
+                ImportMediaService::new(ImportGateway::new(import_context)),
+                PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
+                SyncStrmService::new(
+                    Pan123LibraryRemote::new(state.client().pan123.clone()),
+                    TokioFileStore,
+                    sync_config,
+                ),
             ),
             media_server_addr: state.config().get_media_server_config().get_addr(),
-            media_server_ctx: media_server_context(&state, cache.clone()),
+            media_server: crate::server::media::new_router(media_server_context(
+                &state,
+                cache.clone(),
+            )),
             event_bus: event_bus.clone(),
             telegram_delivery: TelegramDeliveryContext {
                 bot,
@@ -99,7 +109,9 @@ fn media_server_context(state: &AppState, cache: Cache) -> MediaServerContext {
             .get_media_server_config()
             .get_strm_path_prefix()
             .to_string(),
-        StringCacheStore::new(cache),
-        Pan123LibraryRemote::new(state.client().pan123.clone()),
+        ResolveDownloadUrlService::new(
+            StringCacheStore::new(cache),
+            Pan123LibraryRemote::new(state.client().pan123.clone()),
+        ),
     )
 }

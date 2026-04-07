@@ -43,14 +43,24 @@ pub enum ImportedMedia {
 }
 
 #[derive(Clone)]
-pub(crate) struct ImportContext {
+pub(crate) struct ImportClients {
     pan115: pan115::Client,
     pan123: pan123::Client,
     pan189: pan189::Client,
     tmdb: tmdb::Client,
+}
+
+#[derive(Clone)]
+pub(crate) struct ImportPathConfig {
     remote_path: String,
     local_path: String,
     strm_download_url: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct ImportContext {
+    clients: ImportClients,
+    paths: ImportPathConfig,
 }
 
 pub(crate) struct Importer {
@@ -81,14 +91,22 @@ impl ImportContext {
         local_path: String,
         strm_download_url: String,
     ) -> Self {
-        Self {
-            pan115,
-            pan123,
-            pan189,
-            tmdb,
-            remote_path,
-            local_path,
-            strm_download_url,
-        }
+        Self::from_parts(
+            ImportClients {
+                pan115,
+                pan123,
+                pan189,
+                tmdb,
+            },
+            ImportPathConfig {
+                remote_path,
+                local_path,
+                strm_download_url,
+            },
+        )
+    }
+
+    pub(crate) fn from_parts(clients: ImportClients, paths: ImportPathConfig) -> Self {
+        Self { clients, paths }
     }
 }

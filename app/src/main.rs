@@ -16,6 +16,7 @@ mod cache;
 mod cli;
 mod client;
 mod config;
+mod domain;
 mod entity;
 mod error;
 mod event;
@@ -50,7 +51,7 @@ async fn run_server(data_dir: &str) {
         .await
         .expect("Migration failed");
     tokio::join!(
-        server::run(runtime.media_server_addr, runtime.media_server_ctx),
+        server::run(runtime.media_server_addr, runtime.media_server),
         bot::run(runtime.bot, runtime.bot_runtime),
         run_event_bus(runtime.event_bus, runtime.telegram_delivery),
         run_cache_cleanup(runtime.cache)

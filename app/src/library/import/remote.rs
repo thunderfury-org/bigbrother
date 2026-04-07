@@ -21,25 +21,25 @@ impl ImportRemote {
     }
 
     pub(super) async fn list_library_files(&self, dir_id: i64) -> RequestResult<Vec<pan123::File>> {
-        self.ctx.pan123.list(dir_id).await
+        self.ctx.clients.pan123.list(dir_id).await
     }
 
     pub(super) async fn get_library_dir_id_by_path(
         &self,
         path: &str,
     ) -> RequestResult<Option<i64>> {
-        self.ctx.pan123.get_file_id_by_path(path).await
+        self.ctx.clients.pan123.get_file_id_by_path(path).await
     }
 
     pub(super) async fn mkdir_library_path(&self, path: &str) -> RequestResult<i64> {
-        self.ctx.pan123.mkdir_by_path(path).await
+        self.ctx.clients.pan123.mkdir_by_path(path).await
     }
 
     pub(super) async fn list_library_dir_ids(
         &self,
         dir_id: i64,
     ) -> RequestResult<std::collections::HashMap<String, i64>> {
-        self.ctx.pan123.list_dir_ids(dir_id).await
+        self.ctx.clients.pan123.list_dir_ids(dir_id).await
     }
 
     pub(super) async fn mkdir_library_dir(
@@ -47,11 +47,15 @@ impl ImportRemote {
         parent_dir_id: i64,
         folder_name: &str,
     ) -> RequestResult<i64> {
-        self.ctx.pan123.mkdir(parent_dir_id, folder_name).await
+        self.ctx
+            .clients
+            .pan123
+            .mkdir(parent_dir_id, folder_name)
+            .await
     }
 
     pub(super) async fn trash_library_files(&self, file_ids: &[i64]) -> RequestResult<()> {
-        self.ctx.pan123.trash_files(file_ids).await
+        self.ctx.clients.pan123.trash_files(file_ids).await
     }
 
     pub(super) async fn fast_upload_md5(
@@ -62,6 +66,7 @@ impl ImportRemote {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.ctx
+            .clients
             .pan123
             .fast_upload(parent_dir_id, file_name, etag, size)
             .await
@@ -75,6 +80,7 @@ impl ImportRemote {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.ctx
+            .clients
             .pan123
             .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
             .await
@@ -85,7 +91,11 @@ impl ImportRemote {
         file_id: i64,
         local_path: &str,
     ) -> RequestResult<()> {
-        self.ctx.pan123.download_file(file_id, local_path).await
+        self.ctx
+            .clients
+            .pan123
+            .download_file(file_id, local_path)
+            .await
     }
 
     pub(super) async fn list_pan123_share_files(
@@ -95,6 +105,7 @@ impl ImportRemote {
         parent_id: i64,
     ) -> RequestResult<Vec<pan123::File>> {
         self.ctx
+            .clients
             .pan123
             .list_share_files(share_key, share_password, parent_id)
             .await
@@ -104,7 +115,7 @@ impl ImportRemote {
         &self,
         share_code: &str,
     ) -> RequestResult<pan189::ShareInfo> {
-        self.ctx.pan189.get_share_info(share_code).await
+        self.ctx.clients.pan189.get_share_info(share_code).await
     }
 
     pub(super) async fn list_pan189_share_files(
@@ -114,6 +125,7 @@ impl ImportRemote {
         parent_id: &str,
     ) -> RequestResult<(Vec<pan189::Folder>, Vec<pan189::File>)> {
         self.ctx
+            .clients
             .pan189
             .list_share_files(share_id, share_mode, parent_id)
             .await
@@ -126,6 +138,7 @@ impl ImportRemote {
         cid: &str,
     ) -> RequestResult<Vec<pan115::FileEntry>> {
         self.ctx
+            .clients
             .pan115
             .list_share_files(share_code, receive_code, cid)
             .await
@@ -136,11 +149,11 @@ impl ImportRemote {
         title: &str,
         year: &str,
     ) -> RequestResult<Vec<SearchMovieResult>> {
-        self.ctx.tmdb.search_movie(title, year).await
+        self.ctx.clients.tmdb.search_movie(title, year).await
     }
 
     pub(super) async fn get_movie_detail(&self, id: u32) -> RequestResult<Option<MovieDetail>> {
-        self.ctx.tmdb.get_movie_detail(id).await
+        self.ctx.clients.tmdb.get_movie_detail(id).await
     }
 
     pub(super) async fn search_tv(
@@ -148,25 +161,28 @@ impl ImportRemote {
         title: &str,
         year: &str,
     ) -> RequestResult<Vec<SearchTvResult>> {
-        self.ctx.tmdb.search_tv(title, year).await
+        self.ctx.clients.tmdb.search_tv(title, year).await
     }
 
     pub(super) async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
-        self.ctx.tmdb.get_tv_detail(id).await
+        self.ctx.clients.tmdb.get_tv_detail(id).await
     }
 
     pub(super) fn library_remote_path(&self) -> &str {
-        self.ctx.remote_path.as_str()
+        self.ctx.paths.remote_path.as_str()
     }
 
     pub(super) fn local_path_for_remote(&self, remote_path: &str) -> String {
-        remote_path.replace(self.ctx.remote_path.as_str(), self.ctx.local_path.as_str())
+        remote_path.replace(
+            self.ctx.paths.remote_path.as_str(),
+            self.ctx.paths.local_path.as_str(),
+        )
     }
 
     pub(super) fn build_strm_url(&self, remote_file_path: &str, file_id: i64) -> String {
         format!(
             "{}{}?file_id={}",
-            self.ctx.strm_download_url, remote_file_path, file_id
+            self.ctx.paths.strm_download_url, remote_file_path, file_id
         )
     }
 
@@ -209,15 +225,15 @@ mod tests {
     use super::*;
 
     fn import_remote() -> ImportRemote {
-        ImportRemote::new(ImportContext {
-            pan115: pan115::Client::new(),
-            pan123: pan123::Client::new("", "", "/tmp/pan123"),
-            pan189: pan189::Client::new(),
-            tmdb: crate::client::tmdb::Client::new(""),
-            remote_path: "/remote".to_string(),
-            local_path: "/local".to_string(),
-            strm_download_url: "http://localhost/d".to_string(),
-        })
+        ImportRemote::new(ImportContext::new(
+            pan115::Client::new(),
+            pan123::Client::new("", "", "/tmp/pan123"),
+            pan189::Client::new(),
+            crate::client::tmdb::Client::new(""),
+            "/remote".to_string(),
+            "/local".to_string(),
+            "http://localhost/d".to_string(),
+        ))
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub trait TelegramMessageSender {
     async fn send(&self, payload: &SendTelegramMessage) -> AppResult<()>;
 }
 
+#[derive(Clone)]
 pub struct PublishTelegramMessageService<P> {
     publisher: P,
 }
@@ -32,6 +33,7 @@ where
         self.publisher.publish(&payload).await
     }
 
+    #[cfg(test)]
     pub async fn send_text<T: Into<String>>(
         &self,
         text: T,

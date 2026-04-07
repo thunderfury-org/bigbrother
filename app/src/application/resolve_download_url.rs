@@ -15,6 +15,7 @@ pub enum ResolveDownloadUrlResult {
     NotFound,
 }
 
+#[derive(Clone)]
 pub struct ResolveDownloadUrlService<C, S> {
     cache: C,
     source: S,

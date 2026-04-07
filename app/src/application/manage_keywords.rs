@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 
 use super::ports::{KeywordRecord, KeywordRepository};
 
+#[derive(Clone)]
 pub struct ManageKeywordsService<R> {
     repo: R,
 }

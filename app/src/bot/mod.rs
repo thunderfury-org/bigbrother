@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use teloxide::prelude::*;
 use tracing::{error, info};
 
@@ -18,56 +20,57 @@ mod format;
 pub mod handler;
 mod msg;
 
+pub(crate) type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
+pub(crate) type ImportService = ImportMediaService<ImportGateway>;
+pub(crate) type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
+pub(crate) type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
+
+struct BotServices {
+    keyword: KeywordService,
+    import: ImportService,
+    notify: NotifyService,
+    sync: SyncService,
+}
+
 #[derive(Clone)]
 pub(crate) struct BotRuntime {
     pub user_id: UserId,
-    pub keyword_repo: SeaOrmKeywordRepository,
-    pub import_gateway: ImportGateway,
-    pub notify_publisher: EventBusPublisher,
-    pub sync_remote: Pan123LibraryRemote,
-    pub sync_file_store: TokioFileStore,
-    pub sync_config: crate::application::sync_strm::SyncStrmConfig,
+    services: Arc<BotServices>,
 }
 
 impl BotRuntime {
     pub(crate) fn new(
         user_id: UserId,
-        keyword_repo: SeaOrmKeywordRepository,
-        import_gateway: ImportGateway,
-        notify_publisher: EventBusPublisher,
-        sync_remote: Pan123LibraryRemote,
-        sync_file_store: TokioFileStore,
-        sync_config: crate::application::sync_strm::SyncStrmConfig,
+        keyword_service: KeywordService,
+        import_service: ImportService,
+        notify_service: NotifyService,
+        sync_service: SyncService,
     ) -> Self {
         Self {
             user_id,
-            keyword_repo,
-            import_gateway,
-            notify_publisher,
-            sync_remote,
-            sync_file_store,
-            sync_config,
+            services: Arc::new(BotServices {
+                keyword: keyword_service,
+                import: import_service,
+                notify: notify_service,
+                sync: sync_service,
+            }),
         }
     }
 
-    fn keyword_service(&self) -> ManageKeywordsService<SeaOrmKeywordRepository> {
-        ManageKeywordsService::new(self.keyword_repo.clone())
+    fn keyword_service(&self) -> &KeywordService {
+        &self.services.keyword
     }
 
-    fn import_service(&self) -> ImportMediaService<ImportGateway> {
-        ImportMediaService::new(self.import_gateway.clone())
+    fn import_service(&self) -> &ImportService {
+        &self.services.import
     }
 
-    fn notify_service(&self) -> PublishTelegramMessageService<EventBusPublisher> {
-        PublishTelegramMessageService::new(self.notify_publisher.clone())
+    fn notify_service(&self) -> &NotifyService {
+        &self.services.notify
     }
 
-    fn sync_service(&self) -> SyncStrmService<Pan123LibraryRemote, TokioFileStore> {
-        SyncStrmService::new(
-            self.sync_remote.clone(),
-            self.sync_file_store,
-            self.sync_config.clone(),
-        )
+    fn sync_service(&self) -> &SyncService {
+        &self.services.sync
     }
 }
 

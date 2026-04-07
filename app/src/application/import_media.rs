@@ -9,6 +9,7 @@ pub trait ImportMediaGateway {
     async fn import_from_json(&self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>>;
 }
 
+#[derive(Clone)]
 pub struct ImportMediaService<G> {
     gateway: G,
 }
