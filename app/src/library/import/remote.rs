@@ -1,11 +1,11 @@
 use std::{io, path::Path};
 
 use crate::{
-    client::{
+    error::{AppError, AppResult},
+    infrastructure::client::{
         RequestResult, pan115, pan123, pan189,
         tmdb::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
     },
-    error::{AppError, AppResult},
 };
 
 use super::ImportContext;
@@ -229,7 +229,7 @@ mod tests {
             pan115::Client::new(),
             pan123::Client::new("", "", "/tmp/pan123"),
             pan189::Client::new(),
-            crate::client::tmdb::Client::new(""),
+            crate::infrastructure::client::tmdb::Client::new(""),
             "/remote".to_string(),
             "/local".to_string(),
             "http://localhost/d".to_string(),

@@ -1,6 +1,6 @@
 use sea_orm::DatabaseConnection;
 
-use crate::{entity::event, error::AppResult};
+use crate::{error::AppResult, infrastructure::entity::event};
 
 #[derive(Debug, Clone)]
 pub struct EventRecord {

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use crate::client::tmdb::Genre;
+use crate::infrastructure::client::tmdb::Genre;
 
 const GENRE_ANIMATION: u32 = 16; // 动漫
 const GENRE_DOCUMENTARY: u32 = 99; // 记录

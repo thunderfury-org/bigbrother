@@ -2,17 +2,18 @@ use crate::{
     application::ports::{
         DownloadUrlError, DownloadUrlResult, DownloadUrlSource, LibraryRemote, RemoteEntry,
     },
-    client::{self, RequestError},
     error::AppResult,
 };
 
+use super::{RequestError, pan123};
+
 #[derive(Clone)]
 pub struct Pan123LibraryRemote {
-    client: client::pan123::Client,
+    client: pan123::Client,
 }
 
 impl Pan123LibraryRemote {
-    pub fn new(client: client::pan123::Client) -> Self {
+    pub fn new(client: pan123::Client) -> Self {
         Self { client }
     }
 }

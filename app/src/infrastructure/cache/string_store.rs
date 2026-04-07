@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{application::ports::DownloadUrlCache, cache::Cache, error::AppResult};
+use crate::{application::ports::DownloadUrlCache, error::AppResult, infrastructure::cache::Cache};
 
 #[derive(Clone)]
 pub struct StringCacheStore {

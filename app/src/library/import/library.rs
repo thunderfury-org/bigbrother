@@ -8,8 +8,8 @@ use super::{
     inner::{MediaFile, RawFile},
 };
 use crate::{
-    client::tmdb::{MovieDetail, TvDetail},
     error::AppResult,
+    infrastructure::client::tmdb::{MovieDetail, TvDetail},
 };
 
 impl Importer {
@@ -127,7 +127,7 @@ pub(super) fn get_year_from_date(date: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::tmdb::Genre;
+    use crate::infrastructure::client::tmdb::Genre;
 
     fn create_test_tv(
         id: u32,

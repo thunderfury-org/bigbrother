@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use crate::{cache, client, config, error::AppResult, infrastructure::event_bus::EventBus};
+use crate::{
+    config,
+    error::AppResult,
+    infrastructure::{cache::Cache, client, event_bus::EventBus},
+};
 
 /// Unified client struct containing all API clients
 #[derive(Clone)]
@@ -35,7 +39,7 @@ struct InnerAppContext {
     pub client: Arc<Client>,
     pub bus: Arc<EventBus>,
     pub bot: Arc<teloxide::Bot>,
-    pub cache: cache::Cache,
+    pub cache: Cache,
 }
 
 #[derive(Clone)]
@@ -64,7 +68,7 @@ impl AppContext {
                 bot: Arc::new(teloxide::Bot::new(
                     config.get_telegram_config().bot_token.as_str(),
                 )),
-                cache: cache::Cache::new(db.clone()),
+                cache: Cache::new(db.clone()),
                 db,
                 config: Arc::new(config),
             }),
@@ -91,7 +95,7 @@ impl AppContext {
         &self.inner.bot
     }
 
-    pub fn cache(&self) -> &cache::Cache {
+    pub fn cache(&self) -> &Cache {
         &self.inner.cache
     }
 }

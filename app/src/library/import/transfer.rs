@@ -8,8 +8,8 @@ use super::{
     library,
 };
 use crate::{
-    client::tmdb::{MovieDetail, TvDetail},
     error::{AppError, AppResult},
+    infrastructure::client::tmdb::{MovieDetail, TvDetail},
     log_time,
 };
 

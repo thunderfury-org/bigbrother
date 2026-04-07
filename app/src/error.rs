@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::client::RequestError;
+use crate::infrastructure::client::RequestError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {

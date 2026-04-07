@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    client::{
+    domain::media::Metadata,
+    infrastructure::client::{
         pan115, pan123, pan189,
         tmdb::{self, MovieDetail, TvDetail},
     },
-    domain::media::Metadata,
 };
 
 mod category;

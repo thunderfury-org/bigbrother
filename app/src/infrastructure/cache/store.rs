@@ -4,7 +4,7 @@ use chrono::Utc;
 use sea_orm::DatabaseConnection;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{entity::cache, error::AppResult};
+use crate::{error::AppResult, infrastructure::entity::cache};
 
 /// Cache trait for storing and retrieving data with optional TTL
 #[derive(Clone)]

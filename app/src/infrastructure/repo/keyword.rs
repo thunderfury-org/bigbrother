@@ -2,8 +2,8 @@ use sea_orm::DatabaseConnection;
 
 use crate::{
     application::ports::{KeywordRecord, KeywordRepository},
-    entity,
     error::AppResult,
+    infrastructure::entity,
 };
 
 #[derive(Clone)]

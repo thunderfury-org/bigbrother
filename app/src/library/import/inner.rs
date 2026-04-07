@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    client::tmdb::{MovieDetail, TvDetail},
     domain::media::Metadata,
+    infrastructure::client::tmdb::{MovieDetail, TvDetail},
 };
 
 #[derive(Debug, Clone)]

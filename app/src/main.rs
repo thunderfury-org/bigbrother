@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bootstrap::{AppContext, AppRuntime};
 use clap::Parser;
-use infrastructure::event_bus::EventBus;
+use infrastructure::{cache::Cache, event_bus::EventBus};
 use interface::{
     cli::{Cli, Commands},
     http,
@@ -15,11 +15,8 @@ use util::signal::shutdown_signal;
 
 mod application;
 mod bootstrap;
-mod cache;
-mod client;
 mod config;
 mod domain;
-mod entity;
 mod error;
 mod infrastructure;
 mod interface;
@@ -70,7 +67,7 @@ async fn run_event_bus(bus: EventBus, delivery_ctx: TelegramDeliveryContext) {
     info!("Shutting down event bus...");
 }
 
-async fn run_cache_cleanup(cache: cache::Cache) {
+async fn run_cache_cleanup(cache: Cache) {
     let interval = Duration::from_hours(12);
 
     info!("Cache cleanup task started (interval: 12 hours)");
