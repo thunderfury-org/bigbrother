@@ -61,8 +61,8 @@ async fn run_event_bus(bus: EventBus, delivery_ctx: TelegramDeliveryContext) {
         delivery_ctx,
         interface::telegram::delivery::on_send_telegram_message,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     info!("Event bus is running");
     // wait for shutdown signal

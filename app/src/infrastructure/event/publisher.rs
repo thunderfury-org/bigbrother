@@ -1,5 +1,6 @@
 use crate::{
-    application::notify::TelegramMessagePublisher, error::AppResult,
+    application::notify::TelegramMessagePublisher,
+    error::AppResult,
     infrastructure::{event::SendTelegramMessage, event_bus::EventBus},
 };
 
