@@ -126,6 +126,12 @@ The current runtime is split into a small bootstrap layer plus use-case services
 - `app/src/library/import/` still uses an `ImportContext` bundle, so the import flow is the main remaining wide-dependency area called out in the refactor blueprint.
 - `doc/architecture-refactor-blueprint.md` records the refactor plan, current status, review findings, and remaining cleanup opportunities.
 
+## Current refactor hotspots
+
+- `app/src/bootstrap/mod.rs`: composition root still wires concrete infrastructure adapters directly into application services.
+- `app/src/library/import/`: import flow still depends on the bundled `ImportContext`, so it is the broadest remaining dependency surface.
+- `app/src/bot/mod.rs` and `app/src/server/mod.rs`: compatibility shims remain in place so `main.rs` can keep a stable entrypoint while the directory migration settles.
+
 ## Development
 
 Common commands:

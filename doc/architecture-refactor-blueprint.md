@@ -31,6 +31,16 @@
 - `bot` 与 `server` 入口内部仍保留部分对具体 infrastructure 类型的命名耦合，虽然运行时对象已经收窄，但还没有完全做到只依赖抽象。
 - 文档中的“下一步落地建议”仍停留在最初切片，已经落后于仓库现状，需要按当前进度继续推进。
 
+## 1.2 本轮 review 的代码定位
+
+为了避免后续继续围绕抽象描述打转，这里把本轮 review 对应到当前代码位置：
+
+- [`app/src/main.rs`](../app/src/main.rs)：仍通过顶层 `bot` / `server` 模块启动 Telegram 与 HTTP 入口，说明兼容层仍在生效。
+- [`app/src/bootstrap/mod.rs`](../app/src/bootstrap/mod.rs)：当前真正的 composition root，直接把 `SeaOrmKeywordRepository`、`ImportGateway`、`Pan123LibraryRemote`、`TokioFileStore` 等 concrete adapter 组装进应用层 service。
+- [`app/src/bot/mod.rs`](../app/src/bot/mod.rs) 与 [`app/src/server/mod.rs`](../app/src/server/mod.rs)：已经降格为 re-export shim，本身几乎不承载业务逻辑。
+- [`app/src/interface/telegram/mod.rs`](../app/src/interface/telegram/mod.rs) 与 [`app/src/interface/http/mod.rs`](../app/src/interface/http/mod.rs)：接口层职责已经开始成形，但 runtime 类型别名里仍能看到 concrete infrastructure 组合。
+- [`app/src/library/import/`](../app/src/library/import)：仍是最需要继续拆端口的区域；当前 `ImportContext` 让导入链路的最小依赖集合还不够显式。
+
 ## 2. 当前问题总结
 
 ### 2.1 `AppState` / `AppContext` 仍像 service locator
