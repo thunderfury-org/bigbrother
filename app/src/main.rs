@@ -21,7 +21,6 @@ mod config;
 mod domain;
 mod entity;
 mod error;
-mod event;
 mod infrastructure;
 mod interface;
 mod library;
