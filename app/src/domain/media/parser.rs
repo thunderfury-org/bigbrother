@@ -444,6 +444,7 @@ mod tests {
     fn test_parse_media() {
         let data_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("src")
+            .join("domain")
             .join("media")
             .join("testdata");
 

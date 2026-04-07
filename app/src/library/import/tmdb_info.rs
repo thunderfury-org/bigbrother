@@ -2,8 +2,8 @@ use tracing::info;
 
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
+    domain::media::Metadata,
     error::AppResult,
-    media::Metadata,
 };
 
 use super::Importer;

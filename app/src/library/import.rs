@@ -5,7 +5,7 @@ use crate::{
         pan115, pan123, pan189,
         tmdb::{self, MovieDetail, TvDetail},
     },
-    media::Metadata,
+    domain::media::Metadata,
 };
 
 mod category;

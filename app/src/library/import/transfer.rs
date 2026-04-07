@@ -588,7 +588,7 @@ fn need_overwrite_existing_files(existing_files: &[MediaFile], media_file: &Medi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::Metadata;
+    use crate::domain::media::Metadata;
 
     fn create_mock_media_file(size: u64) -> MediaFile {
         MediaFile {

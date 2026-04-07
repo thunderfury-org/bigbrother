@@ -1,4 +1,4 @@
-use crate::media::Metadata;
+use crate::domain::media::Metadata;
 
 use super::Importer;
 

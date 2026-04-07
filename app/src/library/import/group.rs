@@ -6,7 +6,7 @@ use super::{
     Importer,
     inner::{Media, MediaFile, RawFile},
 };
-use crate::{error::AppResult, media::Metadata};
+use crate::{domain::media::Metadata, error::AppResult};
 
 /// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
 pub(super) fn group_video_and_subtitle_files(
@@ -183,7 +183,7 @@ impl Importer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::{FileType, Metadata};
+    use crate::domain::media::{FileType, Metadata};
 
     // Helper function to create a test RawFile
     fn create_raw_file(name: &str) -> RawFile {

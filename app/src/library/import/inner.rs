@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     client::tmdb::{MovieDetail, TvDetail},
-    media::Metadata,
+    domain::media::Metadata,
 };
 
 #[derive(Debug, Clone)]

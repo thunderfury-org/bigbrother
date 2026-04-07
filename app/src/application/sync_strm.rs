@@ -1,12 +1,14 @@
 use tracing::info;
 
 use crate::{
-    domain::library::{
-        path_mapping::SyncPathMapper,
-        sync_plan::{LocalNode, PlannedFile, PlannedFileKind, SyncPlan, build_sync_plan},
+    domain::{
+        library::{
+            path_mapping::SyncPathMapper,
+            sync_plan::{LocalNode, PlannedFile, PlannedFileKind, SyncPlan, build_sync_plan},
+        },
+        media::{FileType, Metadata},
     },
     error::{AppError, AppResult},
-    media::{FileType, Metadata},
 };
 
 use super::ports::{FileStore, LibraryRemote};

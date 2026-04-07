@@ -29,7 +29,7 @@ impl Client {
 }
 
 #[derive(Clone)]
-struct InnerAppState {
+struct InnerAppContext {
     pub db: DatabaseConnection,
     pub config: Arc<config::Manager>,
     pub client: Arc<Client>,
@@ -39,11 +39,11 @@ struct InnerAppState {
 }
 
 #[derive(Clone)]
-pub struct AppState {
-    inner: Arc<InnerAppState>,
+pub struct AppContext {
+    inner: Arc<InnerAppContext>,
 }
 
-impl AppState {
+impl AppContext {
     pub async fn new(data_dir: &str) -> AppResult<Self> {
         let config = config::Manager::try_from(data_dir.trim())?;
 
@@ -57,8 +57,8 @@ impl AppState {
         opt.sqlx_logging(false);
         let db = Database::connect(opt).await?;
 
-        Ok(AppState {
-            inner: Arc::new(InnerAppState {
+        Ok(AppContext {
+            inner: Arc::new(InnerAppContext {
                 client: Arc::new(Client::new(&config)),
                 bus: Arc::new(EventBus::new(db.clone())),
                 bot: Arc::new(teloxide::Bot::new(
