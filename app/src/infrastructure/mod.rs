@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod client;
 pub mod event;
+pub mod event_bus;
 pub mod fs;
 pub mod import;
 pub mod repo;

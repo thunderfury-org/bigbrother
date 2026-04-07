@@ -21,6 +21,7 @@ mod error;
 mod event;
 mod event_bus;
 mod infrastructure;
+mod interface;
 mod library;
 mod logger;
 mod server;

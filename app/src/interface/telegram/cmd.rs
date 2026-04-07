@@ -6,7 +6,7 @@ use teloxide::{
 };
 use tracing::{error, info};
 
-use crate::bot::BotRuntime;
+use super::BotRuntime;
 
 const DELETE_KEYWORD_PREFIX: &str = "delete_keyword:";
 const DELETE_KEYWORD_CANCEL: &str = "delete_keyword:cancel";
