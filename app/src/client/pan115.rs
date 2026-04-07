@@ -269,8 +269,6 @@ mod tests {
     fn test_client_new() {
         let _client = Client::new();
         let _client_default = Client::default();
-        // Just verify creation works
-        assert!(true);
     }
 
     #[test]

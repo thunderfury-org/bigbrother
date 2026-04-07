@@ -604,27 +604,7 @@ mod tests {
         }
     }
 
-    fn create_media_file_with_metadata(
-        name: &str,
-        extension: &str,
-        resolution: &str,
-        frame_rate: &str,
-        quality: &str,
-        hdr: &str,
-        video_codec: &str,
-        audio_codec: &str,
-        release_group: &str,
-    ) -> MediaFile {
-        let mut metadata = Metadata::default();
-        metadata.extension = extension.to_string();
-        metadata.resolution = resolution.to_string();
-        metadata.frame_rate = frame_rate.to_string();
-        metadata.quality = quality.to_string();
-        metadata.hdr = hdr.to_string();
-        metadata.video_codec = video_codec.to_string();
-        metadata.audio_codec = audio_codec.to_string();
-        metadata.release_group = release_group.to_string();
-
+    fn create_media_file_with_metadata(name: &str, metadata: Metadata) -> MediaFile {
         MediaFile {
             metadata: Box::new(metadata),
             video: RawFile {
@@ -644,14 +624,12 @@ mod tests {
         let prefix = "The Matrix.1999.";
         let file = create_media_file_with_metadata(
             "The Matrix.1999.BluRay.1080p.mkv",
-            ".mkv",
-            "1080p",
-            "",
-            "BluRay",
-            "",
-            "",
-            "",
-            "",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "1080p".to_string(),
+                quality: "BluRay".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "The Matrix.1999.BluRay.1080p.mkv");
@@ -662,14 +640,17 @@ mod tests {
         let prefix = "Breaking Bad.2008.S01E01.";
         let file = create_media_file_with_metadata(
             "original_name.mkv",
-            ".mkv",
-            "2160p",
-            "60fps",
-            "WEB-DL",
-            "HDR10",
-            "H265",
-            "DTS",
-            "RARBG",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "2160p".to_string(),
+                frame_rate: "60fps".to_string(),
+                quality: "WEB-DL".to_string(),
+                hdr: "HDR10".to_string(),
+                video_codec: "H265".to_string(),
+                audio_codec: "DTS".to_string(),
+                release_group: "RARBG".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(
@@ -683,14 +664,15 @@ mod tests {
         let prefix = "Inception.2010.";
         let file = create_media_file_with_metadata(
             "original.mp4",
-            ".mp4",
-            "1080p",
-            "24fps",
-            "BluRay",
-            "",
-            "H264",
-            "AAC",
-            "",
+            Metadata {
+                extension: ".mp4".to_string(),
+                resolution: "1080p".to_string(),
+                frame_rate: "24fps".to_string(),
+                quality: "BluRay".to_string(),
+                video_codec: "H264".to_string(),
+                audio_codec: "AAC".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Inception.2010.1080p.24fps.BluRay.H264.AAC.mp4");
@@ -699,8 +681,14 @@ mod tests {
     #[test]
     fn test_format_video_file_name_minimal_metadata() {
         let prefix = "Movie.2020.";
-        let file =
-            create_media_file_with_metadata("file.mkv", ".mkv", "720p", "", "", "", "", "", "");
+        let file = create_media_file_with_metadata(
+            "file.mkv",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "720p".to_string(),
+                ..Default::default()
+            },
+        );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Movie.2020.720p.mkv");
     }
@@ -708,7 +696,13 @@ mod tests {
     #[test]
     fn test_format_video_file_name_no_metadata() {
         let prefix = "Show.2021.";
-        let file = create_media_file_with_metadata("video.avi", ".avi", "", "", "", "", "", "", "");
+        let file = create_media_file_with_metadata(
+            "video.avi",
+            Metadata {
+                extension: ".avi".to_string(),
+                ..Default::default()
+            },
+        );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Show.2021.avi");
     }
@@ -719,14 +713,15 @@ mod tests {
         let prefix = "HDR Movie.2022.";
         let file = create_media_file_with_metadata(
             "original.mkv",
-            ".mkv",
-            "2160p",
-            "",
-            "WEB-DL",
-            "HDR10+",
-            "H265",
-            "",
-            "NTb",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "2160p".to_string(),
+                quality: "WEB-DL".to_string(),
+                hdr: "HDR10+".to_string(),
+                video_codec: "H265".to_string(),
+                release_group: "NTb".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "HDR Movie.2022.2160p.WEB-DL.HDR10+.H265-NTb.mkv");
@@ -734,14 +729,16 @@ mod tests {
         // Test with Dolby Vision
         let file_dv = create_media_file_with_metadata(
             "original.mkv",
-            ".mkv",
-            "2160p",
-            "",
-            "BluRay",
-            "DV",
-            "H265",
-            "Atmos",
-            "GROUP",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "2160p".to_string(),
+                quality: "BluRay".to_string(),
+                hdr: "DV".to_string(),
+                video_codec: "H265".to_string(),
+                audio_codec: "Atmos".to_string(),
+                release_group: "GROUP".to_string(),
+                ..Default::default()
+            },
         );
         let result_dv = format_video_file_name(prefix, &file_dv);
         assert_eq!(
@@ -754,7 +751,15 @@ mod tests {
     fn test_format_video_file_name_special_characters_in_prefix() {
         let prefix = "Star Wars: Episode IV.1977.";
         let file = create_media_file_with_metadata(
-            "file.mkv", ".mkv", "1080p", "", "BluRay", "", "H264", "", "YTS",
+            "file.mkv",
+            Metadata {
+                extension: ".mkv".to_string(),
+                resolution: "1080p".to_string(),
+                quality: "BluRay".to_string(),
+                video_codec: "H264".to_string(),
+                release_group: "YTS".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(
@@ -768,7 +773,14 @@ mod tests {
         // Test with only some metadata fields populated
         let prefix = "Series.2023.S02E05.";
         let file = create_media_file_with_metadata(
-            "ep.mkv", ".mkv", "", "30fps", "", "", "H264", "", "AMZN",
+            "ep.mkv",
+            Metadata {
+                extension: ".mkv".to_string(),
+                frame_rate: "30fps".to_string(),
+                video_codec: "H264".to_string(),
+                release_group: "AMZN".to_string(),
+                ..Default::default()
+            },
         );
         let result = format_video_file_name(prefix, &file);
         assert_eq!(result, "Series.2023.S02E05.30fps.H264-AMZN.mkv");
@@ -779,24 +791,42 @@ mod tests {
         let prefix = "Video.2024.";
 
         // Test .mp4
-        let file_mp4 =
-            create_media_file_with_metadata("file.mp4", ".mp4", "1080p", "", "", "", "", "", "");
+        let file_mp4 = create_media_file_with_metadata(
+            "file.mp4",
+            Metadata {
+                extension: ".mp4".to_string(),
+                resolution: "1080p".to_string(),
+                ..Default::default()
+            },
+        );
         assert_eq!(
             format_video_file_name(prefix, &file_mp4),
             "Video.2024.1080p.mp4"
         );
 
         // Test .avi
-        let file_avi =
-            create_media_file_with_metadata("file.avi", ".avi", "720p", "", "", "", "", "", "");
+        let file_avi = create_media_file_with_metadata(
+            "file.avi",
+            Metadata {
+                extension: ".avi".to_string(),
+                resolution: "720p".to_string(),
+                ..Default::default()
+            },
+        );
         assert_eq!(
             format_video_file_name(prefix, &file_avi),
             "Video.2024.720p.avi"
         );
 
         // Test .webm
-        let file_webm =
-            create_media_file_with_metadata("file.webm", ".webm", "480p", "", "", "", "", "", "");
+        let file_webm = create_media_file_with_metadata(
+            "file.webm",
+            Metadata {
+                extension: ".webm".to_string(),
+                resolution: "480p".to_string(),
+                ..Default::default()
+            },
+        );
         assert_eq!(
             format_video_file_name(prefix, &file_webm),
             "Video.2024.480p.webm"
