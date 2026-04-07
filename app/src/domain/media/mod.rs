@@ -146,3 +146,62 @@ impl Metadata {
         self.file_type == FileType::Unknown
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_uses_domain_media_entrypoint() {
+        let metadata = Metadata::parse("Movie.Title.2024.1080p.WEB-DL.H264.AAC.mkv");
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.extension, ".mkv");
+        assert_eq!(metadata.year, "2024");
+        assert_eq!(metadata.resolution, "1080p");
+        assert_eq!(metadata.quality, "WEB-DL");
+        assert_eq!(metadata.video_codec, "H264");
+        assert_eq!(metadata.audio_codec, "AAC");
+    }
+
+    #[test]
+    fn merge_metadata_keeps_unique_titles_and_backfills_missing_fields() {
+        let mut metadata = Metadata {
+            titles: vec![Title {
+                title: "Example".to_owned(),
+                language: LANGUAGE_ENGLISH.to_owned(),
+            }],
+            tmdb_id: String::new(),
+            quality: String::new(),
+            subtitles: Vec::new(),
+            ..Default::default()
+        };
+        let other = Metadata {
+            titles: vec![
+                Title {
+                    title: "Example".to_owned(),
+                    language: LANGUAGE_ENGLISH.to_owned(),
+                },
+                Title {
+                    title: "示例".to_owned(),
+                    language: LANGUAGE_CHINESE.to_owned(),
+                },
+            ],
+            tmdb_id: "12345".to_owned(),
+            year: "2025".to_owned(),
+            quality: "WEB-DL".to_owned(),
+            subtitles: vec![LANGUAGE_CHINESE_SIMPLIFIED.to_owned()],
+            ..Default::default()
+        };
+
+        metadata.merge_metadata(&other);
+
+        assert_eq!(metadata.titles.len(), 2);
+        assert!(metadata.titles.iter().any(|title| title.title == "Example"));
+        assert!(metadata.titles.iter().any(|title| title.title == "示例"));
+        assert_eq!(metadata.tmdb_id, "12345");
+        assert_eq!(metadata.year, "2025");
+        assert_eq!(metadata.quality, "WEB-DL");
+        assert_eq!(metadata.subtitles, vec![LANGUAGE_CHINESE_SIMPLIFIED]);
+    }
+}
