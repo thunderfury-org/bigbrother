@@ -1,5 +1,3 @@
-use teloxide::types::Message;
-
 use crate::{error::AppResult, event::SendTelegramMessage};
 
 pub trait TelegramMessagePublisher {
@@ -25,16 +23,7 @@ impl<P> PublishTelegramMessageService<P>
 where
     P: TelegramMessagePublisher,
 {
-    pub async fn send_message<T: Into<String>>(&self, text: T, message: &Message) -> AppResult<()> {
-        let payload = SendTelegramMessage {
-            message: text.into(),
-            reply_to: message.from.as_ref().map(|_| message.id.0),
-        };
-        self.publisher.publish(&payload).await
-    }
-
-    #[cfg(test)]
-    pub async fn send_text<T: Into<String>>(
+    pub async fn send_message<T: Into<String>>(
         &self,
         text: T,
         reply_to: Option<i32>,
@@ -112,7 +101,7 @@ mod tests {
         let publisher = FakePublisher::default();
         let service = PublishTelegramMessageService::new(publisher.clone());
 
-        service.send_text("hello", Some(1)).await.unwrap();
+        service.send_message("hello", Some(1)).await.unwrap();
 
         let payloads = publisher.payloads.lock().unwrap();
         assert_eq!(payloads.len(), 1);

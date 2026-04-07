@@ -1,6 +1,8 @@
 use crate::{
-    application::ports::{DownloadUrlSource, LibraryRemote, RemoteEntry},
-    client::{self, RequestResult},
+    application::ports::{
+        DownloadUrlError, DownloadUrlResult, DownloadUrlSource, LibraryRemote, RemoteEntry,
+    },
+    client::{self, RequestError},
     error::AppResult,
 };
 
@@ -45,7 +47,20 @@ impl LibraryRemote for Pan123LibraryRemote {
 }
 
 impl DownloadUrlSource for Pan123LibraryRemote {
-    async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
-        self.client.get_download_url(file_id).await
+    async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String> {
+        self.client
+            .get_download_url(file_id)
+            .await
+            .map_err(map_download_url_error)
+    }
+}
+
+fn map_download_url_error(err: RequestError) -> DownloadUrlError {
+    match err {
+        RequestError::Unauthorized => DownloadUrlError::Unauthorized,
+        RequestError::NotFound(message) => DownloadUrlError::NotFound(message),
+        RequestError::AlreadyExists => DownloadUrlError::Error("already exists".to_string()),
+        RequestError::TooManyRequests => DownloadUrlError::Error("too many requests".to_string()),
+        RequestError::Error(message) => DownloadUrlError::Error(message),
     }
 }

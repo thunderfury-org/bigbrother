@@ -187,7 +187,8 @@ impl MsgProcessor<'_> {
     }
 
     async fn send_message<T: Into<String>>(&self, text: T) {
-        if let Err(e) = self.notify_service.send_message(text, self.msg).await {
+        let reply_to = self.msg.from.as_ref().map(|_| self.msg.id.0);
+        if let Err(e) = self.notify_service.send_message(text, reply_to).await {
             error!("Failed publish send telegram message event: {}", e);
         }
     }

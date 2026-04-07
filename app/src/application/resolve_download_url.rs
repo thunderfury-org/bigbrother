@@ -2,12 +2,9 @@ use std::time::Duration;
 
 use tracing::error;
 
-use crate::{
-    client::RequestError,
-    error::{AppError, AppResult},
-};
+use crate::error::{AppError, AppResult};
 
-use super::ports::{DownloadUrlCache, DownloadUrlSource};
+use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
 
 pub enum ResolveDownloadUrlResult {
     Redirect(String),
@@ -54,8 +51,8 @@ where
 
                 Ok(ResolveDownloadUrlResult::Redirect(url))
             }
-            Err(RequestError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
-            Err(RequestError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
+            Err(DownloadUrlError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
+            Err(DownloadUrlError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
             Err(err) => Err(AppError::Internal(format!(
                 "failed to get download url: {err}"
             ))),
@@ -67,7 +64,7 @@ where
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use crate::client::RequestResult;
+    use super::super::ports::DownloadUrlResult;
 
     use super::*;
 
@@ -93,14 +90,14 @@ mod tests {
     }
 
     impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, _file_id: i64) -> RequestResult<String> {
+        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
             match &*self.result.lock().unwrap() {
                 Ok(url) => Ok(url.clone()),
                 Err(kind) if *kind == "not_found" => {
-                    Err(RequestError::NotFound("missing".to_string()))
+                    Err(DownloadUrlError::NotFound("missing".to_string()))
                 }
-                Err(kind) if *kind == "unauthorized" => Err(RequestError::Unauthorized),
-                Err(kind) => Err(RequestError::Error((*kind).to_string())),
+                Err(kind) if *kind == "unauthorized" => Err(DownloadUrlError::Unauthorized),
+                Err(kind) => Err(DownloadUrlError::Error((*kind).to_string())),
             }
         }
     }

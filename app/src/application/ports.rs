@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{client::RequestResult, error::AppResult};
+use crate::error::AppResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeywordRecord {
@@ -19,8 +19,22 @@ pub trait DownloadUrlCache {
     async fn set_download_url(&self, key: &str, url: &str, ttl: Duration) -> AppResult<()>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DownloadUrlError {
+    #[error("unauthorized")]
+    Unauthorized,
+
+    #[error("not found, {0}")]
+    NotFound(String),
+
+    #[error("error, {0}")]
+    Error(String),
+}
+
+pub type DownloadUrlResult<T> = std::result::Result<T, DownloadUrlError>;
+
 pub trait DownloadUrlSource {
-    async fn get_download_url(&self, file_id: i64) -> RequestResult<String>;
+    async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

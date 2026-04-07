@@ -103,8 +103,9 @@ where
 mod tests {
     use super::*;
     use crate::{
-        application::ports::{DownloadUrlCache, DownloadUrlSource},
-        client::{RequestError, RequestResult},
+        application::ports::{
+            DownloadUrlCache, DownloadUrlError, DownloadUrlResult, DownloadUrlSource,
+        },
         error::AppResult,
     };
     use axum::http::StatusCode as HttpStatusCode;
@@ -145,10 +146,12 @@ mod tests {
     }
 
     impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, _file_id: i64) -> RequestResult<String> {
+        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
             match &self.result {
                 FakeSourceResult::Url(url) => Ok(url.clone()),
-                FakeSourceResult::NotFound => Err(RequestError::NotFound("missing".to_string())),
+                FakeSourceResult::NotFound => {
+                    Err(DownloadUrlError::NotFound("missing".to_string()))
+                }
             }
         }
     }
