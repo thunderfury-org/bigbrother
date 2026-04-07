@@ -10,23 +10,25 @@ use crate::{
         notify::PublishTelegramMessageService, resolve_download_url::ResolveDownloadUrlService,
         sync_strm::SyncStrmService,
     },
-    bot::{self, handler::TelegramDeliveryContext},
     cache::Cache,
-    event_bus::EventBus,
     infrastructure::{
         cache::string_store::StringCacheStore, client::library_remote::Pan123LibraryRemote,
-        event::publisher::EventBusPublisher, fs::tokio_file_store::TokioFileStore,
-        import::gateway::ImportGateway, repo::keyword::SeaOrmKeywordRepository,
+        event::publisher::EventBusPublisher, event_bus::EventBus,
+        fs::tokio_file_store::TokioFileStore, import::gateway::ImportGateway,
+        repo::keyword::SeaOrmKeywordRepository,
+    },
+    interface::{
+        http::media::{self, MediaServerContext},
+        telegram::{self, delivery::TelegramDeliveryContext},
     },
     library::import::ImportContext,
-    server::media::MediaServerContext,
 };
 
 pub struct AppRuntime {
     pub log_dir: String,
     pub db: DatabaseConnection,
     pub bot: teloxide::Bot,
-    pub bot_runtime: bot::BotRuntime,
+    pub bot_runtime: telegram::BotRuntime,
     pub media_server_addr: String,
     pub media_server: axum::Router,
     pub event_bus: EventBus,
@@ -46,7 +48,7 @@ impl AppRuntime {
             log_dir: app.config().get_log_dir(),
             db: app.db().clone(),
             bot: bot.clone(),
-            bot_runtime: bot::BotRuntime::new(
+            bot_runtime: telegram::BotRuntime::new(
                 teloxide::types::UserId(
                     app.config()
                         .get_telegram_config()
@@ -64,10 +66,7 @@ impl AppRuntime {
                 ),
             ),
             media_server_addr: app.config().get_media_server_config().get_addr(),
-            media_server: crate::server::media::new_router(media_server_context(
-                &app,
-                cache.clone(),
-            )),
+            media_server: media::new_router(media_server_context(&app, cache.clone())),
             event_bus: event_bus.clone(),
             telegram_delivery: TelegramDeliveryContext {
                 bot,

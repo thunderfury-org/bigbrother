@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-use crate::{cache, client, config, error::AppResult, event_bus::EventBus};
+use crate::{
+    cache, client, config, error::AppResult, infrastructure::event_bus::EventBus,
+};
 
 /// Unified client struct containing all API clients
 #[derive(Clone)]

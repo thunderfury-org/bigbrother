@@ -2,7 +2,12 @@ use std::time::Duration;
 
 use bootstrap::{AppContext, AppRuntime};
 use clap::Parser;
-use cli::{Cli, Commands};
+use infrastructure::event_bus::EventBus;
+use interface::{
+    cli::{Cli, Commands},
+    http,
+    telegram::{self, delivery::TelegramDeliveryContext},
+};
 use tracing::{error, info};
 
 use migration::{Migrator, MigratorTrait};
@@ -10,21 +15,17 @@ use util::signal::shutdown_signal;
 
 mod application;
 mod bootstrap;
-mod bot;
 mod cache;
-mod cli;
 mod client;
 mod config;
 mod domain;
 mod entity;
 mod error;
 mod event;
-mod event_bus;
 mod infrastructure;
 mod interface;
 mod library;
 mod logger;
-mod server;
 mod util;
 
 #[tokio::main]
@@ -49,18 +50,18 @@ async fn run_server(data_dir: &str) {
         .await
         .expect("Migration failed");
     tokio::join!(
-        server::run(runtime.media_server_addr, runtime.media_server),
-        bot::run(runtime.bot, runtime.bot_runtime),
+        http::run(runtime.media_server_addr, runtime.media_server),
+        telegram::run(runtime.bot, runtime.bot_runtime),
         run_event_bus(runtime.event_bus, runtime.telegram_delivery),
         run_cache_cleanup(runtime.cache)
     );
 }
 
-async fn run_event_bus(
-    bus: event_bus::EventBus,
-    delivery_ctx: bot::handler::TelegramDeliveryContext,
-) {
-    bus.subscribe(delivery_ctx, bot::handler::on_send_telegram_message)
+async fn run_event_bus(bus: EventBus, delivery_ctx: TelegramDeliveryContext) {
+    bus.subscribe(
+        delivery_ctx,
+        interface::telegram::delivery::on_send_telegram_message,
+    )
         .await
         .unwrap();
 

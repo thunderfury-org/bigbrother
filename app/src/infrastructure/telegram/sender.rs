@@ -7,7 +7,7 @@ use teloxide::{
 use crate::{
     application::notify::TelegramMessageSender,
     error::{AppError, AppResult},
-    event::SendTelegramMessage,
+    infrastructure::event::SendTelegramMessage,
 };
 
 #[derive(Clone)]

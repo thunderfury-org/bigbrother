@@ -1,4 +1,4 @@
-use crate::{error::AppResult, event::SendTelegramMessage};
+use crate::{error::AppResult, infrastructure::event::SendTelegramMessage};
 
 pub trait TelegramMessagePublisher {
     async fn publish(&self, payload: &SendTelegramMessage) -> AppResult<()>;

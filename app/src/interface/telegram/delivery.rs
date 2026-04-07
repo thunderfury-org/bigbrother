@@ -1,6 +1,6 @@
 use crate::{
     application::notify::DeliverTelegramMessageService, error::AppResult,
-    event::SendTelegramMessage, infrastructure::telegram::sender::TelegramBotSender,
+    infrastructure::{event::SendTelegramMessage, telegram::sender::TelegramBotSender},
 };
 
 #[derive(Clone)]
