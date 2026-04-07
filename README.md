@@ -30,7 +30,7 @@ BigBrother is a Rust workspace for importing media from cloud shares into a loca
 
 The application reads configuration from `<data-dir>/config/config.yaml`. If the file does not exist, the app starts with empty defaults, but the bot and sync features will not work until required values are set.
 
-Start from [`config/config.yaml`](/Users/wzy/dev/bigbrother/config/config.yaml) and place a populated copy at `./data/config/config.yaml` or another `--data-dir` location:
+Start from [`config/config.yaml`](config/config.yaml) and place a populated copy at `./data/config/config.yaml` or another `--data-dir` location:
 
 ```yaml
 media_server:
@@ -110,6 +110,16 @@ http://<advertise-base-url>/<strm-path-prefix>/<remote/path>?file_id=<id>
 
 When a player opens that URL, BigBrother resolves the current Pan123 download URL, caches it for 30 minutes, and redirects the client.
 
+## Architecture snapshot
+
+The current runtime is split into a small bootstrap layer plus use-case services:
+
+- `app/src/main.rs` parses CLI input, starts the server command, and owns long-running background tasks.
+- `app/src/bootstrap.rs` converts bootstrap-only `AppState` data into an `AppRuntime` made of dedicated bot, server, cache, and event-bus contexts.
+- `app/src/application/` contains use-case services such as `SyncStrmService`, `ManageKeywordsService`, `ImportMediaService`, and `ResolveDownloadUrlService`.
+- `app/src/bot/` and `app/src/server/` consume focused runtime/context objects instead of reaching into `AppState` directly.
+- `doc/architecture-refactor-blueprint.md` records the refactor plan, current status, and remaining cleanup opportunities.
+
 ## Development
 
 Common commands:
@@ -124,8 +134,8 @@ make lint
 
 Helper scripts:
 
-- [`tools/generate_entity.sh`](/Users/wzy/dev/bigbrother/tools/generate_entity.sh): regenerate SeaORM entities
-- [`tools/migrate_db.sh`](/Users/wzy/dev/bigbrother/tools/migrate_db.sh): run migration helpers
+- [`tools/generate_entity.sh`](tools/generate_entity.sh): regenerate SeaORM entities
+- [`tools/migrate_db.sh`](tools/migrate_db.sh): run migration helpers
 
 ## License
 

@@ -13,11 +13,27 @@
 
 这份文档的目标是给出一套可落地的整体重构方案，把当前项目演进成“边界清晰、测试友好、渐进迁移”的结构。
 
+## 1.1 当前落实情况（2026-04-07）
+
+根据当前代码状态，这份蓝图里的前半段工作已经有了实质落地：
+
+- `application/ports.rs` 已经存在，`sync_strm`、`manage_keywords`、`resolve_download_url` 等用例已经通过应用层 service 暴露边界。
+- `domain/library/path_mapping.rs` 与 `domain/library/sync_plan.rs` 已承担同步链路里的纯规则计算，`SyncStrmService` 主要负责编排与执行。
+- `main.rs` 已把运行时组装收口到 `bootstrap::AppRuntime`，Bot 与媒体服务器分别拿到 `BotRuntime`、`MediaServerContext` 这样的专用上下文，而不是直接透传整个 `AppState`。
+- `server/media.rs` 和多个 `application/*` 模块已经有 fake 驱动测试，说明“先抽边界再测用例”的方向是可行的。
+
+但这轮 review 也确认了几处还未完全收口的耦合点：
+
+- `AppState` 仍然一次性持有 DB、cache、bot、event bus、全部 client 和配置，本质上还是 bootstrap 阶段的宽依赖容器。
+- `import` 链路目前通过 `ImportContext` / `ImportGateway` 传递一组外部依赖，距离“显式端口 + 最小能力集”还有一步。
+- `bot` 与 `server` 模块内部仍保留部分对具体 infrastructure 类型的命名耦合，入口层虽然变薄了，但还没有完全做到只依赖抽象。
+- 文档中的“下一步落地建议”仍停留在最初切片，已经落后于仓库现状，需要按当前进度继续推进。
+
 ## 2. 当前问题总结
 
 ### 2.1 `AppState` 变成了 service locator
 
-当前 [state.rs](/Users/wzy/dev/bigbrother/app/src/state.rs) 负责：
+当前 [`app/src/state.rs`](../app/src/state.rs) 负责：
 
 - 读取配置
 - 初始化数据库连接
@@ -781,12 +797,12 @@ pub async fn sync_strm(state: &AppState) -> AppResult<()>
 
 ## 17. 下一步落地建议
 
-如果按照最稳妥方式推进，建议先做一个最小落地切片：
+如果按照当前代码状态继续稳妥推进，建议把下一轮工作聚焦在“补完剩余耦合点”，而不是重复已经完成的切片：
 
-1. 新建 `application/ports.rs`
-2. 新建 `application/sync_strm.rs`
-3. 把当前 `library::sync` 的路径映射逻辑抽到 `domain/library/path_mapping.rs`
-4. 给 `sync` 先补纯逻辑和 fake 依赖测试
-5. 再让 Telegram 和 CLI 入口改调 `SyncStrmService`
+1. 把 `import` 链路继续拆成显式 port，逐步替换 `ImportContext` 这种“打包依赖”对象。
+2. 让 `AppState` 进一步收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
+3. 清理 `bot` / `server` 模块里对具体 infrastructure 类型的直连命名，让入口层真正只关心 runtime/context 与 service。
+4. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
+5. 当依赖边界稳定后，再统一考虑 `AppState` 的重命名和目录收敛，避免过早做表面整理。
 
-这个切片最能验证整套思路是否合适，也能最快降低“测试很难写”的现实痛点。
+这样更符合仓库现在的真实阶段：核心切片已经验证可行，接下来要做的是把剩余的宽依赖入口继续压缩掉。
