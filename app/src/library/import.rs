@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-
-use crate::domain::media::Metadata;
-
 mod group;
 mod inner;
 pub(super) mod json;
@@ -55,7 +51,7 @@ pub(crate) struct Importer<L, S, M> {
     share_remote: remote::ShareRemote<S>,
     local: local::ImportLocalStore,
     tmdb_lookup: tmdb_info::TmdbLookup<M>,
-    metadata_cache: HashMap<String, Box<Metadata>>,
+    metadata_lookup: metadata::MetadataLookup,
 }
 
 impl<L, S, M> Importer<L, S, M>
@@ -75,7 +71,7 @@ where
             share_remote: remote::ShareRemote::new(share_source),
             local: local::ImportLocalStore::new(paths),
             tmdb_lookup: tmdb_info::TmdbLookup::new(metadata_catalog),
-            metadata_cache: HashMap::new(),
+            metadata_lookup: metadata::MetadataLookup::default(),
         }
     }
 }
