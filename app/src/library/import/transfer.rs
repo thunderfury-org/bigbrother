@@ -86,20 +86,8 @@ where
         let saved_filename = self
             .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
-        if let Some(name) = &saved_filename
-            && !existing_files.is_empty()
-        {
-            let files = existing_files
-                .iter()
-                .filter(|f| f.video.name != *name)
-                .collect::<Vec<_>>();
-            if !files.is_empty() {
-                // delete existing files
-                self.delete_files_in_library(&files).await?;
-                self.delete_files_in_local(movie_path.as_str(), &files)
-                    .await?;
-            }
-        }
+        self.cleanup_replaced_movie_files(movie_path.as_str(), &existing_files, &saved_filename)
+            .await?;
         Ok(Some(ImportedMedia::Movie {
             title: detail.title.to_owned(),
             year: library::get_year_from_date(detail.release_date.as_str()).to_owned(),
@@ -156,21 +144,9 @@ where
         let start_time = std::time::Instant::now();
 
         let season_dir = format!("Season {:02}", season_number);
-        let (season_dir_id, existing_episode_files) = match season_dir_ids.get(&season_dir) {
-            Some(id) => (*id, self.list_episode_files_in_library(*id).await?),
-            None => {
-                // create season folder if not exists
-                let id = self
-                    .library_remote
-                    .mkdir_library_dir(tv_dir_id, season_dir.as_str())
-                    .await?;
-                info!(
-                    "Tv series {} season {} folder {} created in library, id: {}",
-                    detail.name, season_number, season_dir, id
-                );
-                (id, HashMap::new())
-            }
-        };
+        let (season_dir_id, existing_episode_files) = self
+            .resolve_season_target(detail, season_number, tv_dir_id, season_dir.as_str(), season_dir_ids)
+            .await?;
 
         let mut has_failed = false;
         let mut total_size = 0u64;
@@ -322,6 +298,55 @@ where
             }
             // transfer failed
             None => Ok(Some((false, 0))),
+        }
+    }
+
+    async fn cleanup_replaced_movie_files(
+        &self,
+        movie_path: &str,
+        existing_files: &[MediaFile],
+        saved_filename: &Option<String>,
+    ) -> AppResult<()> {
+        let Some(saved_filename) = saved_filename else {
+            return Ok(());
+        };
+        if existing_files.is_empty() {
+            return Ok(());
+        }
+
+        let files = existing_files
+            .iter()
+            .filter(|file| file.video.name != *saved_filename)
+            .collect::<Vec<_>>();
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        self.delete_files_in_library(&files).await?;
+        self.delete_files_in_local(movie_path, &files).await
+    }
+
+    async fn resolve_season_target(
+        &mut self,
+        detail: &TvDetail,
+        season_number: &u32,
+        tv_dir_id: i64,
+        season_dir: &str,
+        season_dir_ids: &HashMap<String, i64>,
+    ) -> AppResult<(i64, HashMap<u32, Vec<MediaFile>>)> {
+        match season_dir_ids.get(season_dir) {
+            Some(id) => Ok((*id, self.list_episode_files_in_library(*id).await?)),
+            None => {
+                let id = self
+                    .library_remote
+                    .mkdir_library_dir(tv_dir_id, season_dir)
+                    .await?;
+                info!(
+                    "Tv series {} season {} folder {} created in library, id: {}",
+                    detail.name, season_number, season_dir, id
+                );
+                Ok((id, HashMap::new()))
+            }
         }
     }
 
