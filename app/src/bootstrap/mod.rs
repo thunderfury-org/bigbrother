@@ -18,7 +18,7 @@ use crate::{
         event::publisher::EventBusPublisher,
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
-        import::gateway::ImportGateway,
+        import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
         repo::keyword::SeaOrmKeywordRepository,
     },
     interface::{
@@ -72,13 +72,16 @@ impl AppRuntime {
                 bot_runtime: telegram::BotRuntime::new(
                     teloxide::types::UserId(inputs.telegram_user_id.try_into().unwrap()),
                     ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone())),
-                    ImportMediaService::new(ImportGateway::new(
-                        inputs.clients.pan115.clone(),
-                        inputs.clients.pan123.clone(),
-                        inputs.clients.pan189.clone(),
-                        inputs.clients.tmdb.clone(),
+                    ImportMediaService::new(
+                        PanLibraryGateway::new(inputs.clients.pan123.clone()),
+                        ShareImportGateway::new(
+                            inputs.clients.pan115.clone(),
+                            inputs.clients.pan123.clone(),
+                            inputs.clients.pan189.clone(),
+                        ),
+                        TmdbMetadataGateway::new(inputs.clients.tmdb.clone()),
                         inputs.import_paths.clone(),
-                    )),
+                    ),
                     PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
                     SyncStrmService::new(
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
