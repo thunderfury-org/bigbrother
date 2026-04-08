@@ -98,7 +98,7 @@ where
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
         // 从 tmdb 获取 tv 详情
-        let tv_info = self.get_tv_info_from_tmdb(&file.metadata).await?;
+        let tv_info = self.tmdb_lookup.get_tv_info(&file.metadata).await?;
         match tv_info {
             Some(tv_info) => {
                 let season_number = match file.metadata.season_number {
@@ -159,7 +159,7 @@ where
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<()> {
         // 从 tmdb 获取 movie 详情
-        let movie_info = self.get_movie_info_from_tmdb(&file.metadata).await?;
+        let movie_info = self.tmdb_lookup.get_movie_info(&file.metadata).await?;
         match movie_info {
             Some(movie_info) => {
                 let entry = grouped_files

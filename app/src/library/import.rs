@@ -54,9 +54,7 @@ pub(crate) struct Importer<L, S, M> {
     library_remote: remote::LibraryRemote<L>,
     share_remote: remote::ShareRemote<S>,
     local: local::ImportLocalStore,
-    metadata_catalog: M,
-    tv_info_cache: HashMap<String, Option<TvDetail>>,
-    movie_info_cache: HashMap<String, Option<MovieDetail>>,
+    tmdb_lookup: tmdb_info::TmdbLookup<M>,
     metadata_cache: HashMap<String, Box<Metadata>>,
 }
 
@@ -76,9 +74,7 @@ where
             library_remote: remote::LibraryRemote::new(library_gateway, paths.clone()),
             share_remote: remote::ShareRemote::new(share_source),
             local: local::ImportLocalStore::new(paths),
-            metadata_catalog,
-            tv_info_cache: HashMap::new(),
-            movie_info_cache: HashMap::new(),
+            tmdb_lookup: tmdb_info::TmdbLookup::new(metadata_catalog),
             metadata_cache: HashMap::new(),
         }
     }
