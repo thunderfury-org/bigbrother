@@ -4,7 +4,6 @@ use tracing::info;
 
 use super::{
     Importer, LibraryGateway, MovieDetail, ShareSource, TvDetail,
-    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
 use crate::{domain::library::import_paths, error::AppResult};
@@ -48,24 +47,16 @@ where
                 continue;
             }
 
-            let metadata = self.parse_media_metadata(&file.file_name, "");
-            if metadata.unknown_type() {
-                continue;
-            }
-
-            raw_files.push((
-                metadata,
-                RawFile {
-                    id: Some(file.file_id),
-                    name: file.file_name.to_owned(),
-                    etag: file.etag.as_str().into(),
-                    size: file.size,
-                    path: "".to_owned(),
-                },
-            ));
+            raw_files.push(RawFile {
+                id: Some(file.file_id),
+                name: file.file_name.to_owned(),
+                etag: file.etag.as_str().into(),
+                size: file.size,
+                path: "".to_owned(),
+            });
         }
 
-        Ok(group_video_and_subtitle_files(raw_files))
+        Ok(self.build_media_files(raw_files))
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {

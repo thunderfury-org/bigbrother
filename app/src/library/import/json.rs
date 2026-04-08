@@ -4,7 +4,6 @@ use tracing::info;
 
 use super::{
     ImportedMedia, Importer, LibraryGateway, ShareSource,
-    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
@@ -46,7 +45,7 @@ where
     }
 
     fn list_files_from_json(&mut self, resource: &ResourceJson) -> Vec<MediaFile> {
-        let mut all_files = Vec::new();
+        let mut raw_files = Vec::new();
 
         for file in &resource.files {
             let _path = format!("{}/{}", &resource.common_path, &file.path);
@@ -60,23 +59,15 @@ where
                 .map(|p| p.to_str().unwrap_or_default())
                 .unwrap_or_default();
 
-            let metadata = self.parse_media_metadata(name, parent_path);
-            if metadata.unknown_type() {
-                continue;
-            }
-
-            all_files.push((
-                metadata,
-                RawFile {
-                    id: None,
-                    name: name.to_owned(),
-                    etag: file.etag.as_str().into(),
-                    size: file.size,
-                    path: parent_path.to_owned(),
-                },
-            ));
+            raw_files.push(RawFile {
+                id: None,
+                name: name.to_owned(),
+                etag: file.etag.as_str().into(),
+                size: file.size,
+                path: parent_path.to_owned(),
+            });
         }
 
-        group_video_and_subtitle_files(all_files)
+        self.build_media_files(raw_files)
     }
 }

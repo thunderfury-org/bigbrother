@@ -5,7 +5,6 @@ pub use super::source::ShareUrl;
 
 use super::{
     ImportedMedia, Importer, LibraryGateway, ShareSource,
-    group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
     source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
 };
@@ -84,33 +83,22 @@ where
                 .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
 
-            let mut media_files_in_dir = Vec::new();
+            let mut raw_files = Vec::new();
             for file in &files {
                 if file.is_dir {
-                    // Directory
                     stack.push((file.file_id, format!("{}/{}", parent_path, file.file_name)));
                 } else {
-                    // Regular file
-
-                    let metadata = self.parse_media_metadata(&file.file_name, &parent_path);
-                    if metadata.unknown_type() {
-                        continue;
-                    }
-
-                    media_files_in_dir.push((
-                        metadata,
-                        RawFile {
-                            id: Some(file.file_id),
-                            name: file.file_name.to_owned(),
-                            etag: file.etag.as_str().into(),
-                            size: file.size,
-                            path: parent_path.to_owned(),
-                        },
-                    ));
+                    raw_files.push(RawFile {
+                        id: Some(file.file_id),
+                        name: file.file_name.to_owned(),
+                        etag: file.etag.as_str().into(),
+                        size: file.size,
+                        path: parent_path.to_owned(),
+                    });
                 }
             }
 
-            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
+            all_files.extend(self.build_media_files(raw_files));
         }
 
         Ok(all_files)
@@ -138,27 +126,17 @@ where
                 ));
             }
 
-            let mut media_files_in_dir = Vec::new();
+            let mut raw_files = Vec::new();
             for file in &files {
-                // Regular file
-
-                let metadata = self.parse_media_metadata(&file.name, &parent_path);
-                if metadata.unknown_type() {
-                    continue;
-                }
-
-                media_files_in_dir.push((
-                    metadata,
-                    RawFile {
-                        id: None,
-                        name: file.name.to_owned(),
-                        etag: file.md5.as_str().into(),
-                        size: file.size,
-                        path: parent_path.to_owned(),
-                    },
-                ));
+                raw_files.push(RawFile {
+                    id: None,
+                    name: file.name.to_owned(),
+                    etag: file.md5.as_str().into(),
+                    size: file.size,
+                    path: parent_path.to_owned(),
+                });
             }
-            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
+            all_files.extend(self.build_media_files(raw_files));
         }
 
         Ok(all_files)
@@ -178,32 +156,22 @@ where
                 .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
 
-            let mut media_files_in_dir = Vec::new();
+            let mut raw_files = Vec::new();
             for entry in &entries {
                 if entry.is_file() {
-                    // Regular file
-                    let metadata = self.parse_media_metadata(&entry.name, &parent_path);
-                    if metadata.unknown_type() {
-                        continue;
-                    }
-
-                    media_files_in_dir.push((
-                        metadata,
-                        RawFile {
-                            id: None,
-                            name: entry.name.to_owned(),
-                            etag: entry.sha.as_deref().unwrap_or_default().into(),
-                            size: entry.size,
-                            path: parent_path.to_owned(),
-                        },
-                    ));
+                    raw_files.push(RawFile {
+                        id: None,
+                        name: entry.name.to_owned(),
+                        etag: entry.sha.as_deref().unwrap_or_default().into(),
+                        size: entry.size,
+                        path: parent_path.to_owned(),
+                    });
                 } else if let Some(cid) = &entry.cid {
-                    // Directory
                     stack.push((cid.to_owned(), format!("{}/{}", parent_path, entry.name)));
                 }
             }
 
-            all_files.extend(group_video_and_subtitle_files(media_files_in_dir));
+            all_files.extend(self.build_media_files(raw_files));
         }
 
         Ok(all_files)
