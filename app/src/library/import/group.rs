@@ -101,45 +101,12 @@ where
         let tv_info = self.tmdb_lookup.get_tv_info(&file.metadata).await?;
         match tv_info {
             Some(tv_info) => {
-                let season_number = match file.metadata.season_number {
-                    Some(s) => s,
-                    None => {
-                        if tv_info.number_of_seasons == 1 {
-                            1
-                        } else {
-                            // multi season, but no season number found in file metadata
-                            info!(
-                                "Multi season tv, but no season number found in file: {}",
-                                file.video.name
-                            );
-
-                            return Ok(());
-                        }
-                    }
+                let Some((season_number, episode_number)) =
+                    resolve_tv_episode_slot(file, &tv_info)
+                else {
+                    return Ok(());
                 };
-                let episode_number = match file.metadata.episode_number {
-                    Some(e) => e,
-                    None => {
-                        // episode number not found in file metadata
-                        info!("No episode number found in file: {}", file.video.name);
-
-                        return Ok(());
-                    }
-                };
-                let entry = grouped_files
-                    .entry(tv_info.id)
-                    .or_insert_with(|| Media::Tv {
-                        detail: tv_info,
-                        files: BTreeMap::new(),
-                    });
-                if let Media::Tv { files, .. } = entry {
-                    files
-                        .entry(season_number)
-                        .or_insert_with(BTreeMap::new)
-                        .entry(episode_number)
-                        .or_insert_with(Vec::new)
-                        .push(file);
-                }
+                insert_tv_media(grouped_files, tv_info, season_number, episode_number, file);
             }
             None => {
                 info!(
@@ -162,15 +129,7 @@ where
         let movie_info = self.tmdb_lookup.get_movie_info(&file.metadata).await?;
         match movie_info {
             Some(movie_info) => {
-                let entry = grouped_files
-                    .entry(movie_info.id)
-                    .or_insert_with(|| Media::Movie {
-                        detail: movie_info,
-                        files: Vec::new(),
-                    });
-                if let Media::Movie { files, .. } = entry {
-                    files.push(file);
-                }
+                insert_movie_media(grouped_files, movie_info, file);
             }
             None => {
                 // movie not found in tmdb
@@ -182,6 +141,68 @@ where
         }
 
         Ok(())
+    }
+}
+
+fn resolve_tv_episode_slot(file: &MediaFile, tv_info: &super::TvDetail) -> Option<(u32, u32)> {
+    let season_number = match file.metadata.season_number {
+        Some(season_number) => season_number,
+        None => {
+            if tv_info.number_of_seasons == 1 {
+                1
+            } else {
+                info!(
+                    "Multi season tv, but no season number found in file: {}",
+                    file.video.name
+                );
+                return None;
+            }
+        }
+    };
+
+    let episode_number = match file.metadata.episode_number {
+        Some(episode_number) => episode_number,
+        None => {
+            info!("No episode number found in file: {}", file.video.name);
+            return None;
+        }
+    };
+
+    Some((season_number, episode_number))
+}
+
+fn insert_tv_media<'a>(
+    grouped_files: &mut HashMap<u32, Media<'a>>,
+    tv_info: super::TvDetail,
+    season_number: u32,
+    episode_number: u32,
+    file: &'a MediaFile,
+) {
+    let entry = grouped_files.entry(tv_info.id).or_insert_with(|| Media::Tv {
+        detail: tv_info,
+        files: BTreeMap::new(),
+    });
+    if let Media::Tv { files, .. } = entry {
+        files
+            .entry(season_number)
+            .or_insert_with(BTreeMap::new)
+            .entry(episode_number)
+            .or_insert_with(Vec::new)
+            .push(file);
+    }
+}
+
+fn insert_movie_media<'a>(
+    grouped_files: &mut HashMap<u32, Media<'a>>,
+    movie_info: super::MovieDetail,
+    file: &'a MediaFile,
+) {
+    let entry = grouped_files.entry(movie_info.id).or_insert_with(|| Media::Movie {
+        detail: movie_info,
+        files: Vec::new(),
+    });
+    if let Media::Movie { files, .. } = entry {
+        files.push(file);
     }
 }
 
