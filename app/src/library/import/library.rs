@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use tracing::info;
 
 use super::{
-    Importer, category,
+    ImportClient, Importer, MovieDetail, TvDetail, category,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
-use crate::{
-    error::AppResult,
-    infrastructure::client::tmdb::{MovieDetail, TvDetail},
-};
+use crate::error::AppResult;
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub(super) async fn list_episode_files_in_library(
         &mut self,
         season_dir_id: i64,
@@ -42,7 +42,7 @@ impl Importer {
 
         let mut raw_files = Vec::new();
         for file in &files {
-            if file.is_dir() {
+            if file.is_dir {
                 continue;
             }
 
@@ -127,7 +127,7 @@ pub(super) fn get_year_from_date(date: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::client::tmdb::Genre;
+    use crate::library::import::Genre;
 
     fn create_test_tv(
         id: u32,

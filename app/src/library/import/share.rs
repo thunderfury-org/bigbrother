@@ -2,7 +2,7 @@ use reqwest::Url;
 use tracing::info;
 
 use super::{
-    ImportedMedia, Importer,
+    ImportClient, ImportedMedia, Importer,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
@@ -46,7 +46,10 @@ impl<'a> ShareUrl<'a> {
     }
 }
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub async fn import_from_share_url(
         &mut self,
         url: &ShareUrl<'_>,
@@ -116,7 +119,7 @@ impl Importer {
 
             let mut media_files_in_dir = Vec::new();
             for file in &files {
-                if file.is_dir() {
+                if file.is_dir {
                     // Directory
                     stack.push((file.file_id, format!("{}/{}", parent_path, file.file_name)));
                 } else {

@@ -26,6 +26,12 @@ impl EventWorker {
         }
     }
 
+    #[cfg(test)]
+    fn with_retry_delay(mut self, retry_delay: Duration) -> Self {
+        self.retry_delay = retry_delay;
+        self
+    }
+
     pub async fn drain_with_handler<S, E, Func, Fut>(
         &self,
         state: S,
@@ -80,5 +86,102 @@ impl EventWorker {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use sea_orm::{ConnectOptions, Database};
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+    use crate::{error::AppError, infrastructure::event::store::SeaOrmEventStore};
+    use migration::{Migrator, MigratorTrait};
+
+    #[derive(Clone, Serialize, Deserialize)]
+    struct SampleEvent {
+        value: u32,
+    }
+
+    impl Event for SampleEvent {
+        const NAME: &'static str = "SampleEventWorker";
+    }
+
+    async fn test_store() -> SeaOrmEventStore {
+        let mut options = ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = Database::connect(options).await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        SeaOrmEventStore::new(db)
+    }
+
+    #[tokio::test]
+    async fn drain_retries_failed_handler_until_success_and_acks() {
+        let store = test_store().await;
+        let payload = serde_json::to_string(&SampleEvent { value: 7 }).unwrap();
+        store.append(SampleEvent::NAME, &payload).await.unwrap();
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        worker
+            .drain_with_handler::<Arc<AtomicUsize>, SampleEvent, _, _>(
+                attempts.clone(),
+                &|attempts, _event| async move {
+                    let current = attempts.fetch_add(1, Ordering::SeqCst);
+                    if current == 0 {
+                        Err(AppError::Internal("retry once".into()))
+                    } else {
+                        Ok(())
+                    }
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert!(
+            store
+                .list_pending(SampleEvent::NAME, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_acks_malformed_events_without_calling_handler() {
+        let store = test_store().await;
+        store.append(SampleEvent::NAME, "{not-json").await.unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        worker
+            .drain_with_handler::<Arc<AtomicUsize>, SampleEvent, _, _>(
+                calls.clone(),
+                &|calls, _event| async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            store
+                .list_pending(SampleEvent::NAME, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

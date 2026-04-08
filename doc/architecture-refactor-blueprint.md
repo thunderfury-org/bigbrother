@@ -26,18 +26,18 @@
 但这轮 review 也确认了几处还未完全收口的耦合点：
 
 - `bootstrap/app.rs` 里的 `AppContext` 仍然一次性持有 DB、cache、bot、event bus、全部 client 和配置，本质上还是 bootstrap 阶段的宽依赖容器。
-- `import` 链路目前仍通过 `ImportContext` / `ImportGateway` 传递一组外部依赖，距离“显式端口 + 最小能力集”还有一步。
-- `library/import` 仍然是唯一明显保留旧式宽依赖风格的核心业务区；它已经被明确为下一轮主任务，而不是继续做目录整理。
+- `import` 链路已经移除了 `ImportContext` 这类打包依赖对象；当前 `ImportGateway` 已通过 import 专用 model + trait adapter 把 Pan/TMDB concrete client 隔离在 infrastructure 内，`library/import` 不再直接依赖这些类型。
+- `library/import` 的主干已经从“宽依赖容器驱动”推进到“显式 port 驱动”，当前剩余重点已转向继续压缩 bootstrap 宽上下文与补齐运行时/worker 侧测试证据。
 
 ## 1.2 本轮 review 的代码定位
 
 为了避免后续继续围绕抽象描述打转，这里把本轮 review 对应到当前代码位置：
 
 - [`app/src/main.rs`](../app/src/main.rs)：当前唯一的 crate 根入口，已经直接声明 `bootstrap`、`interface`、`infrastructure` 等蓝图目标模块。
-- [`app/src/bootstrap/mod.rs`](../app/src/bootstrap/mod.rs) 与 [`app/src/bootstrap/app.rs`](../app/src/bootstrap/app.rs)：当前真正的 composition root / bootstrap container，直接把 `SeaOrmKeywordRepository`、`ImportGateway`、`Pan123LibraryRemote`、`TokioFileStore` 等 concrete adapter 组装进应用层 service。
+- [`app/src/bootstrap/mod.rs`](../app/src/bootstrap/mod.rs) 与 [`app/src/bootstrap/app.rs`](../app/src/bootstrap/app.rs)：当前真正的 composition root / bootstrap container；其中 `AppContext` 已收缩为 `RuntimeBootstrapInputs` 的提供者，`AppRuntime::run()` 已统一承接 server / telegram / event bus / cache cleanup 生命周期编排。
 - [`app/src/interface/telegram/mod.rs`](../app/src/interface/telegram/mod.rs)、[`app/src/interface/http/mod.rs`](../app/src/interface/http/mod.rs)、[`app/src/interface/cli/mod.rs`](../app/src/interface/cli/mod.rs)：入口层目录已经收口到蓝图目标结构。
 - [`app/src/infrastructure/client/`](../app/src/infrastructure/client/)、[`app/src/infrastructure/cache/`](../app/src/infrastructure/cache/)、[`app/src/infrastructure/entity/`](../app/src/infrastructure/entity/)：接入型代码已不再留在顶层 root。
-- [`app/src/library/import/`](../app/src/library/import)：仍是最需要继续拆端口的区域；当前 `ImportContext` 让导入链路的最小依赖集合还不够显式。
+- [`app/src/library/import/`](../app/src/library/import)：端口化已经继续向前推进；该目录已改为依赖 import 专用 model 与 `ImportClient` trait，而不是直接依赖具体 Pan/TMDB client。
 
 ## 2. 当前问题总结
 
@@ -307,7 +307,7 @@ app/src/
 - 现有 `client`、`entity`、`cache` 等接入型代码已迁进 `infrastructure`
 - 原 `bot` 和 `server` 入口型代码已迁进 `interface`
 - `bootstrap/app.rs` 已替代旧式全局状态入口；后续目标是继续缩小它，而不是恢复新的全家桶上下文
-- 当前真正剩余的结构性问题已经不再是“目录名”，而是 `library/import` 这条链路的端口化和依赖最小化
+- 当前真正剩余的结构性问题已经不再是“目录名”；`library/import` 的端口化已经落地，后续重点是继续收缩 `bootstrap/app.rs` 的宽上下文，并为事件/worker 运行时补齐测试证据
 
 ## 7. 端口设计原则
 
@@ -810,10 +810,9 @@ pub async fn sync_strm(state: &AppState) -> AppResult<()>
 
 如果按照当前代码状态继续稳妥推进，下一轮工作已经可以非常聚焦，不需要再重复目录整理：
 
-1. 把 `app/src/library/import/` 继续拆成显式 port，逐步替换 `ImportContext` 这种“打包依赖”对象。
-2. 让 `bootstrap/app.rs` 里的 `AppContext` 继续收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
-3. 继续清理 `library/import` 与相关入口中对具体 infrastructure 类型的直连命名，让应用层和接口层更稳定地只依赖抽象。
-4. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
-5. 当 `import` 链路的端口化稳定后，再考虑是否要进一步细化 `bootstrap/app.rs` 的职责边界。
+1. 让 `bootstrap/app.rs` 里的 `AppContext` 继续收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
+2. 继续清理 `library/import` 与相关入口中对具体 infrastructure 类型的直连命名，让应用层和接口层更稳定地只依赖抽象。
+3. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
+4. 当 `import` 链路的端口化稳定后，再考虑是否要进一步细化 `bootstrap/app.rs` 的职责边界。
 
-这样更符合仓库现在的真实阶段：目录与命名基本已经落到蓝图目标，真正剩余的高价值工作是把 `import` 这条核心链路从“宽依赖容器驱动”推进到“显式端口驱动”。
+这样更符合仓库现在的真实阶段：目录与命名基本已经落到蓝图目标，`import` 这条核心链路也已经完成从“宽依赖容器驱动”到“显式端口驱动”的推进；接下来更高价值的工作是继续收缩 bootstrap 宽上下文，并补强运行时/worker 的测试证据。

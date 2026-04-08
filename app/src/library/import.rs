@@ -1,12 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    domain::media::Metadata,
-    infrastructure::client::{
-        pan115, pan123, pan189,
-        tmdb::{self, MovieDetail, TvDetail},
-    },
-};
+use crate::domain::media::Metadata;
 
 mod category;
 mod group;
@@ -14,10 +8,17 @@ mod inner;
 pub(super) mod json;
 mod library;
 mod metadata;
-mod remote;
+mod model;
+pub(crate) mod remote;
 pub(super) mod share;
 mod tmdb_info;
 mod transfer;
+
+pub(crate) use model::{
+    Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
+    SearchMovieResult, SearchTvResult, Season, TvDetail,
+};
+pub(crate) use remote::ImportClient;
 
 #[derive(Debug)]
 pub enum ImportedMedia {
@@ -43,37 +44,26 @@ pub enum ImportedMedia {
 }
 
 #[derive(Clone)]
-pub(crate) struct ImportClients {
-    pan115: pan115::Client,
-    pan123: pan123::Client,
-    pan189: pan189::Client,
-    tmdb: tmdb::Client,
-}
-
-#[derive(Clone)]
 pub(crate) struct ImportPathConfig {
-    remote_path: String,
-    local_path: String,
-    strm_download_url: String,
+    pub(crate) remote_path: String,
+    pub(crate) local_path: String,
+    pub(crate) strm_download_url: String,
 }
 
-#[derive(Clone)]
-pub(crate) struct ImportContext {
-    clients: ImportClients,
-    paths: ImportPathConfig,
-}
-
-pub(crate) struct Importer {
-    remote: remote::ImportRemote,
+pub(crate) struct Importer<C> {
+    remote: remote::ImportRemote<C>,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
     movie_info_cache: HashMap<String, Option<MovieDetail>>,
     metadata_cache: HashMap<String, Box<Metadata>>,
 }
 
-impl Importer {
-    pub(crate) fn from_context(ctx: ImportContext) -> Self {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
+    pub(crate) fn new(client: C, paths: ImportPathConfig) -> Self {
         Self {
-            remote: remote::ImportRemote::new(ctx),
+            remote: remote::ImportRemote::new(client, paths),
             tv_info_cache: HashMap::new(),
             movie_info_cache: HashMap::new(),
             metadata_cache: HashMap::new(),
@@ -81,32 +71,12 @@ impl Importer {
     }
 }
 
-impl ImportContext {
-    pub(crate) fn new(
-        pan115: pan115::Client,
-        pan123: pan123::Client,
-        pan189: pan189::Client,
-        tmdb: tmdb::Client,
-        remote_path: String,
-        local_path: String,
-        strm_download_url: String,
-    ) -> Self {
-        Self::from_parts(
-            ImportClients {
-                pan115,
-                pan123,
-                pan189,
-                tmdb,
-            },
-            ImportPathConfig {
-                remote_path,
-                local_path,
-                strm_download_url,
-            },
-        )
-    }
-
-    pub(crate) fn from_parts(clients: ImportClients, paths: ImportPathConfig) -> Self {
-        Self { clients, paths }
+impl ImportPathConfig {
+    pub(crate) fn new(remote_path: String, local_path: String, strm_download_url: String) -> Self {
+        Self {
+            remote_path,
+            local_path,
+            strm_download_url,
+        }
     }
 }

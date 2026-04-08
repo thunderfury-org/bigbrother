@@ -1,14 +1,13 @@
 use tracing::info;
 
-use crate::{
-    domain::media::Metadata,
-    error::AppResult,
-    infrastructure::client::tmdb::{MovieDetail, TvDetail},
-};
+use crate::{domain::media::Metadata, error::AppResult};
 
-use super::Importer;
+use super::{ImportClient, Importer, MovieDetail, TvDetail};
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub(super) async fn get_movie_info_from_tmdb(
         &mut self,
         meta: &Metadata,

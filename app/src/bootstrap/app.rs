@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 use crate::{
+    application::sync_strm::SyncStrmConfig,
     config,
     error::AppResult,
     infrastructure::{cache::Cache, client, event_bus::EventBus},
+    library::import::ImportPathConfig,
 };
 
 /// Unified client struct containing all API clients
@@ -33,18 +33,23 @@ impl Client {
 }
 
 #[derive(Clone)]
-struct InnerAppContext {
+pub struct RuntimeBootstrapInputs {
     pub db: DatabaseConnection,
-    pub config: Arc<config::Manager>,
-    pub client: Arc<Client>,
-    pub bus: Arc<EventBus>,
-    pub bot: Arc<teloxide::Bot>,
+    pub bot: teloxide::Bot,
     pub cache: Cache,
+    pub event_bus: EventBus,
+    pub clients: Client,
+    pub log_dir: String,
+    pub media_server_addr: String,
+    pub media_server_strm_path_prefix: String,
+    pub telegram_user_id: i64,
+    pub import_paths: ImportPathConfig,
+    pub sync_config: SyncStrmConfig,
 }
 
 #[derive(Clone)]
 pub struct AppContext {
-    inner: Arc<InnerAppContext>,
+    inputs: RuntimeBootstrapInputs,
 }
 
 impl AppContext {
@@ -60,42 +65,40 @@ impl AppContext {
         let mut opt = ConnectOptions::new(conn_str);
         opt.sqlx_logging(false);
         let db = Database::connect(opt).await?;
+        let clients = Client::new(&config);
+        let event_bus = EventBus::new(db.clone());
+        let bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());
+        let cache = Cache::new(db.clone());
 
         Ok(AppContext {
-            inner: Arc::new(InnerAppContext {
-                client: Arc::new(Client::new(&config)),
-                bus: Arc::new(EventBus::new(db.clone())),
-                bot: Arc::new(teloxide::Bot::new(
-                    config.get_telegram_config().bot_token.as_str(),
-                )),
-                cache: Cache::new(db.clone()),
+            inputs: RuntimeBootstrapInputs {
                 db,
-                config: Arc::new(config),
-            }),
+                bot,
+                cache,
+                event_bus,
+                clients,
+                log_dir: config.get_log_dir(),
+                media_server_addr: config.get_media_server_config().get_addr(),
+                media_server_strm_path_prefix: config
+                    .get_media_server_config()
+                    .get_strm_path_prefix()
+                    .to_string(),
+                telegram_user_id: config.get_telegram_config().user_id,
+                import_paths: ImportPathConfig::new(
+                    config.get_library_config().remote_path.clone(),
+                    config.get_library_config().local_path.clone(),
+                    config.get_media_server_config().get_strm_download_url(),
+                ),
+                sync_config: SyncStrmConfig {
+                    remote_path: config.get_library_config().remote_path.clone(),
+                    local_path: config.get_library_config().local_path.clone(),
+                    strm_download_url: config.get_media_server_config().get_strm_download_url(),
+                },
+            },
         })
     }
 
-    pub fn db(&self) -> &DatabaseConnection {
-        &self.inner.db
-    }
-
-    pub fn config(&self) -> &config::Manager {
-        &self.inner.config
-    }
-
-    pub fn client(&self) -> &Client {
-        &self.inner.client
-    }
-
-    pub fn bus(&self) -> &EventBus {
-        &self.inner.bus
-    }
-
-    pub fn bot(&self) -> &teloxide::Bot {
-        &self.inner.bot
-    }
-
-    pub fn cache(&self) -> &Cache {
-        &self.inner.cache
+    pub fn runtime_inputs(&self) -> RuntimeBootstrapInputs {
+        self.inputs.clone()
     }
 }

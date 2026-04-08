@@ -4,7 +4,7 @@ use serde::Deserialize;
 use tracing::info;
 
 use super::{
-    ImportedMedia, Importer,
+    ImportClient, ImportedMedia, Importer,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
@@ -97,7 +97,10 @@ fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
     })
 }
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from fslink");
 

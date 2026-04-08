@@ -1,61 +1,114 @@
-use std::{io, path::Path};
+use std::{collections::HashMap, io, path::Path};
 
 use crate::{
+    domain::library::path_mapping::SyncPathMapper,
     error::{AppError, AppResult},
-    infrastructure::client::{
-        RequestResult, pan115, pan123, pan189,
-        tmdb::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
-    },
 };
 
-use super::ImportContext;
+use super::{
+    ImportPathConfig, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
+    Pan189ShareInfo, SearchMovieResult, SearchTvResult, TvDetail,
+};
 
-#[derive(Clone)]
-pub(super) struct ImportRemote {
-    ctx: ImportContext,
+pub(crate) trait ImportClient: Clone {
+    async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>>;
+    async fn get_library_dir_id_by_path(&self, path: &str) -> AppResult<Option<i64>>;
+    async fn mkdir_library_path(&self, path: &str) -> AppResult<i64>;
+    async fn list_library_dir_ids(&self, dir_id: i64) -> AppResult<HashMap<String, i64>>;
+    async fn mkdir_library_dir(&self, parent_dir_id: i64, folder_name: &str) -> AppResult<i64>;
+    async fn trash_library_files(&self, file_ids: &[i64]) -> AppResult<()>;
+    async fn fast_upload_md5(
+        &self,
+        parent_dir_id: i64,
+        file_name: &str,
+        etag: &str,
+        size: u64,
+    ) -> AppResult<Option<i64>>;
+    async fn fast_upload_sha1(
+        &self,
+        parent_dir_id: i64,
+        file_name: &str,
+        sha1: &str,
+        size: u64,
+    ) -> AppResult<Option<i64>>;
+    async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()>;
+    async fn list_pan123_share_files(
+        &self,
+        share_key: &str,
+        share_password: &str,
+        parent_id: i64,
+    ) -> AppResult<Vec<LibraryFile>>;
+    async fn get_pan189_share_info(&self, share_code: &str) -> AppResult<Pan189ShareInfo>;
+    async fn list_pan189_share_files(
+        &self,
+        share_id: i64,
+        share_mode: i32,
+        parent_id: &str,
+    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)>;
+    async fn list_pan115_share_files(
+        &self,
+        share_code: &str,
+        receive_code: &str,
+        cid: &str,
+    ) -> AppResult<Vec<Pan115FileEntry>>;
+    async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>>;
+    async fn get_movie_detail(&self, id: u32) -> AppResult<Option<MovieDetail>>;
+    async fn search_tv(&self, title: &str, year: &str) -> AppResult<Vec<SearchTvResult>>;
+    async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>>;
 }
 
-impl ImportRemote {
-    pub(super) fn new(ctx: ImportContext) -> Self {
-        Self { ctx }
+#[derive(Clone)]
+pub(super) struct ImportRemote<C> {
+    client: C,
+    paths: ImportPathConfig,
+    path_mapper: SyncPathMapper,
+}
+
+impl<C> ImportRemote<C>
+where
+    C: ImportClient,
+{
+    pub(super) fn new(client: C, paths: ImportPathConfig) -> Self {
+        let path_mapper = SyncPathMapper::new(paths.remote_path.clone(), paths.local_path.clone());
+
+        Self {
+            client,
+            paths,
+            path_mapper,
+        }
     }
 
-    pub(super) async fn list_library_files(&self, dir_id: i64) -> RequestResult<Vec<pan123::File>> {
-        self.ctx.clients.pan123.list(dir_id).await
+    pub(super) async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
+        self.client.list_library_files(dir_id).await
     }
 
-    pub(super) async fn get_library_dir_id_by_path(
-        &self,
-        path: &str,
-    ) -> RequestResult<Option<i64>> {
-        self.ctx.clients.pan123.get_file_id_by_path(path).await
+    pub(super) async fn get_library_dir_id_by_path(&self, path: &str) -> AppResult<Option<i64>> {
+        self.client.get_library_dir_id_by_path(path).await
     }
 
-    pub(super) async fn mkdir_library_path(&self, path: &str) -> RequestResult<i64> {
-        self.ctx.clients.pan123.mkdir_by_path(path).await
+    pub(super) async fn mkdir_library_path(&self, path: &str) -> AppResult<i64> {
+        self.client.mkdir_library_path(path).await
     }
 
     pub(super) async fn list_library_dir_ids(
         &self,
         dir_id: i64,
-    ) -> RequestResult<std::collections::HashMap<String, i64>> {
-        self.ctx.clients.pan123.list_dir_ids(dir_id).await
+    ) -> AppResult<HashMap<String, i64>> {
+        self.client.list_library_dir_ids(dir_id).await
     }
 
     pub(super) async fn mkdir_library_dir(
         &self,
         parent_dir_id: i64,
         folder_name: &str,
-    ) -> RequestResult<i64> {
-        self.ctx
-            .clients
-            .pan123
-            .mkdir(parent_dir_id, folder_name)
+    ) -> AppResult<i64> {
+        self.client
+            .mkdir_library_dir(parent_dir_id, folder_name)
             .await
     }
 
-    pub(super) async fn trash_library_files(&self, file_ids: &[i64]) -> RequestResult<()> {
-        self.ctx.clients.pan123.trash_files(file_ids).await
+    pub(super) async fn trash_library_files(&self, file_ids: &[i64]) -> AppResult<()> {
+        self.client.trash_library_files(file_ids).await
     }
 
     pub(super) async fn fast_upload_md5(
@@ -64,11 +117,9 @@ impl ImportRemote {
         file_name: &str,
         etag: &str,
         size: u64,
-    ) -> RequestResult<Option<i64>> {
-        self.ctx
-            .clients
-            .pan123
-            .fast_upload(parent_dir_id, file_name, etag, size)
+    ) -> AppResult<Option<i64>> {
+        self.client
+            .fast_upload_md5(parent_dir_id, file_name, etag, size)
             .await
     }
 
@@ -78,11 +129,9 @@ impl ImportRemote {
         file_name: &str,
         sha1: &str,
         size: u64,
-    ) -> RequestResult<Option<i64>> {
-        self.ctx
-            .clients
-            .pan123
-            .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
+    ) -> AppResult<Option<i64>> {
+        self.client
+            .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
             .await
     }
 
@@ -90,12 +139,8 @@ impl ImportRemote {
         &self,
         file_id: i64,
         local_path: &str,
-    ) -> RequestResult<()> {
-        self.ctx
-            .clients
-            .pan123
-            .download_file(file_id, local_path)
-            .await
+    ) -> AppResult<()> {
+        self.client.download_library_file(file_id, local_path).await
     }
 
     pub(super) async fn list_pan123_share_files(
@@ -103,19 +148,17 @@ impl ImportRemote {
         share_key: &str,
         share_password: &str,
         parent_id: i64,
-    ) -> RequestResult<Vec<pan123::File>> {
-        self.ctx
-            .clients
-            .pan123
-            .list_share_files(share_key, share_password, parent_id)
+    ) -> AppResult<Vec<LibraryFile>> {
+        self.client
+            .list_pan123_share_files(share_key, share_password, parent_id)
             .await
     }
 
     pub(super) async fn get_pan189_share_info(
         &self,
         share_code: &str,
-    ) -> RequestResult<pan189::ShareInfo> {
-        self.ctx.clients.pan189.get_share_info(share_code).await
+    ) -> AppResult<Pan189ShareInfo> {
+        self.client.get_pan189_share_info(share_code).await
     }
 
     pub(super) async fn list_pan189_share_files(
@@ -123,11 +166,9 @@ impl ImportRemote {
         share_id: i64,
         share_mode: i32,
         parent_id: &str,
-    ) -> RequestResult<(Vec<pan189::Folder>, Vec<pan189::File>)> {
-        self.ctx
-            .clients
-            .pan189
-            .list_share_files(share_id, share_mode, parent_id)
+    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
+        self.client
+            .list_pan189_share_files(share_id, share_mode, parent_id)
             .await
     }
 
@@ -136,11 +177,9 @@ impl ImportRemote {
         share_code: &str,
         receive_code: &str,
         cid: &str,
-    ) -> RequestResult<Vec<pan115::FileEntry>> {
-        self.ctx
-            .clients
-            .pan115
-            .list_share_files(share_code, receive_code, cid)
+    ) -> AppResult<Vec<Pan115FileEntry>> {
+        self.client
+            .list_pan115_share_files(share_code, receive_code, cid)
             .await
     }
 
@@ -148,49 +187,44 @@ impl ImportRemote {
         &self,
         title: &str,
         year: &str,
-    ) -> RequestResult<Vec<SearchMovieResult>> {
-        self.ctx.clients.tmdb.search_movie(title, year).await
+    ) -> AppResult<Vec<SearchMovieResult>> {
+        self.client.search_movie(title, year).await
     }
 
-    pub(super) async fn get_movie_detail(&self, id: u32) -> RequestResult<Option<MovieDetail>> {
-        self.ctx.clients.tmdb.get_movie_detail(id).await
+    pub(super) async fn get_movie_detail(&self, id: u32) -> AppResult<Option<MovieDetail>> {
+        self.client.get_movie_detail(id).await
     }
 
     pub(super) async fn search_tv(
         &self,
         title: &str,
         year: &str,
-    ) -> RequestResult<Vec<SearchTvResult>> {
-        self.ctx.clients.tmdb.search_tv(title, year).await
+    ) -> AppResult<Vec<SearchTvResult>> {
+        self.client.search_tv(title, year).await
     }
 
-    pub(super) async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
-        self.ctx.clients.tmdb.get_tv_detail(id).await
+    pub(super) async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
+        self.client.get_tv_detail(id).await
     }
 
     pub(super) fn library_remote_path(&self) -> &str {
-        self.ctx.paths.remote_path.as_str()
+        self.paths.remote_path.as_str()
     }
 
     pub(super) fn local_path_for_remote(&self, remote_path: &str) -> String {
-        remote_path.replace(
-            self.ctx.paths.remote_path.as_str(),
-            self.ctx.paths.local_path.as_str(),
-        )
+        self.path_mapper.remote_to_local_path(remote_path)
     }
 
     pub(super) fn build_strm_url(&self, remote_file_path: &str, file_id: i64) -> String {
         format!(
             "{}{}?file_id={}",
-            self.ctx.paths.strm_download_url, remote_file_path, file_id
+            self.paths.strm_download_url, remote_file_path, file_id
         )
     }
 
     pub(super) fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
-        self.local_path_for_remote(remote_file_path)
-            .trim_end_matches(extension)
-            .to_owned()
-            + ".strm"
+        self.path_mapper
+            .remote_to_local_strm_path(remote_file_path, extension)
     }
 
     pub(super) async fn write_strm_file(
@@ -224,16 +258,123 @@ impl ImportRemote {
 mod tests {
     use super::*;
 
-    fn import_remote() -> ImportRemote {
-        ImportRemote::new(ImportContext::new(
-            pan115::Client::new(),
-            pan123::Client::new("", "", "/tmp/pan123"),
-            pan189::Client::new(),
-            crate::infrastructure::client::tmdb::Client::new(""),
-            "/remote".to_string(),
-            "/local".to_string(),
-            "http://localhost/d".to_string(),
-        ))
+    #[derive(Clone, Default)]
+    struct FakeImportClient;
+
+    impl ImportClient for FakeImportClient {
+        async fn list_library_files(&self, _dir_id: i64) -> AppResult<Vec<LibraryFile>> {
+            unreachable!()
+        }
+
+        async fn get_library_dir_id_by_path(&self, _path: &str) -> AppResult<Option<i64>> {
+            unreachable!()
+        }
+
+        async fn mkdir_library_path(&self, _path: &str) -> AppResult<i64> {
+            unreachable!()
+        }
+
+        async fn list_library_dir_ids(&self, _dir_id: i64) -> AppResult<HashMap<String, i64>> {
+            unreachable!()
+        }
+
+        async fn mkdir_library_dir(
+            &self,
+            _parent_dir_id: i64,
+            _folder_name: &str,
+        ) -> AppResult<i64> {
+            unreachable!()
+        }
+
+        async fn trash_library_files(&self, _file_ids: &[i64]) -> AppResult<()> {
+            unreachable!()
+        }
+
+        async fn fast_upload_md5(
+            &self,
+            _parent_dir_id: i64,
+            _file_name: &str,
+            _etag: &str,
+            _size: u64,
+        ) -> AppResult<Option<i64>> {
+            unreachable!()
+        }
+
+        async fn fast_upload_sha1(
+            &self,
+            _parent_dir_id: i64,
+            _file_name: &str,
+            _sha1: &str,
+            _size: u64,
+        ) -> AppResult<Option<i64>> {
+            unreachable!()
+        }
+
+        async fn download_library_file(&self, _file_id: i64, _local_path: &str) -> AppResult<()> {
+            unreachable!()
+        }
+
+        async fn list_pan123_share_files(
+            &self,
+            _share_key: &str,
+            _share_password: &str,
+            _parent_id: i64,
+        ) -> AppResult<Vec<LibraryFile>> {
+            unreachable!()
+        }
+
+        async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
+            unreachable!()
+        }
+
+        async fn list_pan189_share_files(
+            &self,
+            _share_id: i64,
+            _share_mode: i32,
+            _parent_id: &str,
+        ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
+            unreachable!()
+        }
+
+        async fn list_pan115_share_files(
+            &self,
+            _share_code: &str,
+            _receive_code: &str,
+            _cid: &str,
+        ) -> AppResult<Vec<Pan115FileEntry>> {
+            unreachable!()
+        }
+
+        async fn search_movie(
+            &self,
+            _title: &str,
+            _year: &str,
+        ) -> AppResult<Vec<SearchMovieResult>> {
+            unreachable!()
+        }
+
+        async fn get_movie_detail(&self, _id: u32) -> AppResult<Option<MovieDetail>> {
+            unreachable!()
+        }
+
+        async fn search_tv(&self, _title: &str, _year: &str) -> AppResult<Vec<SearchTvResult>> {
+            unreachable!()
+        }
+
+        async fn get_tv_detail(&self, _id: u32) -> AppResult<Option<TvDetail>> {
+            unreachable!()
+        }
+    }
+
+    fn import_remote() -> ImportRemote<FakeImportClient> {
+        ImportRemote::new(
+            FakeImportClient,
+            ImportPathConfig::new(
+                "/remote".to_string(),
+                "/local".to_string(),
+                "http://localhost/d".to_string(),
+            ),
+        )
     }
 
     #[test]

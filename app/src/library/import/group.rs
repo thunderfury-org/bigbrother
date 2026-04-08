@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use tracing::info;
 
 use super::{
-    Importer,
+    ImportClient, Importer,
     inner::{Media, MediaFile, RawFile},
 };
 use crate::{domain::media::Metadata, error::AppResult};
@@ -66,7 +66,10 @@ pub(super) fn group_video_and_subtitle_files(
     media_files_map.into_values().collect()
 }
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
     pub(super) async fn group_media_files<'a>(
         &mut self,

@@ -1,8 +1,10 @@
+use migration::{Migrator, MigratorTrait};
 use sea_orm::DatabaseConnection;
+use std::time::Duration;
 
 pub mod app;
 
-pub use app::AppContext;
+pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
@@ -20,99 +22,156 @@ use crate::{
         repo::keyword::SeaOrmKeywordRepository,
     },
     interface::{
+        http,
         http::media::{self, MediaServerContext},
         telegram::{self, delivery::TelegramDeliveryContext},
     },
-    library::import::ImportContext,
+    logger,
+    util::signal::shutdown_signal,
 };
+use tracing::{error, info};
 
 pub struct AppRuntime {
     pub log_dir: String,
     pub db: DatabaseConnection,
+    pub server: ServerRuntime,
+    pub event_delivery: EventDeliveryRuntime,
+    pub cache_cleanup: CacheCleanupRuntime,
+}
+
+pub struct ServerRuntime {
     pub bot: teloxide::Bot,
     pub bot_runtime: telegram::BotRuntime,
     pub media_server_addr: String,
     pub media_server: axum::Router,
+}
+
+pub struct EventDeliveryRuntime {
     pub event_bus: EventBus,
     pub telegram_delivery: TelegramDeliveryContext,
+}
+
+pub struct CacheCleanupRuntime {
     pub cache: Cache,
+    pub interval: Duration,
 }
 
 impl AppRuntime {
     pub fn from_app(app: AppContext) -> Self {
-        let bot = app.bot().clone();
-        let cache = app.cache().clone();
-        let event_bus = app.bus().clone();
-        let import_context = import_context(&app);
-        let sync_config = sync_config(&app);
+        let inputs = app.runtime_inputs();
+        let bot = inputs.bot.clone();
+        let cache = inputs.cache.clone();
+        let event_bus = inputs.event_bus.clone();
+        let media_server = media::new_router(media_server_context(&inputs));
 
         Self {
-            log_dir: app.config().get_log_dir(),
-            db: app.db().clone(),
-            bot: bot.clone(),
-            bot_runtime: telegram::BotRuntime::new(
-                teloxide::types::UserId(
-                    app.config()
-                        .get_telegram_config()
-                        .user_id
-                        .try_into()
-                        .unwrap(),
-                ),
-                ManageKeywordsService::new(SeaOrmKeywordRepository::new(app.db().clone())),
-                ImportMediaService::new(ImportGateway::new(import_context)),
-                PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
-                SyncStrmService::new(
-                    Pan123LibraryRemote::new(app.client().pan123.clone()),
-                    TokioFileStore,
-                    sync_config,
-                ),
-            ),
-            media_server_addr: app.config().get_media_server_config().get_addr(),
-            media_server: media::new_router(media_server_context(&app, cache.clone())),
-            event_bus: event_bus.clone(),
-            telegram_delivery: TelegramDeliveryContext {
+            log_dir: inputs.log_dir.clone(),
+            db: inputs.db.clone(),
+            server: ServerRuntime {
                 bot,
-                user_id: app.config().get_telegram_config().user_id,
+                bot_runtime: telegram::BotRuntime::new(
+                    teloxide::types::UserId(inputs.telegram_user_id.try_into().unwrap()),
+                    ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone())),
+                    ImportMediaService::new(ImportGateway::new(
+                        inputs.clients.pan115.clone(),
+                        inputs.clients.pan123.clone(),
+                        inputs.clients.pan189.clone(),
+                        inputs.clients.tmdb.clone(),
+                        inputs.import_paths.clone(),
+                    )),
+                    PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
+                    SyncStrmService::new(
+                        Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
+                        TokioFileStore,
+                        inputs.sync_config.clone(),
+                    ),
+                ),
+                media_server_addr: inputs.media_server_addr.clone(),
+                media_server,
             },
-            cache,
+            event_delivery: EventDeliveryRuntime {
+                event_bus,
+                telegram_delivery: TelegramDeliveryContext {
+                    bot: inputs.bot,
+                    user_id: inputs.telegram_user_id,
+                },
+            },
+            cache_cleanup: CacheCleanupRuntime {
+                cache,
+                interval: Duration::from_hours(12),
+            },
         }
     }
-}
 
-fn import_context(app: &AppContext) -> ImportContext {
-    ImportContext::new(
-        app.client().pan115.clone(),
-        app.client().pan123.clone(),
-        app.client().pan189.clone(),
-        app.client().tmdb.clone(),
-        app.config().get_library_config().remote_path.clone(),
-        app.config().get_library_config().local_path.clone(),
-        app.config()
-            .get_media_server_config()
-            .get_strm_download_url(),
-    )
-}
+    pub async fn run(self) {
+        logger::init(self.log_dir.as_str());
 
-fn sync_config(app: &AppContext) -> crate::application::sync_strm::SyncStrmConfig {
-    crate::application::sync_strm::SyncStrmConfig {
-        remote_path: app.config().get_library_config().remote_path.clone(),
-        local_path: app.config().get_library_config().local_path.clone(),
-        strm_download_url: app
-            .config()
-            .get_media_server_config()
-            .get_strm_download_url(),
+        Migrator::up(&self.db, None)
+            .await
+            .expect("Migration failed");
+        tokio::join!(
+            self.server.run(),
+            self.event_delivery.run(),
+            self.cache_cleanup.run()
+        );
     }
 }
 
-fn media_server_context(app: &AppContext, cache: Cache) -> MediaServerContext {
+impl ServerRuntime {
+    async fn run(self) {
+        tokio::join!(
+            http::run(self.media_server_addr, self.media_server),
+            telegram::run(self.bot, self.bot_runtime)
+        );
+    }
+}
+
+fn media_server_context(inputs: &RuntimeBootstrapInputs) -> MediaServerContext {
     MediaServerContext::new(
-        app.config()
-            .get_media_server_config()
-            .get_strm_path_prefix()
-            .to_string(),
+        inputs.media_server_strm_path_prefix.clone(),
         ResolveDownloadUrlService::new(
-            StringCacheStore::new(cache),
-            Pan123LibraryRemote::new(app.client().pan123.clone()),
+            StringCacheStore::new(inputs.cache.clone()),
+            Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
         ),
     )
+}
+
+impl EventDeliveryRuntime {
+    async fn run(self) {
+        self.event_bus
+            .subscribe(
+                self.telegram_delivery,
+                crate::interface::telegram::delivery::on_send_telegram_message,
+            )
+            .await
+            .unwrap();
+
+        info!("Event bus is running");
+        shutdown_signal("event bus").await;
+        info!("Shutting down event bus...");
+    }
+}
+
+impl CacheCleanupRuntime {
+    async fn run(self) {
+        info!(
+            "Cache cleanup task started (interval: {} hours)",
+            self.interval.as_secs() / 3600
+        );
+
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(self.interval) => {
+                    match self.cache.clear_expired().await {
+                        Ok(count) => info!("Cache cleanup completed: removed {} expired entries", count),
+                        Err(e) => error!("Cache cleanup failed: {}", e),
+                    }
+                }
+                _ = shutdown_signal("cache cleanup task") => {
+                    info!("Shutting down cache cleanup task...");
+                    break;
+                }
+            }
+        }
+    }
 }

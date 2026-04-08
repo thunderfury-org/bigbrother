@@ -1,8 +1,11 @@
 use crate::domain::media::Metadata;
 
-use super::Importer;
+use super::{ImportClient, Importer};
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub(super) fn parse_media_metadata(&mut self, name: &str, parent_path: &str) -> Box<Metadata> {
         let mut meta = Metadata::parse(name);
         if parent_path.is_empty() {

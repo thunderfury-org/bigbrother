@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{
-    domain::media::Metadata,
-    infrastructure::client::tmdb::{MovieDetail, TvDetail},
-};
+use crate::domain::media::Metadata;
+
+use super::{MovieDetail, TvDetail};
 
 #[derive(Debug, Clone)]
 pub(super) struct RawFile {

@@ -3,17 +3,19 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tracing::{error, info};
 
 use super::{
-    ImportedMedia, Importer,
+    ImportClient, ImportedMedia, Importer, MovieDetail, TvDetail,
     inner::{Etag, Media, MediaFile, RawFile, TransferEpisodeArgs},
     library,
 };
 use crate::{
     error::{AppError, AppResult},
-    infrastructure::client::tmdb::{MovieDetail, TvDetail},
     log_time,
 };
 
-impl Importer {
+impl<C> Importer<C>
+where
+    C: ImportClient,
+{
     pub(super) async fn transfer_media_files(
         &mut self,
         media_files: &[MediaFile],
