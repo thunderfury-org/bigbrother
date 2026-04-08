@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::domain::media::Metadata;
 
 use super::{
-    Importer, LibraryGateway, ShareSource,
+    Importer,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
@@ -71,7 +72,7 @@ impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
     S: ShareSource,
-    M: super::MetadataCatalog,
+    M: MetadataCatalog,
 {
     pub(super) fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
         self.metadata_lookup.build_media_files(raw_files)

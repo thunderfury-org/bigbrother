@@ -3,16 +3,17 @@ use std::collections::HashMap;
 use tracing::info;
 
 use super::{
-    Importer, LibraryGateway, MovieDetail, ShareSource, TvDetail,
+    Importer, MovieDetail, TvDetail,
     inner::{MediaFile, RawFile},
 };
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::{domain::library::import_paths, error::AppResult};
 
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
     S: ShareSource,
-    M: super::MetadataCatalog,
+    M: MetadataCatalog,
 {
     pub(super) async fn list_episode_files_in_library(
         &mut self,

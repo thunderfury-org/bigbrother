@@ -1,9 +1,10 @@
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use std::collections::HashMap;
 
 pub(super) use super::policy::group_video_and_subtitle_files;
 
 use super::{
-    Importer, LibraryGateway, ShareSource,
+    Importer,
     inner::{Media, MediaFile},
     policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot},
 };
@@ -13,7 +14,7 @@ impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
     S: ShareSource,
-    M: super::MetadataCatalog,
+    M: MetadataCatalog,
 {
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
     pub(super) async fn group_media_files<'a>(

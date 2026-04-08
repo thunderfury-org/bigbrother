@@ -3,17 +3,18 @@ use std::path::Path;
 use tracing::info;
 
 use super::{
-    ImportedMedia, Importer, LibraryGateway, ShareSource,
+    ImportedMedia, Importer,
     inner::{MediaFile, RawFile},
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::error::AppResult;
 
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
     S: ShareSource,
-    M: super::MetadataCatalog,
+    M: MetadataCatalog,
 {
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from fslink");

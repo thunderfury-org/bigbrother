@@ -1,3 +1,5 @@
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+
 mod group;
 mod inner;
 pub(super) mod json;
@@ -12,7 +14,6 @@ mod source;
 mod tmdb_info;
 mod transfer;
 
-pub(crate) use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 pub(crate) use model::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,

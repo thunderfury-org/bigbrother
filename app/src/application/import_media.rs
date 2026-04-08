@@ -1,8 +1,9 @@
 use crate::{
+    application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
     error::AppResult,
     library::{
         ImportedMedia, ShareUrl,
-        import::{ImportPathConfig, Importer, LibraryGateway, MetadataCatalog, ShareSource},
+        import::{ImportPathConfig, Importer},
     },
 };
 
@@ -65,6 +66,7 @@ mod tests {
     use reqwest::Url;
 
     use super::*;
+    use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
     use crate::library::import::{
         LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
         SearchMovieResult, SearchTvResult, TvDetail,

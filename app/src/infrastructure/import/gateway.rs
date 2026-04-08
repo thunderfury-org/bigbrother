@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
+    application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
     error::AppResult,
     infrastructure::client::{pan115, pan123, pan189, tmdb},
     library::import::{
-        self, Genre, LibraryFile, LibraryGateway, MovieDetail, Pan115FileEntry, Pan189File,
-        Pan189Folder, Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, ShareSource,
-        TvDetail,
+        Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
+        Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
 };
 
@@ -291,7 +291,7 @@ impl ShareSource for ShareImportGateway {
     }
 }
 
-impl import::MetadataCatalog for TmdbMetadataGateway {
+impl MetadataCatalog for TmdbMetadataGateway {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         Ok(self
             .tmdb

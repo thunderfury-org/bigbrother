@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use tracing::{error, info};
 
 use super::{
-    ImportedMedia, Importer, LibraryGateway, MovieDetail, ShareSource, TvDetail,
+    ImportedMedia, Importer, MovieDetail, TvDetail,
     inner::{Etag, Media, MediaFile, RawFile, TransferEpisodeArgs},
     library,
     policy::{
@@ -12,13 +12,14 @@ use super::{
         get_number_of_episodes_in_season, need_overwrite_existing_files, select_largest_media_file,
     },
 };
+use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::{error::AppResult, log_time};
 
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
     S: ShareSource,
-    M: super::MetadataCatalog,
+    M: MetadataCatalog,
 {
     pub(super) async fn transfer_media_files(
         &mut self,
