@@ -136,7 +136,9 @@ where
         file_id: i64,
         local_path: &str,
     ) -> AppResult<()> {
-        self.gateway.download_library_file(file_id, local_path).await
+        self.gateway
+            .download_library_file(file_id, local_path)
+            .await
     }
 
     pub(super) fn library_remote_path(&self) -> &str {

@@ -1,50 +1,15 @@
 use reqwest::Url;
 use tracing::info;
 
+pub use super::source::ShareUrl;
+
 use super::{
     ImportedMedia, Importer, LibraryGateway, ShareSource,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
+    source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
 };
 use crate::error::{AppError, AppResult};
-
-pub enum ShareUrl<'a> {
-    Pan123(&'a Url),
-    Pan189(&'a Url),
-    Pan115(&'a Url),
-}
-
-impl<'a> ShareUrl<'a> {
-    pub fn from(url: &'a Url) -> Option<Self> {
-        if url
-            .host_str()
-            .is_some_and(|h| h.starts_with("www.123") && h.ends_with(".com"))
-            && url.path().starts_with("/s/")
-        {
-            Some(Self::Pan123(url))
-        } else if url.host_str().is_some_and(|h| h == "cloud.189.cn")
-            && (url.path().starts_with("/t/") || url.path() == "/web/share")
-        {
-            Some(Self::Pan189(url))
-        } else if url
-            .host_str()
-            .is_some_and(|h| h == "115.com" || h == "115cdn.com")
-            && url.path().starts_with("/s/")
-        {
-            Some(Self::Pan115(url))
-        } else {
-            None
-        }
-    }
-
-    pub fn get_url(&self) -> &Url {
-        match self {
-            Self::Pan123(url) => url,
-            Self::Pan189(url) => url,
-            Self::Pan115(url) => url,
-        }
-    }
-}
 
 impl<L, S, M> Importer<L, S, M>
 where
@@ -242,145 +207,5 @@ where
         }
 
         Ok(all_files)
-    }
-}
-
-fn parse_pan123_share_parts(url: &Url) -> (String, String) {
-    let share_key = url
-        .path_segments()
-        .map(|mut segments| segments.next_back().unwrap_or_default())
-        .unwrap_or_default()
-        .to_owned();
-    let share_password = url
-        .query_pairs()
-        .find(|(key, _)| key == "pwd")
-        .map(|(_, value)| value.to_string())
-        .unwrap_or_default();
-    (share_key, share_password)
-}
-
-fn parse_pan189_share_code(url: &Url) -> String {
-    url.query_pairs()
-        .find(|(key, _)| key == "code")
-        .map(|(_, value)| value.to_string())
-        .unwrap_or_else(|| {
-            if url.path().starts_with("/t/") {
-                url.path_segments()
-                    .map(|mut segments| segments.next_back().unwrap_or_default())
-                    .unwrap_or_default()
-                    .to_owned()
-            } else {
-                String::new()
-            }
-        })
-}
-
-fn parse_pan115_share_parts(url: &Url) -> (String, String) {
-    let share_code = url
-        .path_segments()
-        .map(|mut segments| segments.next_back().unwrap_or_default())
-        .unwrap_or_default()
-        .to_owned();
-    let receive_code = url
-        .query_pairs()
-        .find(|(key, _)| key == "password")
-        .map(|(_, value)| value.to_string())
-        .unwrap_or_default();
-    (share_code, receive_code)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_shareurl_from_pan115_with_password() {
-        let url = Url::parse("https://115cdn.com/s/swfoexi3no3?password=j7b2").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_some());
-        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
-    }
-
-    #[test]
-    fn test_shareurl_from_pan115_with_rc() {
-        let url = Url::parse("https://115.com/s/swfoexi3no3?rc=j7b2").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_some());
-        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
-    }
-
-    #[test]
-    fn test_shareurl_from_pan115_without_password() {
-        let url = Url::parse("https://115.com/s/swfoexi3no3").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_some());
-        assert!(matches!(share_url.unwrap(), ShareUrl::Pan115(_)));
-    }
-
-    #[test]
-    fn test_shareurl_from_pan123() {
-        let url = Url::parse("https://www.123pan.com/s/abc123?pwd=test").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_some());
-        assert!(matches!(share_url.unwrap(), ShareUrl::Pan123(_)));
-    }
-
-    #[test]
-    fn test_shareurl_from_pan189() {
-        let url = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_some());
-        assert!(matches!(share_url.unwrap(), ShareUrl::Pan189(_)));
-    }
-
-    #[test]
-    fn test_shareurl_from_invalid_url() {
-        let url = Url::parse("https://example.com/s/abc123").unwrap();
-        let share_url = ShareUrl::from(&url);
-
-        assert!(share_url.is_none());
-    }
-
-    #[test]
-    fn test_parse_pan123_share_parts() {
-        let url = Url::parse("https://www.123pan.com/s/share123?pwd=pass456").unwrap();
-
-        let (share_key, share_password) = parse_pan123_share_parts(&url);
-
-        assert_eq!(share_key, "share123");
-        assert_eq!(share_password, "pass456");
-    }
-
-    #[test]
-    fn test_parse_pan189_share_code_prefers_query_code() {
-        let url = Url::parse("https://cloud.189.cn/web/share?code=abc123").unwrap();
-
-        let share_code = parse_pan189_share_code(&url);
-
-        assert_eq!(share_code, "abc123");
-    }
-
-    #[test]
-    fn test_parse_pan189_share_code_from_path() {
-        let url = Url::parse("https://cloud.189.cn/t/pathcode").unwrap();
-
-        let share_code = parse_pan189_share_code(&url);
-
-        assert_eq!(share_code, "pathcode");
-    }
-
-    #[test]
-    fn test_parse_pan115_share_parts() {
-        let url = Url::parse("https://115.com/s/share115?password=recv").unwrap();
-
-        let (share_code, receive_code) = parse_pan115_share_parts(&url);
-
-        assert_eq!(share_code, "share115");
-        assert_eq!(receive_code, "recv");
     }
 }

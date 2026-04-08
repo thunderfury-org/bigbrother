@@ -5,8 +5,10 @@ mod library;
 mod local;
 mod metadata;
 mod model;
+mod policy;
 pub(crate) mod remote;
 pub(super) mod share;
+mod source;
 mod tmdb_info;
 mod transfer;
 
@@ -15,6 +17,7 @@ pub(crate) use model::{
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
 pub(crate) use remote::{LibraryGateway, MetadataCatalog, ShareSource};
+pub use source::is_fslink;
 
 #[derive(Debug)]
 pub enum ImportedMedia {

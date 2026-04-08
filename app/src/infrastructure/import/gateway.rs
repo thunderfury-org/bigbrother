@@ -3,12 +3,10 @@ use std::collections::HashMap;
 use crate::{
     error::AppResult,
     infrastructure::client::{pan115, pan123, pan189, tmdb},
-    library::{
-        import::{
-            self, Genre, LibraryFile, LibraryGateway, MovieDetail, Pan115FileEntry, Pan189File,
-            Pan189Folder, Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season,
-            ShareSource, TvDetail,
-        },
+    library::import::{
+        self, Genre, LibraryFile, LibraryGateway, MovieDetail, Pan115FileEntry, Pan189File,
+        Pan189Folder, Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, ShareSource,
+        TvDetail,
     },
 };
 
@@ -239,7 +237,6 @@ impl LibraryGateway for PanLibraryGateway {
     async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
         Ok(self.pan123.download_file(file_id, local_path).await?)
     }
-
 }
 
 impl ShareSource for ShareImportGateway {
@@ -292,7 +289,6 @@ impl ShareSource for ShareImportGateway {
             .map(Into::into)
             .collect())
     }
-
 }
 
 impl import::MetadataCatalog for TmdbMetadataGateway {

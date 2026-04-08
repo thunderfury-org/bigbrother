@@ -1,70 +1,13 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use tracing::info;
+pub(super) use super::policy::group_video_and_subtitle_files;
 
 use super::{
     Importer, LibraryGateway, ShareSource,
-    inner::{Media, MediaFile, RawFile},
+    inner::{Media, MediaFile},
+    policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot},
 };
-use crate::{domain::media::Metadata, error::AppResult};
-
-/// 对原始文件进行分组，将视频文件和对应的字幕文件存储在同一 MediaFile 中
-pub(super) fn group_video_and_subtitle_files(
-    raw_files: Vec<(Box<Metadata>, RawFile)>,
-) -> Vec<MediaFile> {
-    if raw_files.is_empty() {
-        return Vec::new();
-    }
-
-    let (video_files, subtitle_files): (Vec<_>, Vec<_>) = raw_files
-        .into_iter()
-        .partition(|(metadata, _)| metadata.is_video());
-
-    if video_files.is_empty() {
-        // 没有视频文件
-        return Vec::new();
-    } else if subtitle_files.is_empty() {
-        // 没有字幕文件
-        return video_files
-            .into_iter()
-            .map(|(metadata, raw_file)| MediaFile {
-                metadata,
-                video: raw_file,
-                subtitles: Vec::new(),
-            })
-            .collect();
-    }
-
-    // 有多个视频文件，按照视频文件名（移除扩展名后）匹配字幕文件
-    let mut media_files_map: HashMap<String, MediaFile> = video_files
-        .into_iter()
-        .map(|(metadata, raw_file)| {
-            let file_stem = match raw_file.name.rfind('.') {
-                Some(i) => raw_file.name[..i].to_owned(),
-                None => raw_file.name.to_owned(),
-            };
-            (
-                file_stem,
-                MediaFile {
-                    metadata,
-                    video: raw_file,
-                    subtitles: Vec::new(),
-                },
-            )
-        })
-        .collect();
-
-    for (_, subtitle_file) in subtitle_files {
-        for (file_stem, media_file) in &mut media_files_map {
-            if subtitle_file.name.starts_with(file_stem) {
-                media_file.subtitles.push(subtitle_file);
-                break;
-            }
-        }
-    }
-
-    media_files_map.into_values().collect()
-}
+use crate::error::AppResult;
 
 impl<L, S, M> Importer<L, S, M>
 where
@@ -101,19 +44,17 @@ where
         let tv_info = self.tmdb_lookup.get_tv_info(&file.metadata).await?;
         match tv_info {
             Some(tv_info) => {
-                let Some((season_number, episode_number)) =
-                    resolve_tv_episode_slot(file, &tv_info)
+                let Some((season_number, episode_number)) = resolve_tv_episode_slot(file, &tv_info)
                 else {
                     return Ok(());
                 };
                 insert_tv_media(grouped_files, tv_info, season_number, episode_number, file);
             }
-            None => {
-                info!(
-                    "No tv found in tmdb for file: {}, path: {}",
-                    file.video.name, file.video.path
-                );
-            }
+            None => tracing::info!(
+                "No tv found in tmdb for file: {}, path: {}",
+                file.video.name,
+                file.video.path
+            ),
         }
 
         Ok(())
@@ -131,78 +72,14 @@ where
             Some(movie_info) => {
                 insert_movie_media(grouped_files, movie_info, file);
             }
-            None => {
-                // movie not found in tmdb
-                info!(
-                    "No movie found in tmdb for file: {}, path: {}",
-                    file.video.name, file.video.path
-                );
-            }
+            None => tracing::info!(
+                "No movie found in tmdb for file: {}, path: {}",
+                file.video.name,
+                file.video.path
+            ),
         }
 
         Ok(())
-    }
-}
-
-fn resolve_tv_episode_slot(file: &MediaFile, tv_info: &super::TvDetail) -> Option<(u32, u32)> {
-    let season_number = match file.metadata.season_number {
-        Some(season_number) => season_number,
-        None => {
-            if tv_info.number_of_seasons == 1 {
-                1
-            } else {
-                info!(
-                    "Multi season tv, but no season number found in file: {}",
-                    file.video.name
-                );
-                return None;
-            }
-        }
-    };
-
-    let episode_number = match file.metadata.episode_number {
-        Some(episode_number) => episode_number,
-        None => {
-            info!("No episode number found in file: {}", file.video.name);
-            return None;
-        }
-    };
-
-    Some((season_number, episode_number))
-}
-
-fn insert_tv_media<'a>(
-    grouped_files: &mut HashMap<u32, Media<'a>>,
-    tv_info: super::TvDetail,
-    season_number: u32,
-    episode_number: u32,
-    file: &'a MediaFile,
-) {
-    let entry = grouped_files.entry(tv_info.id).or_insert_with(|| Media::Tv {
-        detail: tv_info,
-        files: BTreeMap::new(),
-    });
-    if let Media::Tv { files, .. } = entry {
-        files
-            .entry(season_number)
-            .or_insert_with(BTreeMap::new)
-            .entry(episode_number)
-            .or_insert_with(Vec::new)
-            .push(file);
-    }
-}
-
-fn insert_movie_media<'a>(
-    grouped_files: &mut HashMap<u32, Media<'a>>,
-    movie_info: super::MovieDetail,
-    file: &'a MediaFile,
-) {
-    let entry = grouped_files.entry(movie_info.id).or_insert_with(|| Media::Movie {
-        detail: movie_info,
-        files: Vec::new(),
-    });
-    if let Media::Movie { files, .. } = entry {
-        files.push(file);
     }
 }
 
@@ -211,7 +88,10 @@ mod tests {
     use super::*;
     use crate::{
         domain::media::{FileType, Metadata},
-        library::import::{Genre, Season, TvDetail},
+        library::import::{
+            Genre, Season, TvDetail,
+            inner::{Etag, RawFile},
+        },
     };
 
     // Helper function to create a test RawFile
@@ -219,7 +99,7 @@ mod tests {
         RawFile {
             id: None,
             name: name.to_string(),
-            etag: super::super::inner::Etag::Md5("test".to_string()),
+            etag: Etag::Md5("test".to_string()),
             size: 1024,
             path: format!("/test/{}", name),
         }

@@ -149,7 +149,10 @@ mod tests {
 
     #[test]
     fn test_get_subcategory_skips_unknown_countries() {
-        assert_eq!(get_subcategory(&["XX".to_string(), "CN".to_string()]), "国产");
+        assert_eq!(
+            get_subcategory(&["XX".to_string(), "CN".to_string()]),
+            "国产"
+        );
     }
 
     #[test]

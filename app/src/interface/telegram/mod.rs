@@ -9,7 +9,8 @@ use crate::{
         notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
     },
     infrastructure::{
-        client::library_remote::Pan123LibraryRemote, event::publisher::EventBusPublisher,
+        client::library_remote::Pan123LibraryRemote,
+        event::publisher::EventBusPublisher,
         fs::tokio_file_store::TokioFileStore,
         import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
         repo::keyword::SeaOrmKeywordRepository,

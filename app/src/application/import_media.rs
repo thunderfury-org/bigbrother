@@ -94,10 +94,7 @@ mod tests {
     struct FakeMetadataCatalog;
 
     impl LibraryGateway for FakeLibraryGateway {
-        async fn list_library_files(
-            &self,
-            _dir_id: i64,
-        ) -> AppResult<Vec<LibraryFile>> {
+        async fn list_library_files(&self, _dir_id: i64) -> AppResult<Vec<LibraryFile>> {
             Ok(Vec::new())
         }
         async fn get_library_dir_id_by_path(&self, _path: &str) -> AppResult<Option<i64>> {
@@ -112,7 +109,11 @@ mod tests {
         ) -> AppResult<std::collections::HashMap<String, i64>> {
             Ok(Default::default())
         }
-        async fn mkdir_library_dir(&self, _parent_dir_id: i64, _folder_name: &str) -> AppResult<i64> {
+        async fn mkdir_library_dir(
+            &self,
+            _parent_dir_id: i64,
+            _folder_name: &str,
+        ) -> AppResult<i64> {
             Ok(1)
         }
         async fn trash_library_files(&self, _file_ids: &[i64]) -> AppResult<()> {
@@ -151,10 +152,7 @@ mod tests {
             self.calls.lock().unwrap().push("share".to_string());
             Ok(Vec::new())
         }
-        async fn get_pan189_share_info(
-            &self,
-            _share_code: &str,
-        ) -> AppResult<Pan189ShareInfo> {
+        async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
             self.calls.lock().unwrap().push("share".to_string());
             Ok(Default::default())
         }
@@ -189,11 +187,7 @@ mod tests {
         async fn get_movie_detail(&self, _id: u32) -> AppResult<Option<MovieDetail>> {
             Ok(None)
         }
-        async fn search_tv(
-            &self,
-            _title: &str,
-            _year: &str,
-        ) -> AppResult<Vec<SearchTvResult>> {
+        async fn search_tv(&self, _title: &str, _year: &str) -> AppResult<Vec<SearchTvResult>> {
             Ok(Vec::new())
         }
         async fn get_tv_detail(&self, _id: u32) -> AppResult<Option<TvDetail>> {
@@ -215,9 +209,6 @@ mod tests {
 
         service.import_from_share_url(&share).await.unwrap();
 
-        assert_eq!(
-            share_source.calls.lock().unwrap().as_slice(),
-            ["share"]
-        );
+        assert_eq!(share_source.calls.lock().unwrap().as_slice(), ["share"]);
     }
 }

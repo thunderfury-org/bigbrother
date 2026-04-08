@@ -98,7 +98,10 @@ where
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
                 return Ok(tv.clone());
             }
-            let tvs = self.metadata_catalog.search_tv(&title.title, &meta.year).await?;
+            let tvs = self
+                .metadata_catalog
+                .search_tv(&title.title, &meta.year)
+                .await?;
             match resolve_tv_candidate(&title.title, tvs, &self.metadata_catalog).await? {
                 Some(tv) => {
                     self.tv_info_cache.insert(cache_key, Some(tv.clone()));
@@ -125,10 +128,7 @@ where
     match movies.len() {
         0 => Ok(None),
         1 => {
-            info!(
-                "Movie found for title: {}, id: {}",
-                title, movies[0].id
-            );
+            info!("Movie found for title: {}, id: {}", title, movies[0].id);
             metadata_catalog.get_movie_detail(movies[0].id).await
         }
         _ => {
