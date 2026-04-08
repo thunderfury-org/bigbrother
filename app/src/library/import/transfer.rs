@@ -307,17 +307,7 @@ where
         existing_files: &[MediaFile],
         saved_filename: &Option<String>,
     ) -> AppResult<()> {
-        let Some(saved_filename) = saved_filename else {
-            return Ok(());
-        };
-        if existing_files.is_empty() {
-            return Ok(());
-        }
-
-        let files = existing_files
-            .iter()
-            .filter(|file| file.video.name != *saved_filename)
-            .collect::<Vec<_>>();
+        let files = collect_replaced_media_files(existing_files, saved_filename);
         if files.is_empty() {
             return Ok(());
         }
@@ -650,6 +640,20 @@ fn need_overwrite_existing_files(existing_files: &[MediaFile], media_file: &Medi
         .all(|f| f.video.size < media_file.video.size)
 }
 
+fn collect_replaced_media_files<'a>(
+    existing_files: &'a [MediaFile],
+    saved_filename: &Option<String>,
+) -> Vec<&'a MediaFile> {
+    let Some(saved_filename) = saved_filename else {
+        return Vec::new();
+    };
+
+    existing_files
+        .iter()
+        .filter(|file| file.video.name != *saved_filename)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -931,5 +935,30 @@ mod tests {
             &existing_files_4,
             &new_file_4
         ));
+    }
+
+    #[test]
+    fn test_collect_replaced_media_files_returns_empty_without_saved_filename() {
+        let existing_files = vec![create_mock_media_file(100), create_mock_media_file(200)];
+
+        let files = collect_replaced_media_files(&existing_files, &None);
+
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_collect_replaced_media_files_excludes_saved_filename() {
+        let existing_files = vec![
+            create_media_file_with_metadata("kept.mkv", Metadata::default()),
+            create_media_file_with_metadata("old1.mkv", Metadata::default()),
+            create_media_file_with_metadata("old2.mkv", Metadata::default()),
+        ];
+
+        let files =
+            collect_replaced_media_files(&existing_files, &Some("kept.mkv".to_string()));
+
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].video.name, "old1.mkv");
+        assert_eq!(files[1].video.name, "old2.mkv");
     }
 }
