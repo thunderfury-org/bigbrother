@@ -67,15 +67,8 @@ where
             .get_or_create_dir_in_library(movie_path.as_str())
             .await?;
         let existing_files = self.list_movie_files_in_library(movie_dir_id).await?;
-        let media_file = media_files
-            .iter()
-            .max_by(|a, b| a.video.size.cmp(&b.video.size))
-            .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "no video file found when transfer movie {}",
-                    detail.title
-                ))
-            })?;
+        let media_file =
+            select_largest_media_file(media_files, format!("movie {}", detail.title).as_str())?;
 
         if !existing_files.is_empty() {
             // existing files found, check if need overwrite
@@ -238,16 +231,14 @@ where
         &self,
         args: &TransferEpisodeArgs<'_>,
     ) -> AppResult<Option<(bool, u64)>> {
-        let media_file = args
-            .files
-            .iter()
-            .max_by(|a, b| a.video.size.cmp(&b.video.size))
-            .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "no video file found when transfer tv series {} season {} episode {}",
-                    args.detail.name, args.season_number, args.episode_number
-                ))
-            })?;
+        let media_file = select_largest_media_file(
+            args.files,
+            format!(
+                "tv series {} season {} episode {}",
+                args.detail.name, args.season_number, args.episode_number
+            )
+            .as_str(),
+        )?;
 
         if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
             && !existing_files.is_empty()
@@ -653,6 +644,17 @@ fn collect_replaced_media_files<'a>(
         .collect()
 }
 
+fn select_largest_media_file<'a>(
+    media_files: &'a [&MediaFile],
+    context: &str,
+) -> AppResult<&'a MediaFile> {
+    media_files
+        .iter()
+        .max_by(|a, b| a.video.size.cmp(&b.video.size))
+        .copied()
+        .ok_or_else(|| AppError::NotFound(format!("no video file found when transfer {}", context)))
+}
+
 fn accumulate_episode_transfer_result(
     state: &mut SeasonTransferState,
     episode_number: u32,
@@ -976,6 +978,29 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].video.name, "old1.mkv");
         assert_eq!(files[1].video.name, "old2.mkv");
+    }
+
+    #[test]
+    fn test_select_largest_media_file_returns_largest() {
+        let small = create_mock_media_file(100);
+        let large = create_mock_media_file(300);
+        let medium = create_mock_media_file(200);
+        let media_files = vec![&small, &large, &medium];
+
+        let selected = select_largest_media_file(&media_files, "movie test").unwrap();
+
+        assert_eq!(selected.video.size, 300);
+    }
+
+    #[test]
+    fn test_select_largest_media_file_errors_on_empty_input() {
+        let media_files: Vec<&MediaFile> = Vec::new();
+
+        let error = select_largest_media_file(&media_files, "movie test").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("no video file found when transfer movie test"));
     }
 
     #[test]
