@@ -66,9 +66,10 @@ pub(super) fn group_video_and_subtitle_files(
     media_files_map.into_values().collect()
 }
 
-impl<C> Importer<C>
+impl<C, M> Importer<C, M>
 where
     C: ImportClient,
+    M: super::MetadataCatalog,
 {
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
     pub(super) async fn group_media_files<'a>(

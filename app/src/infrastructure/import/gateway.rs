@@ -19,6 +19,10 @@ struct ClientImportGateway {
     pan115: pan115::Client,
     pan123: pan123::Client,
     pan189: pan189::Client,
+}
+
+#[derive(Clone)]
+struct TmdbMetadataGateway {
     tmdb: tmdb::Client,
 }
 
@@ -27,14 +31,18 @@ impl ClientImportGateway {
         pan115: pan115::Client,
         pan123: pan123::Client,
         pan189: pan189::Client,
-        tmdb: tmdb::Client,
     ) -> Self {
         Self {
             pan115,
             pan123,
             pan189,
-            tmdb,
         }
+    }
+}
+
+impl TmdbMetadataGateway {
+    fn new(tmdb: tmdb::Client) -> Self {
+        Self { tmdb }
     }
 }
 
@@ -277,6 +285,9 @@ impl ImportClient for ClientImportGateway {
             .collect())
     }
 
+}
+
+impl import::MetadataCatalog for TmdbMetadataGateway {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         Ok(self
             .tmdb
@@ -309,6 +320,7 @@ impl ImportClient for ClientImportGateway {
 #[derive(Clone)]
 pub struct ImportGateway {
     client: ClientImportGateway,
+    metadata_catalog: TmdbMetadataGateway,
     paths: ImportPathConfig,
 }
 
@@ -321,7 +333,8 @@ impl ImportGateway {
         paths: ImportPathConfig,
     ) -> Self {
         Self {
-            client: ClientImportGateway::new(pan115, pan123, pan189, tmdb),
+            client: ClientImportGateway::new(pan115, pan123, pan189),
+            metadata_catalog: TmdbMetadataGateway::new(tmdb),
             paths,
         }
     }
@@ -329,19 +342,31 @@ impl ImportGateway {
 
 impl ImportMediaGateway for ImportGateway {
     async fn import_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
-        import::Importer::new(self.client.clone(), self.paths.clone())
+        import::Importer::new(
+            self.client.clone(),
+            self.metadata_catalog.clone(),
+            self.paths.clone(),
+        )
             .import_from_share_url(url)
             .await
     }
 
     async fn import_from_fslink(&self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        import::Importer::new(self.client.clone(), self.paths.clone())
+        import::Importer::new(
+            self.client.clone(),
+            self.metadata_catalog.clone(),
+            self.paths.clone(),
+        )
             .import_from_fslink(fslink)
             .await
     }
 
     async fn import_from_json(&self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-        import::Importer::new(self.client.clone(), self.paths.clone())
+        import::Importer::new(
+            self.client.clone(),
+            self.metadata_catalog.clone(),
+            self.paths.clone(),
+        )
             .import_from_json(json)
             .await
     }

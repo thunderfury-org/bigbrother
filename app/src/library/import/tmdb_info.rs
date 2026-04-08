@@ -2,11 +2,12 @@ use tracing::info;
 
 use crate::{domain::media::Metadata, error::AppResult};
 
-use super::{ImportClient, Importer, MovieDetail, TvDetail};
+use super::{ImportClient, Importer, MetadataCatalog, MovieDetail, TvDetail};
 
-impl<C> Importer<C>
+impl<C, M> Importer<C, M>
 where
     C: ImportClient,
+    M: MetadataCatalog,
 {
     pub(super) async fn get_movie_info_from_tmdb(
         &mut self,
@@ -19,7 +20,7 @@ where
             }
 
             if let Some(movie) = self
-                .remote
+                .metadata_catalog
                 .get_movie_detail(meta.tmdb_id.parse().unwrap())
                 .await?
             {
@@ -37,7 +38,10 @@ where
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
                 return Ok(movie.clone());
             }
-            let movies = self.remote.search_movie(&title.title, &meta.year).await?;
+            let movies = self
+                .metadata_catalog
+                .search_movie(&title.title, &meta.year)
+                .await?;
             match movies.len() {
                 0 => {
                     self.movie_info_cache.insert(cache_key, None);
@@ -48,7 +52,7 @@ where
                         "Movie found for title: {}, year: {}, id: {}",
                         title.title, meta.year, movies[0].id
                     );
-                    let movie = self.remote.get_movie_detail(movies[0].id).await?;
+                    let movie = self.metadata_catalog.get_movie_detail(movies[0].id).await?;
                     self.movie_info_cache.insert(cache_key, movie.clone());
                     return Ok(movie);
                 }
@@ -59,7 +63,7 @@ where
                                 "Movie found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, movie.id
                             );
-                            let movie = self.remote.get_movie_detail(movie.id).await?;
+                            let movie = self.metadata_catalog.get_movie_detail(movie.id).await?;
                             self.movie_info_cache.insert(cache_key, movie.clone());
                             return Ok(movie);
                         }
@@ -84,7 +88,7 @@ where
             }
 
             if let Some(tv) = self
-                .remote
+                .metadata_catalog
                 .get_tv_detail(meta.tmdb_id.parse().unwrap())
                 .await?
             {
@@ -103,7 +107,7 @@ where
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
                 return Ok(tv.clone());
             }
-            let tvs = self.remote.search_tv(&title.title, &meta.year).await?;
+            let tvs = self.metadata_catalog.search_tv(&title.title, &meta.year).await?;
             match tvs.len() {
                 0 => {
                     self.tv_info_cache.insert(cache_key, None);
@@ -114,7 +118,7 @@ where
                         "Tv found for title: {}, year: {}, id: {}",
                         title.title, meta.year, tvs[0].id
                     );
-                    let tv = self.remote.get_tv_detail(tvs[0].id).await?;
+                    let tv = self.metadata_catalog.get_tv_detail(tvs[0].id).await?;
                     self.tv_info_cache.insert(cache_key, tv.clone());
                     return Ok(tv);
                 }
@@ -125,7 +129,7 @@ where
                                 "Tv found for title: {}, year: {}, id: {}",
                                 title.title, meta.year, tv.id
                             );
-                            let tv = self.remote.get_tv_detail(tv.id).await?;
+                            let tv = self.metadata_catalog.get_tv_detail(tv.id).await?;
                             self.tv_info_cache.insert(cache_key, tv.clone());
                             return Ok(tv);
                         }

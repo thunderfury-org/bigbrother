@@ -46,9 +46,10 @@ impl<'a> ShareUrl<'a> {
     }
 }
 
-impl<C> Importer<C>
+impl<C, M> Importer<C, M>
 where
     C: ImportClient,
+    M: super::MetadataCatalog,
 {
     pub async fn import_from_share_url(
         &mut self,

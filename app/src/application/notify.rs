@@ -1,4 +1,12 @@
-use crate::{error::AppResult, infrastructure::event::SendTelegramMessage};
+use serde::{Deserialize, Serialize};
+
+use crate::error::AppResult;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SendTelegramMessage {
+    pub message: String,
+    pub reply_to: Option<i32>,
+}
 
 pub trait TelegramMessagePublisher {
     async fn publish(&self, payload: &SendTelegramMessage) -> AppResult<()>;
@@ -123,5 +131,19 @@ mod tests {
         let payloads = sender.payloads.lock().unwrap();
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].message, "hi");
+    }
+
+    #[test]
+    fn send_telegram_message_serializes_stably() {
+        let payload = SendTelegramMessage {
+            message: "hello".to_string(),
+            reply_to: Some(42),
+        };
+
+        let json = serde_json::to_string(&payload).unwrap();
+        assert_eq!(json, r#"{"message":"hello","reply_to":42}"#);
+
+        let restored: SendTelegramMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, payload);
     }
 }

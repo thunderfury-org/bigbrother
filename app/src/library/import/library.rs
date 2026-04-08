@@ -3,15 +3,16 @@ use std::collections::HashMap;
 use tracing::info;
 
 use super::{
-    ImportClient, Importer, MovieDetail, TvDetail, category,
+    ImportClient, Importer, MovieDetail, TvDetail,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
-use crate::error::AppResult;
+use crate::{domain::library::import_paths, error::AppResult};
 
-impl<C> Importer<C>
+impl<C, M> Importer<C, M>
 where
     C: ImportClient,
+    M: super::MetadataCatalog,
 {
     pub(super) async fn list_episode_files_in_library(
         &mut self,
@@ -83,45 +84,37 @@ where
 }
 
 pub(super) fn get_tv_path_in_library(remote_path: &str, tv: &TvDetail) -> String {
-    format!(
-        "{}/{}/{}/{}",
+    let genre_ids = tv.genres.iter().map(|genre| genre.id).collect::<Vec<_>>();
+    import_paths::get_tv_path_in_library(
         remote_path,
-        category::get_tv_category(&tv.genres),
-        category::get_subcategory(&tv.origin_country),
-        get_tv_base_name(tv)
+        &genre_ids,
+        &tv.origin_country,
+        &tv.name,
+        tv.first_air_date.as_str(),
+        tv.id,
     )
 }
 
 pub(super) fn get_movie_path_in_library(remote_path: &str, movie: &MovieDetail) -> String {
-    format!(
-        "{}/{}/{}/{}",
+    import_paths::get_movie_path_in_library(
         remote_path,
-        category::CATEGORY_MOVIE,
-        category::get_subcategory(&movie.origin_country),
-        get_movie_base_name(movie)
+        &movie.origin_country,
+        &movie.title,
+        movie.release_date.as_str(),
+        movie.id,
     )
 }
 
 pub(super) fn get_tv_base_name(tv: &TvDetail) -> String {
-    format!(
-        "{} ({}) {{tmdb-{}}}",
-        tv.name,
-        get_year_from_date(tv.first_air_date.as_str()),
-        tv.id
-    )
+    import_paths::get_tv_base_name(&tv.name, tv.first_air_date.as_str(), tv.id)
 }
 
 pub(super) fn get_movie_base_name(movie: &MovieDetail) -> String {
-    format!(
-        "{} ({}) {{tmdb-{}}}",
-        movie.title,
-        get_year_from_date(movie.release_date.as_str()),
-        movie.id
-    )
+    import_paths::get_movie_base_name(&movie.title, movie.release_date.as_str(), movie.id)
 }
 
 pub(super) fn get_year_from_date(date: &str) -> &str {
-    date.split('-').next().unwrap_or_default()
+    import_paths::get_year_from_date(date)
 }
 
 #[cfg(test)]

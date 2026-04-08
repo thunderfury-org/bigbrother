@@ -12,9 +12,10 @@ use crate::{
     log_time,
 };
 
-impl<C> Importer<C>
+impl<C, M> Importer<C, M>
 where
     C: ImportClient,
+    M: super::MetadataCatalog,
 {
     pub(super) async fn transfer_media_files(
         &mut self,
@@ -350,7 +351,7 @@ where
         remote_parent_path: &str,
         files: &[&MediaFile],
     ) -> AppResult<()> {
-        let local_parent_path = self.remote.local_path_for_remote(remote_parent_path);
+        let local_parent_path = self.local.local_path_for_remote(remote_parent_path);
 
         for f in files {
             let local_file_path = format!(
@@ -359,14 +360,14 @@ where
                 f.video.name.trim_end_matches(f.metadata.extension.as_str())
             );
             info!("Deleting local file {}", local_file_path);
-            self.remote
+            self.local
                 .remove_local_file_if_exists(local_file_path.as_str())
                 .await?;
 
             for s in &f.subtitles {
                 let local_file_path = format!("{}/{}", local_parent_path, s.name);
                 info!("Deleting local file {}", local_file_path);
-                self.remote
+                self.local
                     .remove_local_file_if_exists(local_file_path.as_str())
                     .await?;
             }
@@ -464,8 +465,8 @@ where
         extension: &str,
         file_id: i64,
     ) -> AppResult<()> {
-        let local_file_path = self.remote.local_strm_path(remote_file_path, extension);
-        self.remote
+        let local_file_path = self.local.local_strm_path(remote_file_path, extension);
+        self.local
             .write_strm_file(remote_file_path, extension, file_id)
             .await?;
         info!("Strm file {} created", local_file_path);
@@ -500,7 +501,7 @@ where
 
                 // download subtitle file
                 let local_file_path = self
-                    .remote
+                    .local
                     .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
                 self.remote
                     .download_library_file(id, local_file_path.as_str())
