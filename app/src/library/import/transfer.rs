@@ -484,19 +484,14 @@ where
                 error!("Failed to transfer file {}, error: {}", video_file_name, e);
             })?;
         match res {
-            Some(id) => {
-                info!("File {} saved in library, file id: {}", video_file_name, id);
-
-                // create strm file
-                self.create_strm_file(
-                    format!("{}/{}", parent_path, video_file_name,).as_str(),
+            Some(id) => self
+                .finish_video_transfer(
+                    parent_path,
+                    video_file_name,
                     media_file.metadata.extension.as_str(),
                     id,
                 )
-                .await?;
-
-                Ok(Some(video_file_name.to_owned()))
-            }
+                .await,
             None => {
                 info!("File {} not saved in library", video_file_name);
 
@@ -542,26 +537,47 @@ where
                 error!("Failed to transfer file {}, error: {}", file_name, e);
             })?;
         match res {
-            Some(id) => {
-                info!("File {} saved in library, file id: {}", file_name, id);
-
-                // download subtitle file
-                let local_file_path = self
-                    .local
-                    .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
-                self.library_remote
-                    .download_library_file(id, local_file_path.as_str())
-                    .await?;
-                info!("Subtitle file {} downloaded", local_file_path);
-
-                Ok(true)
-            }
+            Some(id) => self.finish_subtitle_transfer(parent_path, file_name.as_str(), id).await,
             None => {
                 info!("File {} not saved in library", file_name);
 
                 Ok(false)
             }
         }
+    }
+
+    async fn finish_video_transfer(
+        &self,
+        parent_path: &str,
+        video_file_name: &str,
+        extension: &str,
+        file_id: i64,
+    ) -> AppResult<Option<String>> {
+        info!("File {} saved in library, file id: {}", video_file_name, file_id);
+        self.create_strm_file(
+            format!("{}/{}", parent_path, video_file_name).as_str(),
+            extension,
+            file_id,
+        )
+        .await?;
+        Ok(Some(video_file_name.to_owned()))
+    }
+
+    async fn finish_subtitle_transfer(
+        &self,
+        parent_path: &str,
+        file_name: &str,
+        file_id: i64,
+    ) -> AppResult<bool> {
+        info!("File {} saved in library, file id: {}", file_name, file_id);
+        let local_file_path = self
+            .local
+            .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
+        self.library_remote
+            .download_library_file(file_id, local_file_path.as_str())
+            .await?;
+        info!("Subtitle file {} downloaded", local_file_path);
+        Ok(true)
     }
 
     async fn transfer_raw_file(
