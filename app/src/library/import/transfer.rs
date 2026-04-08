@@ -413,29 +413,11 @@ where
     ) -> AppResult<Option<String>> {
         let video_file_name = format_video_file_name(name_prefix, media_file);
 
-        if !media_file.subtitles.is_empty() {
-            // save subtitle files first, in case video file transfer failed
-            let subtitle_file_name_replace_from = media_file
-                .video
-                .name
-                .trim_end_matches(media_file.metadata.extension.as_str());
-            let subtitle_file_name_replace_to =
-                video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
-            for subtitle in &media_file.subtitles {
-                let success = self
-                    .transfer_subtitle_file(
-                        parent_path,
-                        parent_dir_id,
-                        subtitle,
-                        subtitle_file_name_replace_from,
-                        subtitle_file_name_replace_to,
-                    )
-                    .await?;
-                if !success {
-                    // subtitle file transfer failed, skip the whole media file transfer
-                    return Ok(None);
-                }
-            }
+        if !self
+            .transfer_subtitles_for_media(parent_path, parent_dir_id, &video_file_name, media_file)
+            .await?
+        {
+            return Ok(None);
         }
 
         self.transfer_video_file(
@@ -445,6 +427,42 @@ where
             media_file,
         )
         .await
+    }
+
+    async fn transfer_subtitles_for_media(
+        &self,
+        parent_path: &str,
+        parent_dir_id: i64,
+        video_file_name: &str,
+        media_file: &MediaFile,
+    ) -> AppResult<bool> {
+        if media_file.subtitles.is_empty() {
+            return Ok(true);
+        }
+
+        let subtitle_file_name_replace_from = media_file
+            .video
+            .name
+            .trim_end_matches(media_file.metadata.extension.as_str());
+        let subtitle_file_name_replace_to =
+            video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
+
+        for subtitle in &media_file.subtitles {
+            let success = self
+                .transfer_subtitle_file(
+                    parent_path,
+                    parent_dir_id,
+                    subtitle,
+                    subtitle_file_name_replace_from,
+                    subtitle_file_name_replace_to,
+                )
+                .await?;
+            if !success {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     async fn transfer_video_file(
