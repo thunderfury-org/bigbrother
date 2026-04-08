@@ -34,8 +34,7 @@ where
         let media_files = self
             .list_files_from_pan123_share(share_key.as_str(), share_password.as_str())
             .await?;
-        info!("found {} media files from pan123 share", media_files.len());
-        self.transfer_media_files(&media_files).await
+        self.finish_share_import("pan123", media_files).await
     }
 
     async fn import_pan189_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
@@ -48,8 +47,7 @@ where
         }
 
         let media_files = self.list_files_from_pan189_share(&share_code).await?;
-        info!("found {} media files from pan189 share", media_files.len());
-        self.transfer_media_files(&media_files).await
+        self.finish_share_import("pan189", media_files).await
     }
 
     async fn import_pan115_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
@@ -65,7 +63,19 @@ where
         let media_files = self
             .list_files_from_pan115_share(&share_code, &receive_code)
             .await?;
-        info!("found {} media files from pan115 share", media_files.len());
+        self.finish_share_import("pan115", media_files).await
+    }
+
+    async fn finish_share_import(
+        &mut self,
+        provider: &str,
+        media_files: Vec<MediaFile>,
+    ) -> AppResult<Vec<ImportedMedia>> {
+        info!(
+            "found {} media files from {} share",
+            media_files.len(),
+            provider
+        );
         self.transfer_media_files(&media_files).await
     }
 
