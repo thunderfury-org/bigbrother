@@ -209,7 +209,10 @@ fn insert_movie_media<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::media::{FileType, Metadata};
+    use crate::{
+        domain::media::{FileType, Metadata},
+        library::import::{Genre, Season, TvDetail},
+    };
 
     // Helper function to create a test RawFile
     fn create_raw_file(name: &str) -> RawFile {
@@ -236,6 +239,47 @@ mod tests {
             file_type: FileType::Subtitle,
             ..Default::default()
         })
+    }
+
+    fn create_tv_detail(number_of_seasons: u32) -> TvDetail {
+        TvDetail {
+            id: 1,
+            name: "Test Show".to_string(),
+            first_air_date: "2024-01-01".to_string(),
+            number_of_episodes: 10,
+            number_of_seasons,
+            origin_country: vec![],
+            original_language: "en".to_string(),
+            original_name: "Test Show".to_string(),
+            genres: vec![Genre {
+                id: 1,
+                name: "Drama".to_string(),
+            }],
+            seasons: vec![Season {
+                id: 1,
+                name: "Season 1".to_string(),
+                episode_count: 10,
+                season_number: 1,
+            }],
+        }
+    }
+
+    fn create_tv_media_file(
+        file_name: &str,
+        season_number: Option<u32>,
+        episode_number: Option<u32>,
+    ) -> MediaFile {
+        MediaFile {
+            metadata: Box::new(Metadata {
+                file_type: FileType::Video,
+                season_number,
+                episode_number,
+                extension: ".mkv".to_string(),
+                ..Default::default()
+            }),
+            video: create_raw_file(file_name),
+            subtitles: Vec::new(),
+        }
     }
 
     #[test]
@@ -398,5 +442,35 @@ mod tests {
         let result = group_video_and_subtitle_files(raw_files);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].subtitles.len(), 1);
+    }
+
+    #[test]
+    fn test_resolve_tv_episode_slot_defaults_single_season_to_one() {
+        let file = create_tv_media_file("show.s01e01.mkv", None, Some(1));
+        let tv = create_tv_detail(1);
+
+        let slot = resolve_tv_episode_slot(&file, &tv);
+
+        assert_eq!(slot, Some((1, 1)));
+    }
+
+    #[test]
+    fn test_resolve_tv_episode_slot_rejects_missing_season_for_multi_season_show() {
+        let file = create_tv_media_file("show.e01.mkv", None, Some(1));
+        let tv = create_tv_detail(3);
+
+        let slot = resolve_tv_episode_slot(&file, &tv);
+
+        assert_eq!(slot, None);
+    }
+
+    #[test]
+    fn test_resolve_tv_episode_slot_rejects_missing_episode() {
+        let file = create_tv_media_file("show.s01.mkv", Some(1), None);
+        let tv = create_tv_detail(1);
+
+        let slot = resolve_tv_episode_slot(&file, &tv);
+
+        assert_eq!(slot, None);
     }
 }
