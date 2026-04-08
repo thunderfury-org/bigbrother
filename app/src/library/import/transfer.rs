@@ -12,6 +12,13 @@ use crate::{
     log_time,
 };
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SeasonTransferState {
+    has_failed: bool,
+    total_size: u64,
+    episodes: Vec<u32>,
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -148,9 +155,7 @@ where
             .resolve_season_target(detail, season_number, tv_dir_id, season_dir.as_str(), season_dir_ids)
             .await?;
 
-        let mut has_failed = false;
-        let mut total_size = 0u64;
-        let mut episodes = Vec::new();
+        let mut state = SeasonTransferState::default();
 
         let season_full_path = format!("{}/{}", tv_path, season_dir);
         for (episode_number, files) in season_files {
@@ -165,17 +170,11 @@ where
                     existing_episode_files: &existing_episode_files,
                 })
                 .await?;
-            if let Some((success, size)) = res {
-                if success {
-                    total_size += size;
-                    episodes.push(*episode_number);
-                } else {
-                    has_failed = true;
-                }
-            }
+            accumulate_episode_transfer_result(&mut state, *episode_number, res);
         }
 
-        let max_episode_number = self.get_max_episode_number(&episodes, &existing_episode_files);
+        let max_episode_number =
+            self.get_max_episode_number(&state.episodes, &existing_episode_files);
 
         Ok(ImportedMedia::Tv {
             name: detail.name.to_owned(),
@@ -183,15 +182,15 @@ where
             season: *season_number,
             missing_episodes: self.get_missing_episodes(
                 max_episode_number,
-                &episodes,
+                &state.episodes,
                 &existing_episode_files,
             ),
-            episodes,
+            episodes: state.episodes,
             max_episode_number,
-            total_size,
+            total_size: state.total_size,
             number_of_episodes: self.get_number_of_episodes_in_season(detail, season_number),
             cost: start_time.elapsed(),
-            _has_failed: has_failed,
+            _has_failed: state.has_failed,
         })
     }
 
@@ -654,6 +653,23 @@ fn collect_replaced_media_files<'a>(
         .collect()
 }
 
+fn accumulate_episode_transfer_result(
+    state: &mut SeasonTransferState,
+    episode_number: u32,
+    result: Option<(bool, u64)>,
+) {
+    let Some((success, size)) = result else {
+        return;
+    };
+
+    if success {
+        state.total_size += size;
+        state.episodes.push(episode_number);
+    } else {
+        state.has_failed = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -960,5 +976,46 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].video.name, "old1.mkv");
         assert_eq!(files[1].video.name, "old2.mkv");
+    }
+
+    #[test]
+    fn test_accumulate_episode_transfer_result_ignores_none() {
+        let mut state = SeasonTransferState::default();
+
+        accumulate_episode_transfer_result(&mut state, 3, None);
+
+        assert_eq!(state, SeasonTransferState::default());
+    }
+
+    #[test]
+    fn test_accumulate_episode_transfer_result_records_success() {
+        let mut state = SeasonTransferState::default();
+
+        accumulate_episode_transfer_result(&mut state, 3, Some((true, 1024)));
+
+        assert_eq!(
+            state,
+            SeasonTransferState {
+                has_failed: false,
+                total_size: 1024,
+                episodes: vec![3],
+            }
+        );
+    }
+
+    #[test]
+    fn test_accumulate_episode_transfer_result_records_failure_without_episode() {
+        let mut state = SeasonTransferState::default();
+
+        accumulate_episode_transfer_result(&mut state, 3, Some((false, 1024)));
+
+        assert_eq!(
+            state,
+            SeasonTransferState {
+                has_failed: true,
+                total_size: 0,
+                episodes: vec![],
+            }
+        );
     }
 }
