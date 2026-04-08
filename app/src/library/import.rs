@@ -12,11 +12,11 @@ mod source;
 mod tmdb_info;
 mod transfer;
 
+pub(crate) use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 pub(crate) use model::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
-pub(crate) use remote::{LibraryGateway, MetadataCatalog, ShareSource};
 pub use source::is_fslink;
 
 #[derive(Debug)]
