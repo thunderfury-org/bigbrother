@@ -269,20 +269,12 @@ where
 
         match saved_filename {
             Some(name) => {
-                if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
-                    && !existing_files.is_empty()
-                {
-                    let files = existing_files
-                        .iter()
-                        .filter(|f| f.video.name != name)
-                        .collect::<Vec<_>>();
-                    if !files.is_empty() {
-                        // delete existing files
-                        self.delete_files_in_library(&files).await?;
-                        self.delete_files_in_local(args.season_full_path, &files)
-                            .await?;
-                    }
-                }
+                self.cleanup_replaced_episode_files(
+                    args.season_full_path,
+                    args.existing_episode_files.get(&args.episode_number),
+                    name.as_str(),
+                )
+                .await?;
 
                 Ok(Some((true, media_file.video.size)))
             }
@@ -304,6 +296,26 @@ where
 
         self.delete_files_in_library(&files).await?;
         self.delete_files_in_local(movie_path, &files).await
+    }
+
+    async fn cleanup_replaced_episode_files(
+        &self,
+        season_full_path: &str,
+        existing_files: Option<&Vec<MediaFile>>,
+        saved_filename: &str,
+    ) -> AppResult<()> {
+        let Some(existing_files) = existing_files else {
+            return Ok(());
+        };
+
+        let files =
+            collect_replaced_media_files(existing_files, &Some(saved_filename.to_string()));
+        if files.is_empty() {
+            return Ok(());
+        }
+
+        self.delete_files_in_library(&files).await?;
+        self.delete_files_in_local(season_full_path, &files).await
     }
 
     async fn resolve_season_target(
