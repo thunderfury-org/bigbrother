@@ -36,37 +36,25 @@ where
     S: ShareSource,
     M: MetadataCatalog,
 {
-    pub async fn import_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
+    fn importer(&self) -> Importer<L, S, M> {
         Importer::new(
             self.library_gateway.clone(),
             self.share_source.clone(),
             self.metadata_catalog.clone(),
             self.paths.clone(),
         )
-        .import_from_share_url(url)
-        .await
+    }
+
+    pub async fn import_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
+        self.importer().import_from_share_url(url).await
     }
 
     pub async fn import_from_fslink(&self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        Importer::new(
-            self.library_gateway.clone(),
-            self.share_source.clone(),
-            self.metadata_catalog.clone(),
-            self.paths.clone(),
-        )
-        .import_from_fslink(fslink)
-        .await
+        self.importer().import_from_fslink(fslink).await
     }
 
     pub async fn import_from_json(&self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-        Importer::new(
-            self.library_gateway.clone(),
-            self.share_source.clone(),
-            self.metadata_catalog.clone(),
-            self.paths.clone(),
-        )
-        .import_from_json(json)
-        .await
+        self.importer().import_from_json(json).await
     }
 }
 
