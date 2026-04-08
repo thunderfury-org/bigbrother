@@ -1,6 +1,6 @@
 # BigBrother 架构重构蓝图（按当前代码重梳）
 
-> 更新时间：2026-04-08  
+> 更新时间：2026-04-08（已根据本轮连续重构更新）  
 > 依据代码：`app/src/*`、`migration/src/*`
 
 ## 1. 目标
@@ -76,7 +76,7 @@ migration
 `app/src/bootstrap/mod.rs:1` 的 `AppRuntime::from_app` 再把这些输入组装成具体 service：
 
 - `ManageKeywordsService<SeaOrmKeywordRepository>`
-- `ImportMediaService<ImportGateway>`
+- `ImportMediaService<PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway>`
 - `PublishTelegramMessageService<EventBusPublisher>`
 - `SyncStrmService<Pan123LibraryRemote, TokioFileStore>`
 - `ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>`
@@ -224,17 +224,22 @@ migration
 
 依赖：
 
-- `ImportMediaGateway`
+- `LibraryGateway`
+- `ShareSource`
+- `MetadataCatalog`
+- `ImportPathConfig`
 
 职责：
 
 - 对外暴露 `import_from_share_url` / `import_from_fslink` / `import_from_json`
-- 自身几乎不承载业务规则，主要作为 application facade
+- 在 application 层组装 `Importer`
+- 作为导入用例的应用层入口
 
 结论：
 
-- 应用层入口已经抽出
-- 但真实导入逻辑仍在 `library/import`，应用层还比较薄
+- 导入入口已经上提到 application
+- application 已不再通过 `ImportGateway` 间接承载 orchestration
+- 但真实导入规则和流程细节仍主要在 `library/import`
 
 #### `notify`
 
@@ -252,9 +257,8 @@ migration
 
 结论：
 
-- 用例编排思路是对的
-- 但这里有一个当前代码里的分层泄漏：`application::notify` 直接依赖了 `infrastructure::event::SendTelegramMessage`
-- 这意味着消息载荷模型还没有彻底留在 application/domain 一侧
+- 用例编排思路已基本收口
+- `SendTelegramMessage` 已迁到 application，通知链路不再存在 `application -> infrastructure` 的 payload 反向依赖
 
 ---
 
@@ -277,8 +281,13 @@ migration
 
 这部分已经是当前代码中最值得继续沿用的设计。
 
-但也要注意：**导入链路并没有纳入 `application/ports.rs` 这一统一端口面。**  
-`ImportMediaService` 目前通过单独的 `ImportMediaGateway` 挂接，而具体能力接口仍聚集在 `library/import/remote.rs` 里的 `ImportClient`。
+但也要注意：**导入链路仍未纳入 `application/ports.rs` 这一统一端口面。**  \n当前导入相关端口已经拆为：
+
+- `LibraryGateway`
+- `ShareSource`
+- `MetadataCatalog`
+
+它们位于 `app/src/library/import/remote.rs`，目前仍属于 import 子域内部端口，而不是 application 统一 ports 面的一部分。
 
 ---
 
@@ -377,7 +386,7 @@ migration
 
 职责：
 
-- 定义事件 payload（例如 `SendTelegramMessage`）
+- 为 application payload 提供 `Event` 适配
 - 将 payload 写入持久化事件表
 - 为应用层提供发布 adapter
 
@@ -400,7 +409,7 @@ migration
 
 - 事件机制已经从“直接调用 bot”进化为“持久化事件 + worker delivery”
 - 这是当前代码里非常重要的一层解耦
-- 但 payload 类型仍放在 infrastructure，不是最终形态
+- `SendTelegramMessage` 的所有权已经上提到 application；infrastructure 这里只保留事件适配和持久化职责
 
 ---
 
@@ -413,13 +422,16 @@ migration
 #### 当前它不再是旧式全局状态驱动
 
 `library/import` 现在已经不直接吃 `AppState` 或 `ImportContext` 这类宽对象。  
-`Importer<C>` 持有的是：
+`Importer<L, S, M>` 当前持有的是：
 
-- `ImportRemote<C>`
-- 若干内存缓存（tmdb info / metadata）
+- `LibraryRemote<L>`
+- `ShareRemote<S>`
+- `ImportLocalStore`
+- `TmdbLookup<M>`
+- `MetadataLookup`
 
-而 `ImportRemote<C>` 再依赖 `ImportClient` trait。  
-这说明导入链路已经完成了**第一轮端口化**。
+其中远端库、分享源、TMDB、以及本地 `.strm` 文件能力都已经拆成独立边界。  
+这说明导入链路已经不只是“第一轮端口化”，而是已经完成了**多轮能力拆分**。
 
 #### 但它仍然是混合层
 
@@ -430,7 +442,7 @@ migration
 - 目录分类与命名规则
 - 远端库遍历与目录创建
 - 快传 / 下载 / 覆盖 / 删除流程
-- 本地 `.strm` 文件写入与删除
+- 本地 `.strm` 文件写入与删除的用例编排
 
 也就是说，它不是纯 domain，也不是纯 application，更不是纯 infrastructure。
 
@@ -438,21 +450,22 @@ migration
 
 - `library/import/metadata.rs`：路径与文件名元数据合并
 - `library/import/group.rs`：视频/字幕分组、媒体聚合
-- `library/import/category.rs`：影视分类与子类规则
 - `library/import/library.rs`：库目录命名和路径计算、列目录
-- `library/import/tmdb_info.rs`：TMDB 查询与缓存策略
+- `library/import/tmdb_info.rs`：TMDB 查询与缓存 helper
 - `library/import/share.rs`：各分享链接的遍历与导入入口
 - `library/import/transfer.rs`：入库、覆盖、快传、删除、strm 落盘
-- `library/import/remote.rs`：`ImportClient` trait 与远端能力包装
-- `app/src/infrastructure/import/gateway.rs`：把 pan115/pan123/pan189/tmdb concrete client 适配成 `ImportClient`
+- `library/import/remote.rs`：`LibraryGateway` / `ShareSource` / `MetadataCatalog` 及其 wrapper
+- `library/import/local.rs`：本地 `.strm` 文件与本地路径 adapter
+- `app/src/domain/library/import_paths.rs`：导入路径/分类/命名规则
+- `app/src/infrastructure/import/gateway.rs`：`PanLibraryGateway` / `ShareImportGateway` / `TmdbMetadataGateway`
 
 #### 现状判断
 
 导入链路已经比旧结构健康很多，但仍属于：
 
-> “有端口边界，但业务编排、规则和接入细节还没有完全拆层”
+> “导入入口与能力边界已经拆开，但 `library/import` 仍然承载大量 import-specific orchestration”
 
-因此，文档里不应再把它描述成“仍然直接依赖所有 concrete client 的泥团”，也不应误写成“已经完全应用层化”。  
+因此，文档里不应再把它描述成“仍然直接依赖所有 concrete client 的泥团”，也不应误写成“已经完全 domain/application 化”。  
 **它现在处于中间态。**
 
 ---
@@ -477,18 +490,17 @@ interface
 application
   -> domain
   -> application ports
-  -> 少量 legacy library modules
-  -> 少量基础设施事件模型（notify 当前仍有泄漏）
+  -> `library/import` 子域入口与内部端口
 
 infrastructure
   -> application ports / application traits
   -> domain
-  -> legacy library::import model/trait
+  -> `library/import` capability-specific ports
 
 library/import
   -> domain::media
-  -> domain::library::path_mapping
-  -> external IO through ImportClient trait
+  -> domain::library::{path_mapping, import_paths}
+  -> external IO through `LibraryGateway` / `ShareSource` / `MetadataCatalog`
 ```
 
 所以目前真实情况不是严格的：
@@ -502,7 +514,8 @@ infrastructure -> application::ports
 
 - `sync_strm` 链路已经非常接近这个目标
 - `keyword` 和 `download url` 链路基本达到这个目标
-- `import` 和 `notify payload` 仍然偏过渡态
+- `notify` 链路也已经基本达到这个目标
+- `import` 仍然是主要过渡区
 
 ---
 
@@ -542,7 +555,21 @@ infrastructure -> application::ports
 
 这部分已经证明：当前代码库完全能够承受“application service + port + adapter”的模式。
 
-### 6.4 Telegram 发送已通过事件总线异步化
+### 6.4 `notify` payload 已上提到 application
+
+对应文件：
+
+- `app/src/application/notify.rs`
+- `app/src/infrastructure/event/mod.rs`
+- `app/src/interface/telegram/delivery.rs`
+
+当前通知链路已经做到：
+
+- payload 归 application 所有
+- infrastructure 仅负责 `Event` 适配、持久化和 delivery adapter
+- worker 继续通过 event bus 消费并发送消息
+
+### 6.5 Telegram 发送已通过事件总线异步化
 
 发送链路现在是：
 
@@ -558,15 +585,43 @@ interface/telegram/msg
 
 这比直接在消息处理里同步发 bot 消息要稳健得多。
 
-### 6.5 `ImportGateway` 已把 concrete client 收口进 infrastructure
+### 6.6 导入路径/分类规则已迁到 domain
 
-`app/src/infrastructure/import/gateway.rs:1` 已经承担了：
+对应文件：
 
-- pan123 / pan189 / pan115 / tmdb client 适配
-- import 所需模型转换
-- `ImportClient` 实现
+- `app/src/domain/library/import_paths.rs`
+- `app/src/library/import/library.rs`
 
-这意味着 `library/import` 已经不直接依赖这些 concrete client 类型。
+这说明导入相关的“分类 / 子类 / 基础命名 / 路径拼接”规则已经不再困在 `library/import` 的本地模块里。
+
+### 6.7 导入能力端口已按职责拆分
+
+`app/src/library/import/remote.rs:1` 当前已经拆成：
+
+- `LibraryGateway`
+- `ShareSource`
+- `MetadataCatalog`
+
+`app/src/library/import/local.rs:1` 则承接本地 `.strm` / 路径能力。
+
+### 6.8 导入 orchestration 已上提到 application
+
+`app/src/application/import_media.rs:1` 当前已经负责：
+
+- 注入 `LibraryGateway` / `ShareSource` / `MetadataCatalog`
+- 创建 `Importer`
+- 暴露导入 use case
+
+这意味着 infrastructure 不再拥有导入入口的 orchestration 所有权。
+
+### 6.9 `Importer` 已从“宽状态对象”收缩为“helper 组合器”
+
+当前 `Importer` 的主要状态已经被拆到内部 helper：
+
+- `TmdbLookup`
+- `MetadataLookup`
+
+同时 `transfer.rs` 与 `group.rs` 中的一批纯选择/累积/清理逻辑也已经被提成 focused helper，并补了直接测试。
 
 ---
 
@@ -602,9 +657,9 @@ interface/telegram/msg
 
 典型症状：
 
-- `Importer` 同时管媒体识别、TMDB 搜索、路径命名、覆盖判断、远端创建、快传、本地 strm 写入
-- `ImportRemote` 除了 remote API 包装，还直接做本地 `.strm` 文件写入和删除
-- import-specific 模型与规则没有像 `sync_strm` 一样拆成显式 domain + application 服务
+- `Importer` 虽然已经明显瘦身，但仍是 import-specific orchestration 的主要承载点
+- `transfer.rs`、`group.rs` 仍然包含较多 import-specific 流程控制
+- import-specific 模型与流程没有像 `sync_strm` 一样被拆成更小的 application/domain 单元
 
 建议：
 
@@ -612,23 +667,10 @@ interface/telegram/msg
 - 把 `Importer` 收缩成 application use case
 - 把 `ImportRemote` 拆成更明确的 ports（远端库、分享源、TMDB catalog、本地 strm writer 等）
 
-### 7.3 `application::notify` 仍依赖 infrastructure event payload
+### 7.3 `bootstrap` 仍然是宽 wiring 容器
 
-文件：`app/src/application/notify.rs:1`
-
-当前 `SendTelegramMessage` 定义在：
-
-- `app/src/infrastructure/event/mod.rs`
-
-这会导致：
-
-- application 向 infrastructure 反向依赖
-- payload 难以作为用例层稳定模型演进
-
-建议：
-
-- 将 `SendTelegramMessage` 迁到 `application::notify` 或 `domain::event`
-- infrastructure 只负责序列化、持久化和投递
+虽然导入 orchestration 已上提到 application，但 `bootstrap/mod.rs` 里仍要显式拼接多组 adapter。  
+这本身不是错误，但它仍然是一个偏宽的 wiring 点。
 
 ### 7.4 Interface 层仍有少量“组装即使用”的强绑定
 
@@ -649,7 +691,7 @@ interface/telegram/msg
 当前代码已经呈现出两种风格并存：
 
 - 新风格：`sync_strm` / `resolve_download_url` / `manage_keywords`
-- 过渡风格：`library/import` / `notify payload`
+- 过渡风格：`library/import`
 
 如果没有明确约束，新需求很容易继续写回 bootstrap 或 interface。
 
@@ -695,9 +737,8 @@ bootstrap
 
 建议最终拆分：
 
-- `application/notify.rs`：message payload + use case
-- `infrastructure/event/*`：event store / publisher
-- `infrastructure/telegram/*`：delivery adapter
+- 这部分已经基本达到目标
+- 后续重点转为维持边界，不再回退
 
 ### 8.4 对 `import` 链路
 
@@ -714,7 +755,7 @@ bootstrap
 4. **Infrastructure Adapters**  
    pan123 / pan189 / pan115 / tmdb / local fs
 
-这条链路可以以 `sync_strm` 为参考模板，而不是另起一套抽象体系。
+当前已经完成了第 3、4 类的大部分拆分；后续重点转向继续压缩第 1、2 类里的 orchestration 和流程体积。
 
 ---
 
@@ -730,28 +771,18 @@ bootstrap
 - 不再新增直接吃 `AppContext` 的业务逻辑
 - 不再把新规则堆进 interface handler
 
-### Phase 2：收口通知链路
+### Phase 2：继续压缩 `library/import`
 
-目标：消除 application -> infrastructure 反向依赖。
+目标：继续缩小 import-specific orchestration。
 
 建议动作：
 
-- 迁移 `SendTelegramMessage` 到 application/domain
-- 保留 event bus 实现不变
-- 用最小 diff 修正 publish / deliver 链路类型归属
+- 继续把 `group.rs` / `transfer.rs` 中的分支逻辑提成 focused helper
+- 为 helper 补直接回归测试
+- 在合适时机再决定是否继续拆模块文件
+- 当 helper 数量稳定后，再评估是否把 `library/import` 进一步切成更清晰的 application/domain 子模块
 
-### Phase 3：拆分 `library/import`
-
-目标：把当前最大的过渡区拆成清晰层次。
-
-建议优先顺序：
-
-1. 提炼纯规则函数
-2. 为 import use case 增加更细的 ports
-3. 缩小 `ImportRemote` 的职责
-4. 将 `Importer` 改造成 application service，而不是“多职责核心对象”
-
-### Phase 4：瘦身 bootstrap
+### Phase 3：瘦身 bootstrap
 
 目标：让 `bootstrap` 只剩 wiring。
 
@@ -773,7 +804,7 @@ bootstrap
 
 - `domain/media/*`
 - `domain/library/*`
-- `library/import/category.rs`
+- `domain/library/import_paths.rs`
 - `library/import/group.rs`
 - `library/import/library.rs` 中的纯命名/路径规则
 
