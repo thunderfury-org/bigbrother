@@ -13,32 +13,30 @@
 
 这份文档的目标是给出一套可落地的整体重构方案，把当前项目演进成“边界清晰、测试友好、渐进迁移”的结构。
 
-## 1.1 当前落实情况（2026-04-07）
+## 1.1 当前落实情况（2026-04-08）
 
 根据当前代码状态，这份蓝图里的前半段工作已经有了实质落地：
 
 - `application/ports.rs` 已经存在，`sync_strm`、`manage_keywords`、`resolve_download_url` 等用例已经通过应用层 service 暴露边界。
 - `domain/library/path_mapping.rs` 与 `domain/library/sync_plan.rs` 已承担同步链路里的纯规则计算，`SyncStrmService` 主要负责编排与执行。
-- `main.rs` 已把运行时组装收口到 `bootstrap::AppRuntime`，Bot 与媒体服务器分别拿到 `BotRuntime`、`MediaServerContext` 这样的专用上下文，而不是直接透传整个 `AppState`。
-- `server/media.rs` 和多个 `application/*` 模块已经有 fake 驱动测试，说明“先抽边界再测用例”的方向是可行的。
-- `domain` / `application` / `infrastructure` / `interface` 这四个目标目录都已经落地，`bot`、`server` 目前主要承担兼容性 re-export，说明目录收敛方向已基本成型。
+- `main.rs` 已直接通过 `bootstrap::AppRuntime`、`interface::{http, telegram}`、`infrastructure::event_bus::EventBus` 组装和运行系统，不再依赖顶层 `bot` / `server` / `event_bus` 入口。
+- `domain` / `application` / `infrastructure` / `interface` 四层目录都已落地，`media` 已迁入 `domain/media`，`client`、`entity`、`cache` 也已收口到 `infrastructure/*`。
+- `interface/http/media.rs`、多个 `application/*` 模块以及 `domain/media` / `infrastructure/event_bus` 已有直接测试覆盖，说明“先抽边界再测用例”的方向已经不仅可行，而且正在成为默认结构。
 
 但这轮 review 也确认了几处还未完全收口的耦合点：
 
 - `bootstrap/app.rs` 里的 `AppContext` 仍然一次性持有 DB、cache、bot、event bus、全部 client 和配置，本质上还是 bootstrap 阶段的宽依赖容器。
-- `import` 链路目前通过 `ImportContext` / `ImportGateway` 传递一组外部依赖，距离“显式端口 + 最小能力集”还有一步。
-- 顶层 `cli.rs`、`event_bus.rs` 以及 `bot` / `server` shim 还没有完全收拢到目标目录，入口结构已经变薄，但目录收口仍留有最后一段兼容层。
-- `bot` 与 `server` 入口内部仍保留部分对具体 infrastructure 类型的命名耦合，虽然运行时对象已经收窄，但还没有完全做到只依赖抽象。
-- 文档中的“下一步落地建议”仍停留在最初切片，已经落后于仓库现状，需要按当前进度继续推进。
+- `import` 链路目前仍通过 `ImportContext` / `ImportGateway` 传递一组外部依赖，距离“显式端口 + 最小能力集”还有一步。
+- `library/import` 仍然是唯一明显保留旧式宽依赖风格的核心业务区；它已经被明确为下一轮主任务，而不是继续做目录整理。
 
 ## 1.2 本轮 review 的代码定位
 
 为了避免后续继续围绕抽象描述打转，这里把本轮 review 对应到当前代码位置：
 
-- [`app/src/main.rs`](../app/src/main.rs)：仍通过顶层 `bot` / `server` 模块启动 Telegram 与 HTTP 入口，说明兼容层仍在生效。
-- [`app/src/bootstrap/mod.rs`](../app/src/bootstrap/mod.rs)：当前真正的 composition root，直接把 `SeaOrmKeywordRepository`、`ImportGateway`、`Pan123LibraryRemote`、`TokioFileStore` 等 concrete adapter 组装进应用层 service。
-- [`app/src/bot/mod.rs`](../app/src/bot/mod.rs) 与 [`app/src/server/mod.rs`](../app/src/server/mod.rs)：已经降格为 re-export shim，本身几乎不承载业务逻辑。
-- [`app/src/interface/telegram/mod.rs`](../app/src/interface/telegram/mod.rs) 与 [`app/src/interface/http/mod.rs`](../app/src/interface/http/mod.rs)：接口层职责已经开始成形，但 runtime 类型别名里仍能看到 concrete infrastructure 组合。
+- [`app/src/main.rs`](../app/src/main.rs)：当前唯一的 crate 根入口，已经直接声明 `bootstrap`、`interface`、`infrastructure` 等蓝图目标模块。
+- [`app/src/bootstrap/mod.rs`](../app/src/bootstrap/mod.rs) 与 [`app/src/bootstrap/app.rs`](../app/src/bootstrap/app.rs)：当前真正的 composition root / bootstrap container，直接把 `SeaOrmKeywordRepository`、`ImportGateway`、`Pan123LibraryRemote`、`TokioFileStore` 等 concrete adapter 组装进应用层 service。
+- [`app/src/interface/telegram/mod.rs`](../app/src/interface/telegram/mod.rs)、[`app/src/interface/http/mod.rs`](../app/src/interface/http/mod.rs)、[`app/src/interface/cli/mod.rs`](../app/src/interface/cli/mod.rs)：入口层目录已经收口到蓝图目标结构。
+- [`app/src/infrastructure/client/`](../app/src/infrastructure/client/)、[`app/src/infrastructure/cache/`](../app/src/infrastructure/cache/)、[`app/src/infrastructure/entity/`](../app/src/infrastructure/entity/)：接入型代码已不再留在顶层 root。
 - [`app/src/library/import/`](../app/src/library/import)：仍是最需要继续拆端口的区域；当前 `ImportContext` 让导入链路的最小依赖集合还不够显式。
 
 ## 2. 当前问题总结
@@ -306,10 +304,10 @@ app/src/
 
 - 现有 `media` 下的纯逻辑优先迁进 `domain/media`
 - 现有 `library` 下的纯规则迁进 `domain/library`
-- 现有 `client`、`entity`、`cache` 等接入型代码迁进 `infrastructure`
-- 原 `bot` 和 `server` 入口型代码迁进 `interface`
+- 现有 `client`、`entity`、`cache` 等接入型代码已迁进 `infrastructure`
+- 原 `bot` 和 `server` 入口型代码已迁进 `interface`
 - `bootstrap/app.rs` 已替代旧式全局状态入口；后续目标是继续缩小它，而不是恢复新的全家桶上下文
-- `cli.rs`、`event_bus.rs` 以及 `bot` / `server` shim 仍可在最后一轮目录收敛时再并入目标结构，避免过早整理表层文件名
+- 当前真正剩余的结构性问题已经不再是“目录名”，而是 `library/import` 这条链路的端口化和依赖最小化
 
 ## 7. 端口设计原则
 
@@ -810,13 +808,12 @@ pub async fn sync_strm(state: &AppState) -> AppResult<()>
 
 ## 17. 下一步落地建议
 
-如果按照当前代码状态继续稳妥推进，建议把下一轮工作聚焦在“补完剩余耦合点”，而不是重复已经完成的切片：
+如果按照当前代码状态继续稳妥推进，下一轮工作已经可以非常聚焦，不需要再重复目录整理：
 
-1. 把 `import` 链路继续拆成显式 port，逐步替换 `ImportContext` 这种“打包依赖”对象。
-2. 让 `AppState` 进一步收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
-3. 把 `cli.rs`、`event_bus.rs` 和 `bot` / `server` compatibility shim 继续收口到目标目录，减少“目录已迁、入口仍绕行”的认知负担。
-4. 清理 `bot` / `server` 模块里对具体 infrastructure 类型的直连命名，让入口层真正只关心 runtime/context 与 service。
-5. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
-6. 当依赖边界稳定后，再统一考虑 `AppState` 的重命名和最终目录收敛，避免过早做表面整理。
+1. 把 `app/src/library/import/` 继续拆成显式 port，逐步替换 `ImportContext` 这种“打包依赖”对象。
+2. 让 `bootstrap/app.rs` 里的 `AppContext` 继续收缩成纯 bootstrap 容器，避免继续承担业务依赖访问入口的角色。
+3. 继续清理 `library/import` 与相关入口中对具体 infrastructure 类型的直连命名，让应用层和接口层更稳定地只依赖抽象。
+4. 为 `event` worker 生命周期、重试语义和运行时装配补齐更直接的测试证据。
+5. 当 `import` 链路的端口化稳定后，再考虑是否要进一步细化 `bootstrap/app.rs` 的职责边界。
 
-这样更符合仓库现在的真实阶段：核心切片已经验证可行，接下来要做的是把剩余的宽依赖入口继续压缩掉。
+这样更符合仓库现在的真实阶段：目录与命名基本已经落到蓝图目标，真正剩余的高价值工作是把 `import` 这条核心链路从“宽依赖容器驱动”推进到“显式端口驱动”。
