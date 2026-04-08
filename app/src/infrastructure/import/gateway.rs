@@ -7,15 +7,20 @@ use crate::{
     library::{
         ImportedMedia, ShareUrl,
         import::{
-            self, Genre, ImportClient, ImportPathConfig, LibraryFile, MovieDetail, Pan115FileEntry,
-            Pan189File, Pan189Folder, Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season,
-            TvDetail,
+            self, Genre, ImportPathConfig, LibraryFile, LibraryGateway, MovieDetail,
+            Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, SearchMovieResult,
+            SearchTvResult, Season, ShareSource, TvDetail,
         },
     },
 };
 
 #[derive(Clone)]
-struct ClientImportGateway {
+struct PanLibraryGateway {
+    pan123: pan123::Client,
+}
+
+#[derive(Clone)]
+struct ShareImportGateway {
     pan115: pan115::Client,
     pan123: pan123::Client,
     pan189: pan189::Client,
@@ -26,12 +31,14 @@ struct TmdbMetadataGateway {
     tmdb: tmdb::Client,
 }
 
-impl ClientImportGateway {
-    fn new(
-        pan115: pan115::Client,
-        pan123: pan123::Client,
-        pan189: pan189::Client,
-    ) -> Self {
+impl PanLibraryGateway {
+    fn new(pan123: pan123::Client) -> Self {
+        Self { pan123 }
+    }
+}
+
+impl ShareImportGateway {
+    fn new(pan115: pan115::Client, pan123: pan123::Client, pan189: pan189::Client) -> Self {
         Self {
             pan115,
             pan123,
@@ -174,7 +181,7 @@ impl From<pan115::FileEntry> for Pan115FileEntry {
     }
 }
 
-impl ImportClient for ClientImportGateway {
+impl LibraryGateway for PanLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
         Ok(self
             .pan123
@@ -235,6 +242,9 @@ impl ImportClient for ClientImportGateway {
         Ok(self.pan123.download_file(file_id, local_path).await?)
     }
 
+}
+
+impl ShareSource for ShareImportGateway {
     async fn list_pan123_share_files(
         &self,
         share_key: &str,
@@ -319,7 +329,8 @@ impl import::MetadataCatalog for TmdbMetadataGateway {
 
 #[derive(Clone)]
 pub struct ImportGateway {
-    client: ClientImportGateway,
+    library_gateway: PanLibraryGateway,
+    share_gateway: ShareImportGateway,
     metadata_catalog: TmdbMetadataGateway,
     paths: ImportPathConfig,
 }
@@ -333,7 +344,8 @@ impl ImportGateway {
         paths: ImportPathConfig,
     ) -> Self {
         Self {
-            client: ClientImportGateway::new(pan115, pan123, pan189),
+            library_gateway: PanLibraryGateway::new(pan123.clone()),
+            share_gateway: ShareImportGateway::new(pan115, pan123, pan189),
             metadata_catalog: TmdbMetadataGateway::new(tmdb),
             paths,
         }
@@ -343,7 +355,8 @@ impl ImportGateway {
 impl ImportMediaGateway for ImportGateway {
     async fn import_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
         import::Importer::new(
-            self.client.clone(),
+            self.library_gateway.clone(),
+            self.share_gateway.clone(),
             self.metadata_catalog.clone(),
             self.paths.clone(),
         )
@@ -353,7 +366,8 @@ impl ImportMediaGateway for ImportGateway {
 
     async fn import_from_fslink(&self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         import::Importer::new(
-            self.client.clone(),
+            self.library_gateway.clone(),
+            self.share_gateway.clone(),
             self.metadata_catalog.clone(),
             self.paths.clone(),
         )
@@ -363,7 +377,8 @@ impl ImportMediaGateway for ImportGateway {
 
     async fn import_from_json(&self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
         import::Importer::new(
-            self.client.clone(),
+            self.library_gateway.clone(),
+            self.share_gateway.clone(),
             self.metadata_catalog.clone(),
             self.paths.clone(),
         )

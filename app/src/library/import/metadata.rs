@@ -1,10 +1,11 @@
 use crate::domain::media::Metadata;
 
-use super::{ImportClient, Importer};
+use super::{Importer, LibraryGateway, ShareSource};
 
-impl<C, M> Importer<C, M>
+impl<L, S, M> Importer<L, S, M>
 where
-    C: ImportClient,
+    L: LibraryGateway,
+    S: ShareSource,
     M: super::MetadataCatalog,
 {
     pub(super) fn parse_media_metadata(&mut self, name: &str, parent_path: &str) -> Box<Metadata> {

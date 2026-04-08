@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tracing::{error, info};
 
 use super::{
-    ImportClient, ImportedMedia, Importer, MovieDetail, TvDetail,
+    ImportedMedia, Importer, LibraryGateway, MovieDetail, ShareSource, TvDetail,
     inner::{Etag, Media, MediaFile, RawFile, TransferEpisodeArgs},
     library,
 };
@@ -12,9 +12,10 @@ use crate::{
     log_time,
 };
 
-impl<C, M> Importer<C, M>
+impl<L, S, M> Importer<L, S, M>
 where
-    C: ImportClient,
+    L: LibraryGateway,
+    S: ShareSource,
     M: super::MetadataCatalog,
 {
     pub(super) async fn transfer_media_files(
@@ -53,7 +54,7 @@ where
         ));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.remote.library_remote_path();
+        let remote_path = self.library_remote.library_remote_path();
         let movie_path = library::get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .get_or_create_dir_in_library(movie_path.as_str())
@@ -115,10 +116,10 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let remote_path = self.remote.library_remote_path();
+        let remote_path = self.library_remote.library_remote_path();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.remote.list_library_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.library_remote.list_library_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -160,7 +161,7 @@ where
             None => {
                 // create season folder if not exists
                 let id = self
-                    .remote
+                    .library_remote
                     .mkdir_library_dir(tv_dir_id, season_dir.as_str())
                     .await?;
                 info!(
@@ -342,7 +343,9 @@ where
             }
         }
 
-        self.remote.trash_library_files(file_ids.as_slice()).await?;
+        self.library_remote
+            .trash_library_files(file_ids.as_slice())
+            .await?;
         Ok(())
     }
 
@@ -503,7 +506,7 @@ where
                 let local_file_path = self
                     .local
                     .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
-                self.remote
+                self.library_remote
                     .download_library_file(id, local_file_path.as_str())
                     .await?;
                 info!("Subtitle file {} downloaded", local_file_path);
@@ -527,12 +530,12 @@ where
     ) -> AppResult<Option<i64>> {
         Ok(match &etag {
             Etag::Md5(etag) => {
-                self.remote
+                self.library_remote
                     .fast_upload_md5(parent_dir_id, file_name, etag, size)
                     .await?
             }
             Etag::Sha1(sha1) => {
-                self.remote
+                self.library_remote
                     .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
                     .await?
             }

@@ -2,7 +2,7 @@ use reqwest::Url;
 use tracing::info;
 
 use super::{
-    ImportClient, ImportedMedia, Importer,
+    ImportedMedia, Importer, LibraryGateway, ShareSource,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
@@ -46,9 +46,10 @@ impl<'a> ShareUrl<'a> {
     }
 }
 
-impl<C, M> Importer<C, M>
+impl<L, S, M> Importer<L, S, M>
 where
-    C: ImportClient,
+    L: LibraryGateway,
+    S: ShareSource,
     M: super::MetadataCatalog,
 {
     pub async fn import_from_share_url(
@@ -114,7 +115,7 @@ where
 
         while let Some((parent_id, parent_path)) = stack.pop() {
             let files = self
-                .remote
+                .share_remote
                 .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
 
@@ -154,14 +155,14 @@ where
         &mut self,
         share_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let share_info = self.remote.get_pan189_share_info(share_code).await?;
+        let share_info = self.share_remote.get_pan189_share_info(share_code).await?;
 
         let mut all_files = Vec::new();
         let mut stack = vec![(share_info.file_id, share_info.file_name.to_owned())];
 
         while let Some((parent_id, parent_path)) = stack.pop() {
             let (folders, files) = self
-                .remote
+                .share_remote
                 .list_pan189_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
 
@@ -208,7 +209,7 @@ where
 
         while let Some((cid, parent_path)) = stack.pop() {
             let entries = self
-                .remote
+                .share_remote
                 .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
 

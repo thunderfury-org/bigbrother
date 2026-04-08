@@ -18,7 +18,7 @@ pub(crate) use model::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
-pub(crate) use remote::{ImportClient, MetadataCatalog};
+pub(crate) use remote::{LibraryGateway, MetadataCatalog, ShareSource};
 
 #[derive(Debug)]
 pub enum ImportedMedia {
@@ -50,8 +50,9 @@ pub(crate) struct ImportPathConfig {
     pub(crate) strm_download_url: String,
 }
 
-pub(crate) struct Importer<C, M> {
-    remote: remote::ImportRemote<C>,
+pub(crate) struct Importer<L, S, M> {
+    library_remote: remote::LibraryRemote<L>,
+    share_remote: remote::ShareRemote<S>,
     local: local::ImportLocalStore,
     metadata_catalog: M,
     tv_info_cache: HashMap<String, Option<TvDetail>>,
@@ -59,14 +60,21 @@ pub(crate) struct Importer<C, M> {
     metadata_cache: HashMap<String, Box<Metadata>>,
 }
 
-impl<C, M> Importer<C, M>
+impl<L, S, M> Importer<L, S, M>
 where
-    C: ImportClient,
+    L: LibraryGateway,
+    S: ShareSource,
     M: MetadataCatalog,
 {
-    pub(crate) fn new(client: C, metadata_catalog: M, paths: ImportPathConfig) -> Self {
+    pub(crate) fn new(
+        library_gateway: L,
+        share_source: S,
+        metadata_catalog: M,
+        paths: ImportPathConfig,
+    ) -> Self {
         Self {
-            remote: remote::ImportRemote::new(client, paths.clone()),
+            library_remote: remote::LibraryRemote::new(library_gateway, paths.clone()),
+            share_remote: remote::ShareRemote::new(share_source),
             local: local::ImportLocalStore::new(paths),
             metadata_catalog,
             tv_info_cache: HashMap::new(),

@@ -3,15 +3,16 @@ use std::collections::HashMap;
 use tracing::info;
 
 use super::{
-    ImportClient, Importer, MovieDetail, TvDetail,
+    Importer, LibraryGateway, MovieDetail, ShareSource, TvDetail,
     group::group_video_and_subtitle_files,
     inner::{MediaFile, RawFile},
 };
 use crate::{domain::library::import_paths, error::AppResult};
 
-impl<C, M> Importer<C, M>
+impl<L, S, M> Importer<L, S, M>
 where
-    C: ImportClient,
+    L: LibraryGateway,
+    S: ShareSource,
     M: super::MetadataCatalog,
 {
     pub(super) async fn list_episode_files_in_library(
@@ -39,7 +40,7 @@ where
     }
 
     async fn list_media_files_in_library(&mut self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
-        let files = self.remote.list_library_files(dir_id).await?;
+        let files = self.library_remote.list_library_files(dir_id).await?;
 
         let mut raw_files = Vec::new();
         for file in &files {
@@ -69,13 +70,13 @@ where
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {
         info!("Checking if dir {} exists in library", path);
-        let file_id = self.remote.get_library_dir_id_by_path(path).await?;
+        let file_id = self.library_remote.get_library_dir_id_by_path(path).await?;
         match file_id {
             Some(id) => Ok(id),
             None => {
                 info!("Dir {} not found in library", path);
                 // create in library
-                let id = self.remote.mkdir_library_path(path).await?;
+                let id = self.library_remote.mkdir_library_path(path).await?;
                 info!("Dir {} created in library, id: {}", path, id);
                 Ok(id)
             }
