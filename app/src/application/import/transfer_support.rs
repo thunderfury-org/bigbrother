@@ -5,13 +5,14 @@ use tracing::info;
 
 use crate::domain::import::{
     inner::{MediaFile, RawFile},
+    paths::get_year_from_date,
     policy::{
         SeasonTransferState, collect_replaced_media_files, get_max_episode_number,
         get_missing_episodes, get_number_of_episodes_in_season, need_overwrite_existing_files,
     },
 };
 
-use super::{ImportedMedia, TvDetail, library};
+use super::{ImportedMedia, TvDetail};
 
 pub(super) fn should_skip_existing_media(
     existing_files: &[MediaFile],
@@ -31,7 +32,7 @@ pub(super) fn build_imported_tv_result(
 
     ImportedMedia::Tv {
         name: detail.name.to_owned(),
-        year: library::get_year_from_date(detail.first_air_date.as_str()).to_owned(),
+        year: get_year_from_date(detail.first_air_date.as_str()).to_owned(),
         season: season_number,
         missing_episodes: get_missing_episodes(
             max_episode_number,

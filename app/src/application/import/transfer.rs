@@ -4,11 +4,15 @@ use tracing::info;
 
 use crate::domain::import::{
     inner::{Media, MediaFile, TransferEpisodeArgs},
+    paths::{
+        get_movie_base_name, get_movie_path_in_library, get_tv_base_name, get_tv_path_in_library,
+        get_year_from_date,
+    },
     policy::{SeasonTransferState, accumulate_episode_transfer_result, select_largest_media_file},
 };
 
 use super::{
-    ImportedMedia, Importer, MovieDetail, TvDetail, library,
+    ImportedMedia, Importer, MovieDetail, TvDetail,
     transfer_support::{build_imported_tv_result, should_skip_existing_media},
 };
 use crate::application::import_ports::{
@@ -53,14 +57,11 @@ where
         detail: &MovieDetail,
         media_files: &[&MediaFile],
     ) -> AppResult<Option<ImportedMedia>> {
-        log_time!(format!(
-            "transfer movie {}",
-            library::get_movie_base_name(detail)
-        ));
+        log_time!(format!("transfer movie {}", get_movie_base_name(detail)));
         let start_time = std::time::Instant::now();
 
         let remote_path = self.local.remote_library_path();
-        let movie_path = library::get_movie_path_in_library(remote_path, detail);
+        let movie_path = get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .get_or_create_dir_in_library(movie_path.as_str())
             .await?;
@@ -75,7 +76,7 @@ where
         let name_prefix = format!(
             "{}.{}.",
             detail.title,
-            library::get_year_from_date(detail.release_date.as_str()),
+            get_year_from_date(detail.release_date.as_str()),
         );
         let saved_filename = self
             .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
@@ -84,7 +85,7 @@ where
             .await?;
         Ok(Some(ImportedMedia::Movie {
             title: detail.title.to_owned(),
-            year: library::get_year_from_date(detail.release_date.as_str()).to_owned(),
+            year: get_year_from_date(detail.release_date.as_str()).to_owned(),
             size: media_file.video.size,
             cost: start_time.elapsed(),
             has_failed: saved_filename.is_none(),
@@ -96,10 +97,10 @@ where
         detail: &TvDetail,
         files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
     ) -> AppResult<Vec<ImportedMedia>> {
-        log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
+        log_time!(format!("transfer tv {}", get_tv_base_name(detail)));
 
         let remote_path = self.local.remote_library_path();
-        let tv_path = library::get_tv_path_in_library(remote_path, detail);
+        let tv_path = get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
         let season_dir_ids = self.library_gateway.list_library_dir_ids(tv_dir_id).await?;
 
@@ -132,7 +133,7 @@ where
     ) -> AppResult<ImportedMedia> {
         log_time!(format!(
             "transfer tv {} season {:02}",
-            library::get_tv_base_name(detail),
+            get_tv_base_name(detail),
             season_number
         ));
         let start_time = std::time::Instant::now();
@@ -200,7 +201,7 @@ where
         let name_prefix = format!(
             "{}.{}.S{:02}E{:02}.",
             args.detail.name,
-            library::get_year_from_date(args.detail.first_air_date.as_str()),
+            get_year_from_date(args.detail.first_air_date.as_str()),
             args.season_number,
             args.episode_number
         );

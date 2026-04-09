@@ -1,5 +1,6 @@
 pub(crate) mod inner;
 mod model;
+pub(crate) mod paths;
 pub(crate) mod policy;
 pub(crate) mod share_collect;
 pub(crate) mod share_walk;
