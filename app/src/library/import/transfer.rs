@@ -125,6 +125,27 @@ fn remote_child_path(parent_path: &str, file_name: &str) -> String {
     format!("{}/{}", parent_path, file_name)
 }
 
+fn build_subtitle_transfer_plan<'a>(
+    media_file: &'a MediaFile,
+    video_file_name: &str,
+) -> Vec<(&'a RawFile, String)> {
+    media_file
+        .subtitles
+        .iter()
+        .map(|subtitle| {
+            (
+                subtitle,
+                renamed_subtitle_file_name(
+                    subtitle,
+                    &media_file.video.name,
+                    video_file_name,
+                    media_file.metadata.extension.as_str(),
+                ),
+            )
+        })
+        .collect()
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -470,24 +491,11 @@ where
         video_file_name: &str,
         media_file: &MediaFile,
     ) -> AppResult<bool> {
-        if media_file.subtitles.is_empty() {
-            return Ok(true);
-        }
-
-        for subtitle in &media_file.subtitles {
-            let subtitle_file_name = renamed_subtitle_file_name(
-                subtitle,
-                &media_file.video.name,
-                video_file_name,
-                media_file.metadata.extension.as_str(),
-            );
+        for (subtitle, subtitle_file_name) in
+            build_subtitle_transfer_plan(media_file, video_file_name)
+        {
             let success = self
-                .transfer_subtitle_file(
-                    parent_path,
-                    parent_dir_id,
-                    subtitle,
-                    subtitle_file_name.as_str(),
-                )
+                .transfer_subtitle_file(parent_path, parent_dir_id, subtitle, &subtitle_file_name)
                 .await?;
             if !success {
                 return Ok(false);
@@ -833,5 +841,20 @@ mod tests {
             remote_child_path("/remote/show", "episode01.mkv"),
             "/remote/show/episode01.mkv"
         );
+    }
+
+    #[test]
+    fn build_subtitle_transfer_plan_renames_each_subtitle() {
+        let mut media = create_media_file("Show.S01E01.mkv", 100);
+        media.subtitles = vec![
+            create_subtitle("Show.S01E01.zh.srt"),
+            create_subtitle("Show.S01E01.en.ass"),
+        ];
+
+        let plan = build_subtitle_transfer_plan(&media, "Test.Show.2024.S01E01.1080p.mkv");
+
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].1, "Test.Show.2024.S01E01.1080p.zh.srt");
+        assert_eq!(plan[1].1, "Test.Show.2024.S01E01.1080p.en.ass");
     }
 }
