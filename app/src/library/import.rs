@@ -10,9 +10,15 @@ mod model;
 mod policy;
 pub(crate) mod remote;
 pub(super) mod share;
+mod share_collect;
+mod share_walk;
 mod source;
 mod tmdb_info;
 mod transfer;
+mod transfer_cleanup;
+mod transfer_save;
+mod transfer_support;
+mod transfer_target;
 
 pub(crate) use model::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
