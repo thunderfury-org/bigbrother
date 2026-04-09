@@ -85,6 +85,7 @@ mod tests {
     #[derive(Default)]
     struct FakeLibraryState {
         mkdir_paths: Vec<String>,
+        mkdir_dirs: Vec<(i64, String)>,
         fast_uploads: Vec<(i64, String, String, u64)>,
     }
 
@@ -117,12 +118,13 @@ mod tests {
         ) -> AppResult<std::collections::HashMap<String, i64>> {
             Ok(Default::default())
         }
-        async fn mkdir_library_dir(
-            &self,
-            _parent_dir_id: i64,
-            _folder_name: &str,
-        ) -> AppResult<i64> {
-            Ok(1)
+        async fn mkdir_library_dir(&self, parent_dir_id: i64, folder_name: &str) -> AppResult<i64> {
+            self.state
+                .lock()
+                .unwrap()
+                .mkdir_dirs
+                .push((parent_dir_id, folder_name.to_string()));
+            Ok(10)
         }
         async fn trash_library_files(&self, _file_ids: &[i64]) -> AppResult<()> {
             Ok(())
@@ -214,11 +216,35 @@ mod tests {
                 release_date: "2010-07-16".into(),
             }))
         }
-        async fn search_tv(&self, _title: &str, _year: &str) -> AppResult<Vec<SearchTvResult>> {
-            Ok(Vec::new())
+        async fn search_tv(&self, _title: &str, year: &str) -> AppResult<Vec<SearchTvResult>> {
+            if year == "2008" {
+                Ok(vec![SearchTvResult {
+                    id: 1396,
+                    name: "Breaking Bad".into(),
+                    original_name: "Breaking Bad".into(),
+                }])
+            } else {
+                Ok(Vec::new())
+            }
         }
-        async fn get_tv_detail(&self, _id: u32) -> AppResult<Option<TvDetail>> {
-            Ok(None)
+        async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
+            Ok((id == 1396).then_some(TvDetail {
+                id,
+                name: "Breaking Bad".into(),
+                first_air_date: "2008-01-20".into(),
+                number_of_episodes: 7,
+                number_of_seasons: 1,
+                origin_country: vec!["US".into()],
+                original_language: "en".into(),
+                original_name: "Breaking Bad".into(),
+                genres: Vec::new(),
+                seasons: vec![crate::library::import::Season {
+                    id: 1,
+                    name: "Season 1".into(),
+                    episode_count: 7,
+                    season_number: 1,
+                }],
+            }))
         }
     }
 
@@ -306,6 +332,108 @@ mod tests {
         assert_eq!(
             strm_content,
             "http://localhost/d/remote/电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.mkv?file_id=42"
+        );
+
+        let _ = fs::remove_dir_all(local_dir);
+    }
+
+    #[tokio::test]
+    async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
+        let local_dir = unique_temp_dir();
+        let gateway = FakeLibraryGateway::default();
+        let service = ImportMediaService::new(
+            gateway.clone(),
+            FakeShareSource::default(),
+            FakeMetadataCatalog,
+            ImportPathConfig::new(
+                "/remote".into(),
+                local_dir.to_string_lossy().into_owned(),
+                "http://localhost/d".into(),
+            ),
+        );
+
+        let json = serde_json::to_vec(&serde_json::json!({
+            "files": [
+                {
+                    "path": "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
+                    "etag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 1001u64
+                },
+                {
+                    "path": "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
+                    "etag": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "size": 1002u64
+                }
+            ]
+        }))
+        .unwrap();
+
+        let imported = service.import_from_json(json).await.unwrap();
+
+        let ImportedMedia::Tv {
+            name,
+            year,
+            season,
+            episodes,
+            max_episode_number,
+            number_of_episodes,
+            missing_episodes,
+            total_size,
+            ..
+        } = imported
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("expected one tv import result"))
+        else {
+            panic!("expected tv import result");
+        };
+
+        assert_eq!(name, "Breaking Bad");
+        assert_eq!(year, "2008");
+        assert_eq!(season, 1);
+        assert_eq!(episodes, vec![1, 2]);
+        assert_eq!(max_episode_number, 2);
+        assert_eq!(number_of_episodes, 7);
+        assert!(missing_episodes.is_empty(), "{missing_episodes:?}");
+        assert_eq!(total_size, 2003);
+
+        let state = gateway.state.lock().unwrap();
+        assert_eq!(
+            state.mkdir_paths,
+            vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
+        );
+        assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
+        assert_eq!(
+            state.fast_uploads,
+            vec![
+                (
+                    10,
+                    "Breaking Bad.2008.S01E01.1080p.mkv".to_string(),
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                    1001
+                ),
+                (
+                    10,
+                    "Breaking Bad.2008.S01E02.1080p.mkv".to_string(),
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                    1002
+                )
+            ]
+        );
+        drop(state);
+
+        let season_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
+        let ep1 =
+            fs::read_to_string(season_dir.join("Breaking Bad.2008.S01E01.1080p.strm")).unwrap();
+        let ep2 =
+            fs::read_to_string(season_dir.join("Breaking Bad.2008.S01E02.1080p.strm")).unwrap();
+        assert_eq!(
+            ep1,
+            "http://localhost/d/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking Bad.2008.S01E01.1080p.mkv?file_id=42"
+        );
+        assert_eq!(
+            ep2,
+            "http://localhost/d/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking Bad.2008.S01E02.1080p.mkv?file_id=42"
         );
 
         let _ = fs::remove_dir_all(local_dir);
