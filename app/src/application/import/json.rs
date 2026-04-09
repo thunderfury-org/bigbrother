@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tracing::info;
 
-use super::{ImportedMedia, JsonImportUseCase};
+use super::{ImportedMedia, JsonImportUseCase, TransferImportUseCase};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
@@ -45,7 +45,9 @@ where
         resource: &ResourceJson,
     ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.list_files_from_json(resource);
-        self.transfer_media_files(&media_files).await
+        TransferImportUseCase::new(self.context())
+            .transfer_media_files(&media_files)
+            .await
     }
 
     fn list_files_from_json(&mut self, resource: &ResourceJson) -> Vec<MediaFile> {

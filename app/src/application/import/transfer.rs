@@ -12,7 +12,7 @@ use crate::domain::import::{
 };
 
 use super::{
-    ImportWorkflow, ImportedMedia, MovieDetail, TvDetail,
+    ImportedMedia, MovieDetail, TransferImportUseCase, TvDetail,
     transfer_support::{build_imported_tv_result, should_skip_existing_media},
 };
 use crate::application::import_ports::{
@@ -20,7 +20,7 @@ use crate::application::import_ports::{
 };
 use crate::{error::AppResult, log_time};
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, S, M, F> TransferImportUseCase<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

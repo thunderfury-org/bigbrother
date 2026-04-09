@@ -1,7 +1,7 @@
 use reqwest::Url;
 use tracing::info;
 
-use super::{ImportedMedia, ShareImportUseCase};
+use super::{ImportedMedia, ShareImportUseCase, TransferImportUseCase};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
@@ -84,7 +84,9 @@ where
             media_files.len(),
             provider
         );
-        self.transfer_media_files(&media_files).await
+        TransferImportUseCase::new(self.context())
+            .transfer_media_files(&media_files)
+            .await
     }
 
     async fn list_files_from_pan123_share(

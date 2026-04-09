@@ -55,6 +55,7 @@ pub(crate) struct ImportContext<L, S, M, F> {
 pub(crate) struct ImportWorkflow<L, S, M, F> {
     library_gateway: L,
     share_source: S,
+    metadata_catalog: M,
     local: F,
     tmdb_lookup: tmdb_info::TmdbLookup<M>,
     metadata_lookup: metadata::MetadataLookup,
@@ -65,6 +66,10 @@ pub(crate) struct ShareImportUseCase<L, S, M, F> {
 }
 
 pub(crate) struct JsonImportUseCase<L, S, M, F> {
+    workflow: ImportWorkflow<L, S, M, F>,
+}
+
+pub(crate) struct TransferImportUseCase<L, S, M, F> {
     workflow: ImportWorkflow<L, S, M, F>,
 }
 
@@ -93,6 +98,7 @@ where
         ImportWorkflow {
             library_gateway: self.library_gateway.clone(),
             share_source: self.share_source.clone(),
+            metadata_catalog: self.metadata_catalog.clone(),
             local: self.local.clone(),
             tmdb_lookup: tmdb_info::TmdbLookup::new(self.metadata_catalog.clone()),
             metadata_lookup: metadata::MetadataLookup::default(),
@@ -128,6 +134,37 @@ where
     }
 }
 
+impl<L, S, M, F> TransferImportUseCase<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
+        Self {
+            workflow: context.workflow(),
+        }
+    }
+}
+
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    fn context(&self) -> ImportContext<L, S, M, F> {
+        ImportContext::new(
+            self.library_gateway.clone(),
+            self.share_source.clone(),
+            self.metadata_catalog.clone(),
+            self.local.clone(),
+        )
+    }
+}
+
 impl<L, S, M, F> Deref for ShareImportUseCase<L, S, M, F> {
     type Target = ImportWorkflow<L, S, M, F>;
 
@@ -151,6 +188,20 @@ impl<L, S, M, F> Deref for JsonImportUseCase<L, S, M, F> {
 }
 
 impl<L, S, M, F> DerefMut for JsonImportUseCase<L, S, M, F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.workflow
+    }
+}
+
+impl<L, S, M, F> Deref for TransferImportUseCase<L, S, M, F> {
+    type Target = ImportWorkflow<L, S, M, F>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.workflow
+    }
+}
+
+impl<L, S, M, F> DerefMut for TransferImportUseCase<L, S, M, F> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.workflow
     }
