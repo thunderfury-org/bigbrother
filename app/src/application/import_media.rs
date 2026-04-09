@@ -62,6 +62,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fs,
         path::PathBuf,
         sync::{Arc, Mutex},
@@ -92,6 +93,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct FakeShareSource {
         calls: Arc<Mutex<Vec<String>>>,
+        pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
     }
 
     #[derive(Clone, Default)]
@@ -163,10 +165,16 @@ mod tests {
             &self,
             _share_key: &str,
             _share_password: &str,
-            _parent_id: i64,
+            parent_id: i64,
         ) -> AppResult<Vec<LibraryFile>> {
             self.calls.lock().unwrap().push("share".to_string());
-            Ok(Vec::new())
+            Ok(self
+                .pan123_files
+                .lock()
+                .unwrap()
+                .get(&parent_id)
+                .cloned()
+                .unwrap_or_default())
         }
         async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
             self.calls.lock().unwrap().push("share".to_string());
@@ -435,6 +443,92 @@ mod tests {
             ep2,
             "http://localhost/d/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking Bad.2008.S01E02.1080p.mkv?file_id=42"
         );
+
+        let _ = fs::remove_dir_all(local_dir);
+    }
+
+    #[tokio::test]
+    async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
+        let local_dir = unique_temp_dir();
+        let gateway = FakeLibraryGateway::default();
+        let share_source = FakeShareSource {
+            pan123_files: Arc::new(Mutex::new(HashMap::from([
+                (
+                    0,
+                    vec![
+                        LibraryFile {
+                            file_id: 100,
+                            file_name: "Movies".into(),
+                            is_dir: true,
+                            size: 0,
+                            etag: String::new(),
+                        },
+                        LibraryFile {
+                            file_id: 101,
+                            file_name: "ignore.txt".into(),
+                            is_dir: false,
+                            size: 10,
+                            etag: "etag-ignore".into(),
+                        },
+                    ],
+                ),
+                (
+                    100,
+                    vec![LibraryFile {
+                        file_id: 102,
+                        file_name: "Inception.2010.1080p.mkv".into(),
+                        is_dir: false,
+                        size: 2234,
+                        etag: "fedcba9876543210fedcba9876543210".into(),
+                    }],
+                ),
+            ]))),
+            ..Default::default()
+        };
+        let service = ImportMediaService::new(
+            gateway.clone(),
+            share_source.clone(),
+            FakeMetadataCatalog,
+            ImportPathConfig::new(
+                "/remote".into(),
+                local_dir.to_string_lossy().into_owned(),
+                "http://localhost/d".into(),
+            ),
+        );
+        let url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
+        let share = ShareUrl::from(&url).unwrap();
+
+        let imported = service.import_from_share_url(&share).await.unwrap();
+
+        assert!(matches!(
+            imported.as_slice(),
+            [ImportedMedia::Movie { title, year, size, has_failed, .. }]
+                if title == "Inception" && year == "2010" && *size == 2234 && !has_failed
+        ));
+        assert_eq!(
+            share_source.calls.lock().unwrap().as_slice(),
+            ["share", "share"]
+        );
+
+        let state = gateway.state.lock().unwrap();
+        assert_eq!(
+            state.mkdir_paths,
+            vec!["/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string()]
+        );
+        assert_eq!(
+            state.fast_uploads,
+            vec![(
+                1,
+                "Inception.2010.1080p.mkv".to_string(),
+                "fedcba9876543210fedcba9876543210".to_string(),
+                2234
+            )]
+        );
+        drop(state);
+
+        let strm_path =
+            local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.strm");
+        assert!(strm_path.exists());
 
         let _ = fs::remove_dir_all(local_dir);
     }
