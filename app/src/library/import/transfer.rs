@@ -91,6 +91,40 @@ fn files_pending_cleanup<'a>(
     collect_replaced_media_files(existing_files, &Some(saved_filename.to_string()))
 }
 
+fn collect_library_file_ids(files: &[&MediaFile]) -> Vec<i64> {
+    let mut file_ids = Vec::new();
+
+    for media_file in files {
+        if let Some(id) = media_file.video.id {
+            file_ids.push(id);
+        }
+        file_ids.extend(
+            media_file
+                .subtitles
+                .iter()
+                .filter_map(|subtitle| subtitle.id),
+        );
+    }
+
+    file_ids
+}
+
+fn existing_season_dir_id(season_dir: &str, season_dir_ids: &HashMap<String, i64>) -> Option<i64> {
+    season_dir_ids.get(season_dir).copied()
+}
+
+fn log_file_not_saved(file_name: &str) {
+    info!("File {} not saved in library", file_name);
+}
+
+fn log_file_saved(file_name: &str, file_id: i64) {
+    info!("File {} saved in library, file id: {}", file_name, file_id);
+}
+
+fn remote_child_path(parent_path: &str, file_name: &str) -> String {
+    format!("{}/{}", parent_path, file_name)
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -350,8 +384,8 @@ where
         season_dir: &str,
         season_dir_ids: &HashMap<String, i64>,
     ) -> AppResult<(i64, HashMap<u32, Vec<MediaFile>>)> {
-        match season_dir_ids.get(season_dir) {
-            Some(id) => Ok((*id, self.list_episode_files_in_library(*id).await?)),
+        match existing_season_dir_id(season_dir, season_dir_ids) {
+            Some(id) => Ok((id, self.list_episode_files_in_library(id).await?)),
             None => {
                 let id = self
                     .library_remote
@@ -367,22 +401,17 @@ where
     }
 
     async fn delete_files_in_library(&self, files: &[&MediaFile]) -> AppResult<()> {
-        let mut file_ids = Vec::new();
         for f in files {
             info!(
                 "Deleting file {} from library, file id: {:?}",
                 f.video.name, f.video.id
             );
-            if let Some(id) = f.video.id {
-                file_ids.push(id);
-            }
             for s in &f.subtitles {
                 info!("Deleting file {} from library, file id: {:?}", s.name, s.id);
-                if let Some(id) = s.id {
-                    file_ids.push(id);
-                }
             }
         }
+
+        let file_ids = collect_library_file_ids(files);
 
         self.library_remote
             .trash_library_files(file_ids.as_slice())
@@ -476,16 +505,13 @@ where
         media_file: &MediaFile,
     ) -> AppResult<Option<String>> {
         let res = self
-            .transfer_raw_file(
+            .transfer_raw_file_with_logging(
                 parent_dir_id,
                 video_file_name,
                 media_file.video.size,
                 &media_file.video.etag,
             )
-            .await
-            .inspect_err(|e| {
-                error!("Failed to transfer file {}, error: {}", video_file_name, e);
-            })?;
+            .await?;
         match res {
             Some(id) => {
                 self.finish_video_transfer(
@@ -497,8 +523,7 @@ where
                 .await
             }
             None => {
-                info!("File {} not saved in library", video_file_name);
-
+                log_file_not_saved(video_file_name);
                 Ok(None)
             }
         }
@@ -526,19 +551,15 @@ where
         file_name: &str,
     ) -> AppResult<bool> {
         let res = self
-            .transfer_raw_file(parent_dir_id, file_name, raw_file.size, &raw_file.etag)
-            .await
-            .inspect_err(|e| {
-                error!("Failed to transfer file {}, error: {}", file_name, e);
-            })?;
+            .transfer_raw_file_with_logging(parent_dir_id, file_name, raw_file.size, &raw_file.etag)
+            .await?;
         match res {
             Some(id) => {
                 self.finish_subtitle_transfer(parent_path, file_name, id)
                     .await
             }
             None => {
-                info!("File {} not saved in library", file_name);
-
+                log_file_not_saved(file_name);
                 Ok(false)
             }
         }
@@ -551,12 +572,9 @@ where
         extension: &str,
         file_id: i64,
     ) -> AppResult<Option<String>> {
-        info!(
-            "File {} saved in library, file id: {}",
-            video_file_name, file_id
-        );
+        log_file_saved(video_file_name, file_id);
         self.create_strm_file(
-            format!("{}/{}", parent_path, video_file_name).as_str(),
+            remote_child_path(parent_path, video_file_name).as_str(),
             extension,
             file_id,
         )
@@ -570,10 +588,10 @@ where
         file_name: &str,
         file_id: i64,
     ) -> AppResult<bool> {
-        info!("File {} saved in library, file id: {}", file_name, file_id);
+        log_file_saved(file_name, file_id);
         let local_file_path = self
             .local
-            .local_path_for_remote(format!("{}/{}", parent_path, file_name).as_str());
+            .local_path_for_remote(remote_child_path(parent_path, file_name).as_str());
         self.library_remote
             .download_library_file(file_id, local_file_path.as_str())
             .await?;
@@ -600,6 +618,20 @@ where
                     .await?
             }
         })
+    }
+
+    async fn transfer_raw_file_with_logging(
+        &self,
+        parent_dir_id: i64,
+        file_name: &str,
+        size: u64,
+        etag: &Etag,
+    ) -> AppResult<Option<i64>> {
+        self.transfer_raw_file(parent_dir_id, file_name, size, etag)
+            .await
+            .inspect_err(|e| {
+                error!("Failed to transfer file {}, error: {}", file_name, e);
+            })
     }
 }
 
@@ -759,5 +791,47 @@ mod tests {
 
         assert!(files_pending_cleanup(None, Some("kept.mkv")).is_empty());
         assert!(files_pending_cleanup(Some(&existing), None).is_empty());
+    }
+
+    #[test]
+    fn collect_library_file_ids_includes_video_and_subtitles() {
+        let mut media = create_media_file("Show.S01E01.mkv", 100);
+        media.video.id = Some(11);
+        media.subtitles = vec![
+            RawFile {
+                id: Some(21),
+                ..create_subtitle("Show.S01E01.zh.srt")
+            },
+            RawFile {
+                id: None,
+                ..create_subtitle("Show.S01E01.en.ass")
+            },
+        ];
+
+        let ids = collect_library_file_ids(&[&media]);
+
+        assert_eq!(ids, vec![11, 21]);
+    }
+
+    #[test]
+    fn existing_season_dir_id_returns_matching_entry() {
+        let season_dir_ids = HashMap::from([
+            ("Season 01".to_string(), 101),
+            ("Season 02".to_string(), 202),
+        ]);
+
+        assert_eq!(
+            existing_season_dir_id("Season 01", &season_dir_ids),
+            Some(101)
+        );
+        assert_eq!(existing_season_dir_id("Season 03", &season_dir_ids), None);
+    }
+
+    #[test]
+    fn remote_child_path_joins_parent_and_name() {
+        assert_eq!(
+            remote_child_path("/remote/show", "episode01.mkv"),
+            "/remote/show/episode01.mkv"
+        );
     }
 }
