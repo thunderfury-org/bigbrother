@@ -1,6 +1,6 @@
 # BigBrother 架构重构蓝图（按当前代码重梳）
 
-> 更新时间：2026-04-08（已根据本轮连续重构更新）  
+> 更新时间：2026-04-09（已根据本轮连续重构更新）  
 > 依据代码：`app/src/*`、`migration/src/*`
 
 ## 1. 目标
@@ -238,6 +238,7 @@ migration
 结论：
 
 - 导入入口已经上提到 application
+- import ports 已上提到 application 所有
 - application 已不再通过 `ImportGateway` 间接承载 orchestration
 - 但真实导入规则和流程细节仍主要在 `library/import`
 
@@ -262,9 +263,13 @@ migration
 
 ---
 
-### 4.3 Application Ports：已经有第一批稳定端口
+### 4.3 Application Ports：已经形成统一端口面
 
 文件：`app/src/application/ports.rs`
+
+以及：
+
+- `app/src/application/import_ports.rs`
 
 当前已经存在的端口包括：
 
@@ -281,13 +286,13 @@ migration
 
 这部分已经是当前代码中最值得继续沿用的设计。
 
-但也要注意：**导入链路仍未纳入 `application/ports.rs` 这一统一端口面。**  \n当前导入相关端口已经拆为：
+导入链路现在已经纳入 application 端口面，只是暂时单独放在 `app/src/application/import_ports.rs`。当前导入相关端口包括：
 
 - `LibraryGateway`
 - `ShareSource`
 - `MetadataCatalog`
 
-它们位于 `app/src/library/import/remote.rs`，目前仍属于 import 子域内部端口，而不是 application 统一 ports 面的一部分。
+这意味着导入端口的所有权已经不再属于 `library/import` 过渡区，而是归 application 所有。
 
 ---
 
@@ -451,19 +456,28 @@ migration
 - `library/import/metadata.rs`：路径与文件名元数据合并
 - `library/import/group.rs`：视频/字幕分组、媒体聚合
 - `library/import/library.rs`：库目录命名和路径计算、列目录
+- `library/import/policy.rs`：覆盖决策、命名、缺失集数、季状态累计等纯规则
+- `library/import/source.rs`：share URL / fslink / json 解析与资源描述转换
 - `library/import/tmdb_info.rs`：TMDB 查询与缓存 helper
-- `library/import/share.rs`：各分享链接的遍历与导入入口
-- `library/import/transfer.rs`：入库、覆盖、快传、删除、strm 落盘
-- `library/import/remote.rs`：`LibraryGateway` / `ShareSource` / `MetadataCatalog` 及其 wrapper
+- `library/import/share.rs`：各分享链接的 provider orchestration
+- `library/import/share_walk.rs`：share 遍历状态与路径推进
+- `library/import/share_collect.rs`：各 provider 的目录页收集/转换
+- `library/import/transfer.rs`：movie/tv/season/episode orchestration
+- `library/import/transfer_cleanup.rs`：替换文件清理与本地/远端删除
+- `library/import/transfer_save.rs`：上传、字幕保存、strm 落盘
+- `library/import/transfer_target.rs`：season 目标目录解析
+- `library/import/transfer_support.rs`：transfer 共用纯 helper
+- `library/import/remote.rs`：application-owned import ports 的内部 wrapper
 - `library/import/local.rs`：本地 `.strm` 文件与本地路径 adapter
 - `app/src/domain/library/import_paths.rs`：导入路径/分类/命名规则
+- `app/src/application/import_ports.rs`：导入链路的 application ports
 - `app/src/infrastructure/import/gateway.rs`：`PanLibraryGateway` / `ShareImportGateway` / `TmdbMetadataGateway`
 
 #### 现状判断
 
-导入链路已经比旧结构健康很多，但仍属于：
+导入链路已经比旧结构健康很多，目前属于：
 
-> “导入入口与能力边界已经拆开，但 `library/import` 仍然承载大量 import-specific orchestration”
+> “导入入口与能力边界已经拆开，`share.rs` / `transfer.rs` 已收口为 orchestration 文件，但 `library/import` 作为整体仍是 import-specific 过渡子域”
 
 因此，文档里不应再把它描述成“仍然直接依赖所有 concrete client 的泥团”，也不应误写成“已经完全 domain/application 化”。  
 **它现在处于中间态。**
@@ -490,12 +504,12 @@ interface
 application
   -> domain
   -> application ports
-  -> `library/import` 子域入口与内部端口
+  -> `library/import` 子域入口
 
 infrastructure
   -> application ports / application traits
   -> domain
-  -> `library/import` capability-specific ports
+  -> `library/import` wrappers / adapters
 
 library/import
   -> domain::media
@@ -594,13 +608,15 @@ interface/telegram/msg
 
 这说明导入相关的“分类 / 子类 / 基础命名 / 路径拼接”规则已经不再困在 `library/import` 的本地模块里。
 
-### 6.7 导入能力端口已按职责拆分
+### 6.7 导入能力端口已上提到 application
 
-`app/src/library/import/remote.rs:1` 当前已经拆成：
+`app/src/application/import_ports.rs:1` 当前定义：
 
 - `LibraryGateway`
 - `ShareSource`
 - `MetadataCatalog`
+
+`app/src/library/import/remote.rs:1` 现在只保留这些端口的内部 wrapper。
 
 `app/src/library/import/local.rs:1` 则承接本地 `.strm` / 路径能力。
 
@@ -620,8 +636,17 @@ interface/telegram/msg
 
 - `TmdbLookup`
 - `MetadataLookup`
+- `policy` 中的一组 import-specific 纯规则
+- `source` 中的一组 share/fslink/json 解析规则
 
-同时 `transfer.rs` 与 `group.rs` 中的一批纯选择/累积/清理逻辑也已经被提成 focused helper，并补了直接测试。
+同时导入链路已经完成了一轮明确的文件级拆分：
+
+- `share.rs` 只保留 provider flow + 遍历 orchestration
+- `transfer.rs` 只保留 movie/tv/season/episode orchestration
+- `share_walk.rs` / `share_collect.rs` 承接 share 侧纯 helper
+- `transfer_cleanup.rs` / `transfer_save.rs` / `transfer_target.rs` / `transfer_support.rs` 承接 transfer 侧 helper 与保存/清理细节
+
+这些 helper 都已经补了直接测试。
 
 ---
 
@@ -657,15 +682,15 @@ interface/telegram/msg
 
 典型症状：
 
-- `Importer` 虽然已经明显瘦身，但仍是 import-specific orchestration 的主要承载点
-- `transfer.rs`、`group.rs` 仍然包含较多 import-specific 流程控制
-- import-specific 模型与流程没有像 `sync_strm` 一样被拆成更小的 application/domain 单元
+- `Importer` 虽然已经明显瘦身，并且 `share.rs` / `transfer.rs` 已经收口为 orchestration 文件，但它们仍然是 import-specific orchestration 的主要承载点
+- import-specific helper 已拆到多个 sibling module，但它们仍然共同位于 `library/import` 过渡区
+- import-specific 模型与流程还没有像 `sync_strm` 一样进一步切成更明确的 application/domain 单元
 
 建议：
 
-- 把“分类/命名/覆盖决策/集数缺失计算”继续提纯成 domain 或 import-specific policy 模块
-- 把 `Importer` 收缩成 application use case
-- 把 `ImportRemote` 拆成更明确的 ports（远端库、分享源、TMDB catalog、本地 strm writer 等）
+- 保持 `share.rs` / `transfer.rs` 的 orchestration-only 边界，不要让 helper 回流
+- 在 helper 边界稳定后，再决定哪些规则可以继续上提到更清晰的 application/domain 子模块
+- 继续评估 `remote.rs` wrapper 是否还需要进一步压缩
 
 ### 7.3 `bootstrap` 仍然是宽 wiring 容器
 
@@ -755,7 +780,7 @@ bootstrap
 4. **Infrastructure Adapters**  
    pan123 / pan189 / pan115 / tmdb / local fs
 
-当前已经完成了第 3、4 类的大部分拆分；后续重点转向继续压缩第 1、2 类里的 orchestration 和流程体积。
+当前已经完成了第 3、4 类的大部分拆分，也完成了 `library/import` 内部的一轮 orchestration/helper 文件级拆分；后续重点转向评估第 1、2 类里哪些稳定规则值得继续迁层。
 
 ---
 
@@ -777,10 +802,10 @@ bootstrap
 
 建议动作：
 
-- 继续把 `group.rs` / `transfer.rs` 中的分支逻辑提成 focused helper
-- 为 helper 补直接回归测试
-- 在合适时机再决定是否继续拆模块文件
-- 当 helper 数量稳定后，再评估是否把 `library/import` 进一步切成更清晰的 application/domain 子模块
+- 保持 `share.rs` / `transfer.rs` 作为 orchestration-only 文件
+- 为新增 helper 继续补直接回归测试
+- 当 helper 边界稳定后，再评估是否把 `library/import` 中稳定规则继续迁到更清晰的 application/domain 子模块
+- 继续观察 `remote.rs` / `local.rs` 是否还存在可压缩的过渡包装
 
 ### Phase 3：瘦身 bootstrap
 
