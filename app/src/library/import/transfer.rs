@@ -47,6 +47,36 @@ fn build_imported_tv_result(
     }
 }
 
+fn build_local_cleanup_paths(local_parent_path: &str, media_file: &MediaFile) -> Vec<String> {
+    let mut paths = vec![format!(
+        "{}/{}.strm",
+        local_parent_path,
+        media_file
+            .video
+            .name
+            .trim_end_matches(media_file.metadata.extension.as_str())
+    )];
+    paths.extend(
+        media_file
+            .subtitles
+            .iter()
+            .map(|subtitle| format!("{}/{}", local_parent_path, subtitle.name)),
+    );
+    paths
+}
+
+fn renamed_subtitle_file_name(
+    raw_file: &RawFile,
+    source_video_name: &str,
+    target_video_name: &str,
+    extension: &str,
+) -> String {
+    raw_file.name.replace(
+        source_video_name.trim_end_matches(extension),
+        target_video_name.trim_end_matches(extension),
+    )
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -349,18 +379,7 @@ where
         let local_parent_path = self.local.local_path_for_remote(remote_parent_path);
 
         for f in files {
-            let local_file_path = format!(
-                "{}/{}.strm",
-                local_parent_path,
-                f.video.name.trim_end_matches(f.metadata.extension.as_str())
-            );
-            info!("Deleting local file {}", local_file_path);
-            self.local
-                .remove_local_file_if_exists(local_file_path.as_str())
-                .await?;
-
-            for s in &f.subtitles {
-                let local_file_path = format!("{}/{}", local_parent_path, s.name);
+            for local_file_path in build_local_cleanup_paths(&local_parent_path, f) {
                 info!("Deleting local file {}", local_file_path);
                 self.local
                     .remove_local_file_if_exists(local_file_path.as_str())
@@ -407,21 +426,19 @@ where
             return Ok(true);
         }
 
-        let subtitle_file_name_replace_from = media_file
-            .video
-            .name
-            .trim_end_matches(media_file.metadata.extension.as_str());
-        let subtitle_file_name_replace_to =
-            video_file_name.trim_end_matches(media_file.metadata.extension.as_str());
-
         for subtitle in &media_file.subtitles {
+            let subtitle_file_name = renamed_subtitle_file_name(
+                subtitle,
+                &media_file.video.name,
+                video_file_name,
+                media_file.metadata.extension.as_str(),
+            );
             let success = self
                 .transfer_subtitle_file(
                     parent_path,
                     parent_dir_id,
                     subtitle,
-                    subtitle_file_name_replace_from,
-                    subtitle_file_name_replace_to,
+                    subtitle_file_name.as_str(),
                 )
                 .await?;
             if !success {
@@ -487,26 +504,17 @@ where
         parent_path: &str,
         parent_dir_id: i64,
         raw_file: &RawFile,
-        file_name_replace_from: &str,
-        file_name_replace_to: &str,
+        file_name: &str,
     ) -> AppResult<bool> {
-        let file_name = raw_file
-            .name
-            .replace(file_name_replace_from, file_name_replace_to);
         let res = self
-            .transfer_raw_file(
-                parent_dir_id,
-                file_name.as_str(),
-                raw_file.size,
-                &raw_file.etag,
-            )
+            .transfer_raw_file(parent_dir_id, file_name, raw_file.size, &raw_file.etag)
             .await
             .inspect_err(|e| {
                 error!("Failed to transfer file {}, error: {}", file_name, e);
             })?;
         match res {
             Some(id) => {
-                self.finish_subtitle_transfer(parent_path, file_name.as_str(), id)
+                self.finish_subtitle_transfer(parent_path, file_name, id)
                     .await
             }
             None => {
@@ -604,6 +612,16 @@ mod tests {
         }
     }
 
+    fn create_subtitle(name: &str) -> RawFile {
+        RawFile {
+            id: Some(2),
+            name: name.into(),
+            etag: Etag::Md5("etag".into()),
+            size: 10,
+            path: "/remote/path".into(),
+        }
+    }
+
     fn create_tv_detail() -> TvDetail {
         TvDetail {
             id: 1,
@@ -668,5 +686,39 @@ mod tests {
                 ..
             } if missing_episodes.is_empty()
         ));
+    }
+
+    #[test]
+    fn renamed_subtitle_file_name_tracks_video_rename() {
+        let subtitle = create_subtitle("Show.S01E01.zh.srt");
+
+        let renamed = renamed_subtitle_file_name(
+            &subtitle,
+            "Show.S01E01.mkv",
+            "Test.Show.2024.S01E01.1080p.mkv",
+            ".mkv",
+        );
+
+        assert_eq!(renamed, "Test.Show.2024.S01E01.1080p.zh.srt");
+    }
+
+    #[test]
+    fn build_local_cleanup_paths_includes_strm_and_subtitles() {
+        let mut media = create_media_file("Show.S01E01.mkv", 100);
+        media.subtitles = vec![
+            create_subtitle("Show.S01E01.zh.srt"),
+            create_subtitle("Show.S01E01.en.ass"),
+        ];
+
+        let paths = build_local_cleanup_paths("/local/show", &media);
+
+        assert_eq!(
+            paths,
+            vec![
+                "/local/show/Show.S01E01.strm".to_string(),
+                "/local/show/Show.S01E01.zh.srt".to_string(),
+                "/local/show/Show.S01E01.en.ass".to_string(),
+            ]
+        );
     }
 }
