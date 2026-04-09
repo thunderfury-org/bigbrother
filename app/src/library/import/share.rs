@@ -11,6 +11,47 @@ use super::{
 use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::error::{AppError, AppResult};
 
+struct DirectoryEntries<T> {
+    child_dirs: Vec<(T, String)>,
+    raw_files: Vec<RawFile>,
+}
+
+impl<T> DirectoryEntries<T> {
+    fn new(child_dirs: Vec<(T, String)>, raw_files: Vec<RawFile>) -> Self {
+        Self {
+            child_dirs,
+            raw_files,
+        }
+    }
+}
+
+struct ShareTraversal<T> {
+    pending_dirs: Vec<(T, String)>,
+    raw_files: Vec<RawFile>,
+}
+
+impl<T> ShareTraversal<T> {
+    fn new(root: (T, String)) -> Self {
+        Self {
+            pending_dirs: vec![root],
+            raw_files: Vec::new(),
+        }
+    }
+
+    fn next_dir(&mut self) -> Option<(T, String)> {
+        self.pending_dirs.pop()
+    }
+
+    fn extend(&mut self, entries: DirectoryEntries<T>) {
+        self.pending_dirs.extend(entries.child_dirs);
+        self.raw_files.extend(entries.raw_files);
+    }
+
+    fn into_raw_files(self) -> Vec<RawFile> {
+        self.raw_files
+    }
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -85,20 +126,18 @@ where
         share_key: &str,
         share_password: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let mut all_files = Vec::new();
-        let mut stack = vec![(0, String::new())];
+        let mut traversal = ShareTraversal::new((0, String::new()));
 
-        while let Some((parent_id, parent_path)) = stack.pop() {
+        while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let files = self
                 .share_remote
                 .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
 
-            let raw_files = collect_pan123_directory_entries(&files, &parent_path, &mut stack);
-            all_files.extend(self.build_media_files(raw_files));
+            traversal.extend(collect_pan123_directory_entries(&files, &parent_path));
         }
 
-        Ok(all_files)
+        Ok(self.build_media_files(traversal.into_raw_files()))
     }
 
     async fn list_files_from_pan189_share(
@@ -107,21 +146,23 @@ where
     ) -> AppResult<Vec<MediaFile>> {
         let share_info = self.share_remote.get_pan189_share_info(share_code).await?;
 
-        let mut all_files = Vec::new();
-        let mut stack = vec![(share_info.file_id, share_info.file_name.to_owned())];
+        let mut traversal =
+            ShareTraversal::new((share_info.file_id, share_info.file_name.to_owned()));
 
-        while let Some((parent_id, parent_path)) = stack.pop() {
+        while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
                 .share_remote
                 .list_pan189_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
 
-            let raw_files =
-                collect_pan189_directory_entries(&folders, &files, &parent_path, &mut stack);
-            all_files.extend(self.build_media_files(raw_files));
+            traversal.extend(collect_pan189_directory_entries(
+                &folders,
+                &files,
+                &parent_path,
+            ));
         }
 
-        Ok(all_files)
+        Ok(self.build_media_files(traversal.into_raw_files()))
     }
 
     async fn list_files_from_pan115_share(
@@ -129,33 +170,31 @@ where
         share_code: &str,
         receive_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let mut all_files = Vec::new();
-        let mut stack = vec![("0".to_string(), String::new())];
+        let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
 
-        while let Some((cid, parent_path)) = stack.pop() {
+        while let Some((cid, parent_path)) = traversal.next_dir() {
             let entries = self
                 .share_remote
                 .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
 
-            let raw_files = collect_pan115_directory_entries(&entries, &parent_path, &mut stack);
-            all_files.extend(self.build_media_files(raw_files));
+            traversal.extend(collect_pan115_directory_entries(&entries, &parent_path));
         }
 
-        Ok(all_files)
+        Ok(self.build_media_files(traversal.into_raw_files()))
     }
 }
 
 fn collect_pan123_directory_entries(
     files: &[LibraryFile],
     parent_path: &str,
-    stack: &mut Vec<(i64, String)>,
-) -> Vec<RawFile> {
+) -> DirectoryEntries<i64> {
+    let mut child_dirs = Vec::new();
     let mut raw_files = Vec::new();
 
     for file in files {
         if file.is_dir {
-            stack.push((file.file_id, child_share_path(parent_path, &file.file_name)));
+            child_dirs.push((file.file_id, child_share_path(parent_path, &file.file_name)));
         } else {
             raw_files.push(RawFile {
                 id: Some(file.file_id),
@@ -167,23 +206,25 @@ fn collect_pan123_directory_entries(
         }
     }
 
-    raw_files
+    DirectoryEntries::new(child_dirs, raw_files)
 }
 
 fn collect_pan189_directory_entries(
     folders: &[Pan189Folder],
     files: &[Pan189File],
     parent_path: &str,
-    stack: &mut Vec<(String, String)>,
-) -> Vec<RawFile> {
-    for folder in folders {
-        stack.push((
-            folder.id.to_owned(),
-            child_share_path(parent_path, &folder.name),
-        ));
-    }
+) -> DirectoryEntries<String> {
+    let child_dirs = folders
+        .iter()
+        .map(|folder| {
+            (
+                folder.id.to_owned(),
+                child_share_path(parent_path, &folder.name),
+            )
+        })
+        .collect();
 
-    files
+    let raw_files = files
         .iter()
         .map(|file| RawFile {
             id: None,
@@ -192,14 +233,16 @@ fn collect_pan189_directory_entries(
             size: file.size,
             path: parent_path.to_owned(),
         })
-        .collect()
+        .collect();
+
+    DirectoryEntries::new(child_dirs, raw_files)
 }
 
 fn collect_pan115_directory_entries(
     entries: &[Pan115FileEntry],
     parent_path: &str,
-    stack: &mut Vec<(String, String)>,
-) -> Vec<RawFile> {
+) -> DirectoryEntries<String> {
+    let mut child_dirs = Vec::new();
     let mut raw_files = Vec::new();
 
     for entry in entries {
@@ -212,11 +255,11 @@ fn collect_pan115_directory_entries(
                 path: parent_path.to_owned(),
             });
         } else if let Some(cid) = &entry.cid {
-            stack.push((cid.to_owned(), child_share_path(parent_path, &entry.name)));
+            child_dirs.push((cid.to_owned(), child_share_path(parent_path, &entry.name)));
         }
     }
 
-    raw_files
+    DirectoryEntries::new(child_dirs, raw_files)
 }
 
 fn child_share_path(parent_path: &str, name: &str) -> String {
@@ -230,7 +273,6 @@ mod tests {
 
     #[test]
     fn collect_pan123_directory_entries_splits_dirs_and_files() {
-        let mut stack = Vec::new();
         let files = vec![
             LibraryFile {
                 file_id: 1,
@@ -248,16 +290,15 @@ mod tests {
             },
         ];
 
-        let raw_files = collect_pan123_directory_entries(&files, "/root", &mut stack);
+        let entries = collect_pan123_directory_entries(&files, "/root");
 
-        assert_eq!(stack, vec![(1, "/root/Season 01".into())]);
-        assert_eq!(raw_files.len(), 1);
-        assert_eq!(raw_files[0].name, "movie.mkv");
+        assert_eq!(entries.child_dirs, vec![(1, "/root/Season 01".into())]);
+        assert_eq!(entries.raw_files.len(), 1);
+        assert_eq!(entries.raw_files[0].name, "movie.mkv");
     }
 
     #[test]
     fn collect_pan189_directory_entries_tracks_folders_and_files() {
-        let mut stack = Vec::new();
         let folders = vec![Pan189Folder {
             id: "next".into(),
             name: "folder".into(),
@@ -268,16 +309,18 @@ mod tests {
             md5: "md5".into(),
         }];
 
-        let raw_files = collect_pan189_directory_entries(&folders, &files, "/parent", &mut stack);
+        let entries = collect_pan189_directory_entries(&folders, &files, "/parent");
 
-        assert_eq!(stack, vec![("next".into(), "/parent/folder".into())]);
-        assert_eq!(raw_files.len(), 1);
-        assert!(matches!(&raw_files[0].etag, Etag::Md5(value) if value == "md5"));
+        assert_eq!(
+            entries.child_dirs,
+            vec![("next".into(), "/parent/folder".into())]
+        );
+        assert_eq!(entries.raw_files.len(), 1);
+        assert!(matches!(&entries.raw_files[0].etag, Etag::Md5(value) if value == "md5"));
     }
 
     #[test]
     fn collect_pan115_directory_entries_tracks_cids_and_files() {
-        let mut stack = Vec::new();
         let entries = vec![
             Pan115FileEntry {
                 cid: Some("child".into()),
@@ -295,10 +338,31 @@ mod tests {
             },
         ];
 
-        let raw_files = collect_pan115_directory_entries(&entries, "/root", &mut stack);
+        let collected = collect_pan115_directory_entries(&entries, "/root");
 
-        assert_eq!(stack, vec![("child".into(), "/root/dir".into())]);
-        assert_eq!(raw_files.len(), 1);
-        assert_eq!(raw_files[0].name, "subtitle.srt");
+        assert_eq!(
+            collected.child_dirs,
+            vec![("child".into(), "/root/dir".into())]
+        );
+        assert_eq!(collected.raw_files.len(), 1);
+        assert_eq!(collected.raw_files[0].name, "subtitle.srt");
+    }
+
+    #[test]
+    fn share_traversal_collects_nested_entries() {
+        let mut traversal = ShareTraversal::new((0, "/root".to_string()));
+        traversal.extend(DirectoryEntries::new(
+            vec![(1, "/root/Season 01".into())],
+            vec![RawFile {
+                id: Some(2),
+                name: "movie.mkv".into(),
+                etag: Etag::Md5("etag".into()),
+                size: 100,
+                path: "/root".into(),
+            }],
+        ));
+
+        assert_eq!(traversal.next_dir(), Some((1, "/root/Season 01".into())));
+        assert_eq!(traversal.into_raw_files().len(), 1);
     }
 }
