@@ -1,15 +1,16 @@
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use crate::domain::import::{
+    inner::{Media, MediaFile},
+    policy::{
+        group_video_and_subtitle_files, insert_movie_media, insert_tv_media,
+        resolve_tv_episode_slot,
+    },
+};
 use std::collections::HashMap;
 
-pub(super) use super::policy::group_video_and_subtitle_files;
-
-use super::{
-    Importer,
-    inner::{Media, MediaFile},
-    policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot},
-};
+use super::Importer;
 use crate::error::AppResult;
 
 impl<L, S, M, F> Importer<L, S, M, F>
@@ -91,10 +92,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        application::import::{
-            Genre, Season, TvDetail,
-            inner::{Etag, RawFile},
-        },
+        application::import::{Genre, Season, TvDetail},
+        domain::import::inner::{Etag, RawFile},
         domain::media::{FileType, Metadata},
     };
 

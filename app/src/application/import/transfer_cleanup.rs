@@ -1,6 +1,7 @@
+use crate::domain::import::inner::MediaFile;
+
 use super::{
     Importer,
-    inner::MediaFile,
     transfer_support::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },

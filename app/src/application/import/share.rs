@@ -5,7 +5,6 @@ pub use super::source::ShareUrl;
 
 use super::{
     ImportedMedia, Importer,
-    inner::MediaFile,
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
         collect_pan189_directory_entries,
@@ -16,6 +15,7 @@ use super::{
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use crate::domain::import::inner::MediaFile;
 use crate::error::{AppError, AppResult};
 
 impl<L, S, M, F> Importer<L, S, M, F>

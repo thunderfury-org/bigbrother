@@ -2,14 +2,16 @@ use std::collections::HashMap;
 
 use tracing::info;
 
-use super::{
-    Importer, MovieDetail, TvDetail,
-    inner::{MediaFile, RawFile},
-};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use crate::domain::import::{
+    MovieDetail, TvDetail,
+    inner::{MediaFile, RawFile},
+};
 use crate::{domain::library::import_paths, error::AppResult};
+
+use super::Importer;
 
 impl<L, S, M, F> Importer<L, S, M, F>
 where

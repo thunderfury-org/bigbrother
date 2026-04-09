@@ -3,10 +3,13 @@ use std::collections::HashMap;
 use tracing::info;
 
 use crate::{
-    application::import_ports::MetadataCatalog, domain::media::Metadata, error::AppResult,
+    application::import_ports::MetadataCatalog,
+    domain::{
+        import::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
+        media::Metadata,
+    },
+    error::AppResult,
 };
-
-use super::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail};
 
 pub(super) struct TmdbLookup<M> {
     metadata_catalog: M,

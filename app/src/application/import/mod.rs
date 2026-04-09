@@ -3,12 +3,9 @@ use crate::application::import_ports::{
 };
 
 mod group;
-mod inner;
 pub(super) mod json;
 mod library;
 mod metadata;
-mod model;
-mod policy;
 pub(super) mod share;
 mod share_collect;
 mod share_walk;
@@ -20,7 +17,7 @@ mod transfer_save;
 mod transfer_support;
 mod transfer_target;
 
-pub(crate) use model::{
+pub(crate) use crate::domain::import::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };

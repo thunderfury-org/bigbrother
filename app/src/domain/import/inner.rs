@@ -5,7 +5,7 @@ use crate::domain::media::Metadata;
 use super::{MovieDetail, TvDetail};
 
 #[derive(Debug, Clone)]
-pub(super) struct RawFile {
+pub(crate) struct RawFile {
     pub id: Option<i64>,
     pub name: String,
     pub etag: Etag,
@@ -14,7 +14,7 @@ pub(super) struct RawFile {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum Etag {
+pub(crate) enum Etag {
     Md5(String),
     Sha1(String),
 }
@@ -33,13 +33,13 @@ impl From<&str> for Etag {
 
 /// 表示一个媒体文件，包含视频文件和字幕文件
 #[derive(Debug)]
-pub(super) struct MediaFile {
+pub(crate) struct MediaFile {
     pub metadata: Box<Metadata>,
     pub video: RawFile,
     pub subtitles: Vec<RawFile>,
 }
 
-pub(super) enum Media<'a> {
+pub(crate) enum Media<'a> {
     Movie {
         detail: MovieDetail,
         files: Vec<&'a MediaFile>,
@@ -51,7 +51,7 @@ pub(super) enum Media<'a> {
     },
 }
 
-pub(super) struct TransferEpisodeArgs<'a> {
+pub(crate) struct TransferEpisodeArgs<'a> {
     pub detail: &'a TvDetail,
     pub season_number: u32,
     pub episode_number: u32,

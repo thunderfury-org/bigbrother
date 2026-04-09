@@ -2,11 +2,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use tracing::info;
 
-use super::{
-    ImportedMedia, Importer, MovieDetail, TvDetail,
+use crate::domain::import::{
     inner::{Media, MediaFile, TransferEpisodeArgs},
-    library,
     policy::{SeasonTransferState, accumulate_episode_transfer_result, select_largest_media_file},
+};
+
+use super::{
+    ImportedMedia, Importer, MovieDetail, TvDetail, library,
     transfer_support::{build_imported_tv_result, should_skip_existing_media},
 };
 use crate::application::import_ports::{

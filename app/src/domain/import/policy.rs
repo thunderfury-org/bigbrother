@@ -10,13 +10,13 @@ use crate::domain::media::Metadata;
 use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct SeasonTransferState {
-    pub(super) has_failed: bool,
-    pub(super) total_size: u64,
-    pub(super) episodes: Vec<u32>,
+pub(crate) struct SeasonTransferState {
+    pub(crate) has_failed: bool,
+    pub(crate) total_size: u64,
+    pub(crate) episodes: Vec<u32>,
 }
 
-pub(super) fn get_number_of_episodes_in_season(detail: &TvDetail, season_number: u32) -> u32 {
+pub(crate) fn get_number_of_episodes_in_season(detail: &TvDetail, season_number: u32) -> u32 {
     detail
         .seasons
         .iter()
@@ -25,7 +25,7 @@ pub(super) fn get_number_of_episodes_in_season(detail: &TvDetail, season_number:
         .unwrap_or_default()
 }
 
-pub(super) fn get_max_episode_number(
+pub(crate) fn get_max_episode_number(
     episodes: &[u32],
     existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
 ) -> u32 {
@@ -35,7 +35,7 @@ pub(super) fn get_max_episode_number(
     )
 }
 
-pub(super) fn get_missing_episodes(
+pub(crate) fn get_missing_episodes(
     max_episode_number: u32,
     episodes: &[u32],
     existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
@@ -54,7 +54,7 @@ pub(super) fn get_missing_episodes(
     missing_episodes
 }
 
-pub(super) fn group_video_and_subtitle_files(
+pub(crate) fn group_video_and_subtitle_files(
     raw_files: Vec<(Box<Metadata>, RawFile)>,
 ) -> Vec<MediaFile> {
     if raw_files.is_empty() {
@@ -110,7 +110,7 @@ pub(super) fn group_video_and_subtitle_files(
     media_files_map.into_values().collect()
 }
 
-pub(super) fn resolve_tv_episode_slot(file: &MediaFile, tv_info: &TvDetail) -> Option<(u32, u32)> {
+pub(crate) fn resolve_tv_episode_slot(file: &MediaFile, tv_info: &TvDetail) -> Option<(u32, u32)> {
     let season_number = match file.metadata.season_number {
         Some(season_number) => season_number,
         None => {
@@ -137,7 +137,7 @@ pub(super) fn resolve_tv_episode_slot(file: &MediaFile, tv_info: &TvDetail) -> O
     Some((season_number, episode_number))
 }
 
-pub(super) fn insert_tv_media<'a>(
+pub(crate) fn insert_tv_media<'a>(
     grouped_files: &mut HashMap<u32, Media<'a>>,
     tv_info: TvDetail,
     season_number: u32,
@@ -160,7 +160,7 @@ pub(super) fn insert_tv_media<'a>(
     }
 }
 
-pub(super) fn insert_movie_media<'a>(
+pub(crate) fn insert_movie_media<'a>(
     grouped_files: &mut HashMap<u32, Media<'a>>,
     movie_info: MovieDetail,
     file: &'a MediaFile,
@@ -176,7 +176,7 @@ pub(super) fn insert_movie_media<'a>(
     }
 }
 
-pub(super) fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
+pub(crate) fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> String {
     if file.video.name.starts_with(name_prefix) {
         return file.video.name.to_owned();
     }
@@ -218,7 +218,7 @@ pub(super) fn format_video_file_name(name_prefix: &str, file: &MediaFile) -> Str
     }
 }
 
-pub(super) fn need_overwrite_existing_files(
+pub(crate) fn need_overwrite_existing_files(
     existing_files: &[MediaFile],
     media_file: &MediaFile,
 ) -> bool {
@@ -227,7 +227,7 @@ pub(super) fn need_overwrite_existing_files(
         .all(|file| file.video.size < media_file.video.size)
 }
 
-pub(super) fn collect_replaced_media_files<'a>(
+pub(crate) fn collect_replaced_media_files<'a>(
     existing_files: &'a [MediaFile],
     saved_filename: &Option<String>,
 ) -> Vec<&'a MediaFile> {
@@ -241,7 +241,7 @@ pub(super) fn collect_replaced_media_files<'a>(
         .collect()
 }
 
-pub(super) fn select_largest_media_file<'a>(
+pub(crate) fn select_largest_media_file<'a>(
     media_files: &'a [&MediaFile],
     context: &str,
 ) -> AppResult<&'a MediaFile> {
@@ -252,7 +252,7 @@ pub(super) fn select_largest_media_file<'a>(
         .ok_or_else(|| AppError::NotFound(format!("no video file found when transfer {}", context)))
 }
 
-pub(super) fn accumulate_episode_transfer_result(
+pub(crate) fn accumulate_episode_transfer_result(
     state: &mut SeasonTransferState,
     episode_number: u32,
     result: Option<(bool, u64)>,
@@ -272,10 +272,8 @@ pub(super) fn accumulate_episode_transfer_result(
 #[cfg(test)]
 mod tests {
     use crate::{
-        application::import::{
-            Genre, Season,
-            inner::{Etag, RawFile},
-        },
+        application::import::{Genre, Season},
+        domain::import::inner::{Etag, RawFile},
         domain::media::Metadata,
     };
 

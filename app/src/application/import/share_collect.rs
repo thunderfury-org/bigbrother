@@ -1,6 +1,7 @@
+use crate::domain::import::inner::RawFile;
+
 use super::{
     LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder,
-    inner::RawFile,
     share_walk::{DirectoryEntries, child_share_path},
 };
 
@@ -84,7 +85,7 @@ pub(super) fn collect_pan115_directory_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::import::inner::Etag;
+    use crate::domain::import::inner::Etag;
 
     #[test]
     fn collect_pan123_directory_entries_splits_dirs_and_files() {

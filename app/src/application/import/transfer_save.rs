@@ -1,6 +1,8 @@
+use crate::domain::import::inner::{Etag, MediaFile, RawFile};
+use crate::domain::import::policy::format_video_file_name;
+
 use super::{
     Importer,
-    inner::{Etag, MediaFile, RawFile},
     transfer_support::{
         build_subtitle_transfer_plan, log_file_not_saved, log_file_saved, remote_child_path,
     },
@@ -25,7 +27,7 @@ where
         name_prefix: &str,
         media_file: &MediaFile,
     ) -> AppResult<Option<String>> {
-        let video_file_name = super::policy::format_video_file_name(name_prefix, media_file);
+        let video_file_name = format_video_file_name(name_prefix, media_file);
 
         if !self
             .transfer_subtitles_for_media(parent_path, parent_dir_id, &video_file_name, media_file)

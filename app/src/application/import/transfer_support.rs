@@ -3,15 +3,15 @@ use std::time::Duration;
 
 use tracing::info;
 
-use super::{
-    ImportedMedia, TvDetail,
+use crate::domain::import::{
     inner::{MediaFile, RawFile},
-    library,
     policy::{
         SeasonTransferState, collect_replaced_media_files, get_max_episode_number,
         get_missing_episodes, get_number_of_episodes_in_season, need_overwrite_existing_files,
     },
 };
+
+use super::{ImportedMedia, TvDetail, library};
 
 pub(super) fn should_skip_existing_media(
     existing_files: &[MediaFile],
@@ -156,7 +156,8 @@ pub(super) fn build_subtitle_transfer_plan<'a>(
 mod tests {
     use super::*;
     use crate::{
-        application::import::{Genre, Season, inner::Etag},
+        application::import::{Genre, Season},
+        domain::import::inner::Etag,
         domain::media::Metadata,
     };
 

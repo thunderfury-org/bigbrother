@@ -1,4 +1,4 @@
-use super::inner::RawFile;
+use crate::domain::import::inner::RawFile;
 
 pub(super) struct DirectoryEntries<T> {
     pub(super) child_dirs: Vec<(T, String)>,
@@ -48,7 +48,7 @@ pub(super) fn child_share_path(parent_path: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::import::inner::Etag;
+    use crate::domain::import::inner::Etag;
 
     #[test]
     fn share_traversal_collects_nested_entries() {

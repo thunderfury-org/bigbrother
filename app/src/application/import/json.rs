@@ -4,12 +4,12 @@ use tracing::info;
 
 use super::{
     ImportedMedia, Importer,
-    inner::{MediaFile, RawFile},
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use crate::domain::import::inner::{MediaFile, RawFile};
 use crate::error::AppResult;
 
 impl<L, S, M, F> Importer<L, S, M, F>

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use super::{Importer, TvDetail, inner::MediaFile, transfer_support::existing_season_dir_id};
+use crate::domain::import::inner::MediaFile;
+
+use super::{Importer, TvDetail, transfer_support::existing_season_dir_id};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };

@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use crate::domain::import::{
+    inner::{MediaFile, RawFile},
+    policy::group_video_and_subtitle_files,
+};
 use crate::domain::media::Metadata;
 
-use super::{
-    Importer,
-    group::group_video_and_subtitle_files,
-    inner::{MediaFile, RawFile},
-};
+use super::Importer;
 
 #[derive(Default)]
 pub(super) struct MetadataLookup {
@@ -85,7 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::import::inner::Etag;
+    use crate::domain::import::inner::Etag;
 
     fn raw_file(name: &str, path: &str) -> RawFile {
         RawFile {
