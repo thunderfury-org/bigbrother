@@ -1,14 +1,14 @@
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 
 mod group;
 mod inner;
 pub(super) mod json;
 mod library;
-mod local;
 mod metadata;
 mod model;
 mod policy;
-pub(crate) mod remote;
 pub(super) mod share;
 mod share_collect;
 mod share_walk;
@@ -24,6 +24,7 @@ pub(crate) use model::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
+pub use share::ShareUrl;
 pub use source::is_fslink;
 
 #[derive(Debug)]
@@ -49,49 +50,33 @@ pub enum ImportedMedia {
     },
 }
 
-#[derive(Clone)]
-pub(crate) struct ImportPathConfig {
-    pub(crate) remote_path: String,
-    pub(crate) local_path: String,
-    pub(crate) strm_download_url: String,
-}
-
-pub(crate) struct Importer<L, S, M> {
-    library_remote: remote::LibraryRemote<L>,
-    share_remote: remote::ShareRemote<S>,
-    local: local::ImportLocalStore,
+pub(crate) struct Importer<L, S, M, F> {
+    library_gateway: L,
+    share_source: S,
+    local: F,
     tmdb_lookup: tmdb_info::TmdbLookup<M>,
     metadata_lookup: metadata::MetadataLookup,
 }
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(crate) fn new(
         library_gateway: L,
         share_source: S,
         metadata_catalog: M,
-        paths: ImportPathConfig,
+        local_store: F,
     ) -> Self {
         Self {
-            library_remote: remote::LibraryRemote::new(library_gateway, paths.clone()),
-            share_remote: remote::ShareRemote::new(share_source),
-            local: local::ImportLocalStore::new(paths),
+            library_gateway,
+            share_source,
+            local: local_store,
             tmdb_lookup: tmdb_info::TmdbLookup::new(metadata_catalog),
             metadata_lookup: metadata::MetadataLookup::default(),
-        }
-    }
-}
-
-impl ImportPathConfig {
-    pub(crate) fn new(remote_path: String, local_path: String, strm_download_url: String) -> Self {
-        Self {
-            remote_path,
-            local_path,
-            strm_download_url,
         }
     }
 }

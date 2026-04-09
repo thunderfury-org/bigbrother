@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    error::AppResult,
-    library::import::{
+    application::import::{
         LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
         SearchMovieResult, SearchTvResult, TvDetail,
     },
+    error::AppResult,
 };
 
 pub trait LibraryGateway: Clone {
@@ -59,4 +59,17 @@ pub trait MetadataCatalog: Clone {
     async fn get_movie_detail(&self, id: u32) -> AppResult<Option<MovieDetail>>;
     async fn search_tv(&self, title: &str, year: &str) -> AppResult<Vec<SearchTvResult>>;
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>>;
+}
+
+pub trait ImportLocalStore: Clone {
+    fn remote_library_path(&self) -> &str;
+    fn local_path_for_remote(&self, remote_path: &str) -> String;
+    fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String;
+    async fn write_strm_file(
+        &self,
+        remote_file_path: &str,
+        extension: &str,
+        file_id: i64,
+    ) -> AppResult<()>;
+    async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()>;
 }

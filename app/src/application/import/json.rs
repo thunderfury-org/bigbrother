@@ -7,14 +7,17 @@ use super::{
     inner::{MediaFile, RawFile},
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::AppResult;
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from fslink");

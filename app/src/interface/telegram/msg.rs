@@ -10,7 +10,7 @@ use tracing::{error, info};
 
 use super::{ImportService, NotifyService, format::format_imported_media};
 use crate::{
-    library::{self, ImportedMedia, ShareUrl},
+    application::import::{ImportedMedia, ShareUrl, is_fslink},
     log_time,
 };
 
@@ -124,9 +124,7 @@ impl MsgProcessor<'_> {
 
     fn extract_fslink(&self) -> Vec<&str> {
         let text = self.msg.text().or(self.msg.caption()).unwrap_or_default();
-        text.lines()
-            .filter(|line| library::is_fslink(line))
-            .collect()
+        text.lines().filter(|line| is_fslink(line)).collect()
     }
 
     fn extract_urls(&self) -> Vec<Url> {

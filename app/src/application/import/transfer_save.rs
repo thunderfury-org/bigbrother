@@ -5,15 +5,18 @@ use super::{
         build_subtitle_transfer_plan, log_file_not_saved, log_file_saved, remote_child_path,
     },
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::AppResult;
 use tracing::{error, info};
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(super) async fn transfer_media_file(
         &self,
@@ -156,7 +159,7 @@ where
         let local_file_path = self
             .local
             .local_path_for_remote(remote_child_path(parent_path, file_name).as_str());
-        self.library_remote
+        self.library_gateway
             .download_library_file(file_id, local_file_path.as_str())
             .await?;
         info!("Subtitle file {} downloaded", local_file_path);
@@ -172,12 +175,12 @@ where
     ) -> AppResult<Option<i64>> {
         Ok(match &etag {
             Etag::Md5(etag) => {
-                self.library_remote
+                self.library_gateway
                     .fast_upload_md5(parent_dir_id, file_name, etag, size)
                     .await?
             }
             Etag::Sha1(sha1) => {
-                self.library_remote
+                self.library_gateway
                     .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
                     .await?
             }

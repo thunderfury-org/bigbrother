@@ -1,4 +1,6 @@
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use std::collections::HashMap;
 
 pub(super) use super::policy::group_video_and_subtitle_files;
@@ -10,11 +12,12 @@ use super::{
 };
 use crate::error::AppResult;
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie
     pub(super) async fn group_media_files<'a>(
@@ -88,11 +91,11 @@ where
 mod tests {
     use super::*;
     use crate::{
-        domain::media::{FileType, Metadata},
-        library::import::{
+        application::import::{
             Genre, Season, TvDetail,
             inner::{Etag, RawFile},
         },
+        domain::media::{FileType, Metadata},
     };
 
     // Helper function to create a test RawFile

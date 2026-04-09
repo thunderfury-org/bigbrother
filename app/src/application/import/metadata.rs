@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::domain::media::Metadata;
 
 use super::{
@@ -68,11 +70,12 @@ impl MetadataLookup {
     }
 }
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(super) fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
         self.metadata_lookup.build_media_files(raw_files)
@@ -82,7 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::import::inner::Etag;
+    use crate::application::import::inner::Etag;
 
     fn raw_file(name: &str, path: &str) -> RawFile {
         RawFile {

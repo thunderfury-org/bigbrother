@@ -1,48 +1,41 @@
 use crate::{
-    application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
+    application::import::{ImportedMedia, Importer, ShareUrl},
+    application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource},
     error::AppResult,
-    library::{
-        ImportedMedia, ShareUrl,
-        import::{ImportPathConfig, Importer},
-    },
 };
 
 #[derive(Clone)]
-pub struct ImportMediaService<L, S, M> {
+pub struct ImportMediaService<L, S, M, F> {
     library_gateway: L,
     share_source: S,
     metadata_catalog: M,
-    paths: ImportPathConfig,
+    local_store: F,
 }
 
-impl<L, S, M> ImportMediaService<L, S, M> {
-    pub fn new(
-        library_gateway: L,
-        share_source: S,
-        metadata_catalog: M,
-        paths: ImportPathConfig,
-    ) -> Self {
+impl<L, S, M, F> ImportMediaService<L, S, M, F> {
+    pub fn new(library_gateway: L, share_source: S, metadata_catalog: M, local_store: F) -> Self {
         Self {
             library_gateway,
             share_source,
             metadata_catalog,
-            paths,
+            local_store,
         }
     }
 }
 
-impl<L, S, M> ImportMediaService<L, S, M>
+impl<L, S, M, F> ImportMediaService<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
-    fn importer(&self) -> Importer<L, S, M> {
+    fn importer(&self) -> Importer<L, S, M, F> {
         Importer::new(
             self.library_gateway.clone(),
             self.share_source.clone(),
             self.metadata_catalog.clone(),
-            self.paths.clone(),
+            self.local_store.clone(),
         )
     }
 
@@ -72,11 +65,12 @@ mod tests {
     use reqwest::Url;
 
     use super::*;
-    use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
-    use crate::library::import::{
+    use crate::application::import::{
         LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
         SearchMovieResult, SearchTvResult, TvDetail,
     };
+    use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+    use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 
     #[derive(Clone, Default)]
     struct FakeLibraryGateway {
@@ -246,7 +240,7 @@ mod tests {
                 original_language: "en".into(),
                 original_name: "Breaking Bad".into(),
                 genres: Vec::new(),
-                seasons: vec![crate::library::import::Season {
+                seasons: vec![crate::application::import::Season {
                     id: 1,
                     name: "Season 1".into(),
                     episode_count: 7,
@@ -263,7 +257,11 @@ mod tests {
             FakeLibraryGateway::default(),
             share_source.clone(),
             FakeMetadataCatalog,
-            ImportPathConfig::new("/remote".into(), "/local".into(), "http://localhost".into()),
+            FilesystemImportLocalStore::new(
+                "/remote".into(),
+                "/local".into(),
+                "http://localhost".into(),
+            ),
         );
         let url = Url::parse("https://www.123684.com/s/test").unwrap();
         let share = ShareUrl::from(&url).unwrap();
@@ -289,7 +287,7 @@ mod tests {
             gateway.clone(),
             FakeShareSource::default(),
             FakeMetadataCatalog,
-            ImportPathConfig::new(
+            FilesystemImportLocalStore::new(
                 "/remote".into(),
                 local_dir.to_string_lossy().into_owned(),
                 "http://localhost/d".into(),
@@ -353,7 +351,7 @@ mod tests {
             gateway.clone(),
             FakeShareSource::default(),
             FakeMetadataCatalog,
-            ImportPathConfig::new(
+            FilesystemImportLocalStore::new(
                 "/remote".into(),
                 local_dir.to_string_lossy().into_owned(),
                 "http://localhost/d".into(),
@@ -489,7 +487,7 @@ mod tests {
             gateway.clone(),
             share_source.clone(),
             FakeMetadataCatalog,
-            ImportPathConfig::new(
+            FilesystemImportLocalStore::new(
                 "/remote".into(),
                 local_dir.to_string_lossy().into_owned(),
                 "http://localhost/d".into(),

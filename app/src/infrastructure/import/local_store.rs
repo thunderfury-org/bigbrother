@@ -1,43 +1,50 @@
 use std::{io, path::Path};
 
 use crate::{
+    application::import_ports::ImportLocalStore,
     domain::library::path_mapping::SyncPathMapper,
     error::{AppError, AppResult},
 };
 
-use super::ImportPathConfig;
-
 #[derive(Clone)]
-pub(super) struct ImportLocalStore {
+pub struct FilesystemImportLocalStore {
+    remote_path: String,
     strm_download_url: String,
     path_mapper: SyncPathMapper,
 }
 
-impl ImportLocalStore {
-    pub(super) fn new(paths: ImportPathConfig) -> Self {
+impl FilesystemImportLocalStore {
+    pub fn new(remote_path: String, local_path: String, strm_download_url: String) -> Self {
         Self {
-            strm_download_url: paths.strm_download_url,
-            path_mapper: SyncPathMapper::new(paths.remote_path, paths.local_path),
+            path_mapper: SyncPathMapper::new(remote_path.clone(), local_path),
+            remote_path,
+            strm_download_url,
         }
     }
 
-    pub(super) fn local_path_for_remote(&self, remote_path: &str) -> String {
-        self.path_mapper.remote_to_local_path(remote_path)
-    }
-
-    pub(super) fn build_strm_url(&self, remote_file_path: &str, file_id: i64) -> String {
+    fn build_strm_url(&self, remote_file_path: &str, file_id: i64) -> String {
         format!(
             "{}{}?file_id={}",
             self.strm_download_url, remote_file_path, file_id
         )
     }
+}
 
-    pub(super) fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
+impl ImportLocalStore for FilesystemImportLocalStore {
+    fn remote_library_path(&self) -> &str {
+        self.remote_path.as_str()
+    }
+
+    fn local_path_for_remote(&self, remote_path: &str) -> String {
+        self.path_mapper.remote_to_local_path(remote_path)
+    }
+
+    fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
         self.path_mapper
             .remote_to_local_strm_path(remote_file_path, extension)
     }
 
-    pub(super) async fn write_strm_file(
+    async fn write_strm_file(
         &self,
         remote_file_path: &str,
         extension: &str,
@@ -51,7 +58,7 @@ impl ImportLocalStore {
         Ok(())
     }
 
-    pub(super) async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()> {
+    async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()> {
         if let Err(err) = tokio::fs::remove_file(path).await
             && err.kind() != io::ErrorKind::NotFound
         {
@@ -68,12 +75,12 @@ impl ImportLocalStore {
 mod tests {
     use super::*;
 
-    fn local_store() -> ImportLocalStore {
-        ImportLocalStore::new(ImportPathConfig::new(
+    fn local_store() -> FilesystemImportLocalStore {
+        FilesystemImportLocalStore::new(
             "/remote".to_string(),
             "/local".to_string(),
             "http://localhost/d".to_string(),
-        ))
+        )
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub(super) fn child_share_path(parent_path: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::import::inner::Etag;
+    use crate::application::import::inner::Etag;
 
     #[test]
     fn share_traversal_collects_nested_entries() {

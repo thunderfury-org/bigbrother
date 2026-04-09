@@ -5,7 +5,6 @@ use crate::{
     config,
     error::AppResult,
     infrastructure::{cache::Cache, client, event_bus::EventBus},
-    library::import::ImportPathConfig,
 };
 
 /// Unified client struct containing all API clients
@@ -43,7 +42,9 @@ pub struct RuntimeBootstrapInputs {
     pub media_server_addr: String,
     pub media_server_strm_path_prefix: String,
     pub telegram_user_id: i64,
-    pub import_paths: ImportPathConfig,
+    pub import_remote_path: String,
+    pub import_local_path: String,
+    pub import_strm_download_url: String,
     pub sync_config: SyncStrmConfig,
 }
 
@@ -84,11 +85,9 @@ impl AppContext {
                     .get_strm_path_prefix()
                     .to_string(),
                 telegram_user_id: config.get_telegram_config().user_id,
-                import_paths: ImportPathConfig::new(
-                    config.get_library_config().remote_path.clone(),
-                    config.get_library_config().local_path.clone(),
-                    config.get_media_server_config().get_strm_download_url(),
-                ),
+                import_remote_path: config.get_library_config().remote_path.clone(),
+                import_local_path: config.get_library_config().local_path.clone(),
+                import_strm_download_url: config.get_media_server_config().get_strm_download_url(),
                 sync_config: SyncStrmConfig {
                     remote_path: config.get_library_config().remote_path.clone(),
                     local_path: config.get_library_config().local_path.clone(),

@@ -84,7 +84,7 @@ pub(super) fn collect_pan115_directory_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::import::inner::Etag;
+    use crate::application::import::inner::Etag;
 
     #[test]
     fn collect_pan123_directory_entries_splits_dirs_and_files() {

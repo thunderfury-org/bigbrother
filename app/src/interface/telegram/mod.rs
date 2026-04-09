@@ -12,7 +12,10 @@ use crate::{
         client::library_remote::Pan123LibraryRemote,
         event::publisher::EventBusPublisher,
         fs::tokio_file_store::TokioFileStore,
-        import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+        import::{
+            gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+            local_store::FilesystemImportLocalStore,
+        },
         repo::keyword::SeaOrmKeywordRepository,
     },
 };
@@ -23,8 +26,12 @@ mod format;
 mod msg;
 
 pub(crate) type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
-pub(crate) type ImportService =
-    ImportMediaService<PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway>;
+pub(crate) type ImportService = ImportMediaService<
+    PanLibraryGateway,
+    ShareImportGateway,
+    TmdbMetadataGateway,
+    FilesystemImportLocalStore,
+>;
 pub(crate) type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
 pub(crate) type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 

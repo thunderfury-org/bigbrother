@@ -156,8 +156,8 @@ pub(super) fn build_subtitle_transfer_plan<'a>(
 mod tests {
     use super::*;
     use crate::{
+        application::import::{Genre, Season, inner::Etag},
         domain::media::Metadata,
-        library::import::{Genre, Season, inner::Etag},
     };
 
     fn create_media_file(name: &str, size: u64) -> MediaFile {

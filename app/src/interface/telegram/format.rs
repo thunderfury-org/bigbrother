@@ -1,4 +1,4 @@
-use crate::library::ImportedMedia;
+use crate::application::import::ImportedMedia;
 
 fn format_episodes(episodes: &[u32]) -> String {
     if episodes.is_empty() {

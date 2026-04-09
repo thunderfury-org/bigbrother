@@ -9,7 +9,6 @@ mod domain;
 mod error;
 mod infrastructure;
 mod interface;
-mod library;
 mod logger;
 mod util;
 

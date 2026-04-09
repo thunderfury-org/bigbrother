@@ -5,15 +5,18 @@ use super::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(super) async fn cleanup_replaced_movie_files(
         &self,
@@ -66,7 +69,7 @@ where
         }
 
         let file_ids = collect_library_file_ids(files);
-        self.library_remote
+        self.library_gateway
             .trash_library_files(file_ids.as_slice())
             .await?;
         Ok(())

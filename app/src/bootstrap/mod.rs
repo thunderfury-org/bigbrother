@@ -18,7 +18,10 @@ use crate::{
         event::publisher::EventBusPublisher,
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
-        import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+        import::{
+            gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+            local_store::FilesystemImportLocalStore,
+        },
         repo::keyword::SeaOrmKeywordRepository,
     },
     interface::{
@@ -80,7 +83,11 @@ impl AppRuntime {
                             inputs.clients.pan189.clone(),
                         ),
                         TmdbMetadataGateway::new(inputs.clients.tmdb.clone()),
-                        inputs.import_paths.clone(),
+                        FilesystemImportLocalStore::new(
+                            inputs.import_remote_path.clone(),
+                            inputs.import_local_path.clone(),
+                            inputs.import_strm_download_url.clone(),
+                        ),
                     ),
                     PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
                     SyncStrmService::new(

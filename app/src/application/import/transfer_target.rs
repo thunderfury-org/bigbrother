@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 
 use super::{Importer, TvDetail, inner::MediaFile, transfer_support::existing_season_dir_id};
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(super) async fn resolve_season_target(
         &mut self,
@@ -23,7 +26,7 @@ where
             Some(id) => Ok((id, self.list_episode_files_in_library(id).await?)),
             None => {
                 let id = self
-                    .library_remote
+                    .library_gateway
                     .mkdir_library_dir(tv_dir_id, season_dir)
                     .await?;
                 info!(

@@ -13,14 +13,17 @@ use super::{
     share_walk::ShareTraversal,
     source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::{AppError, AppResult};
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub async fn import_from_share_url(
         &mut self,
@@ -94,7 +97,7 @@ where
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let files = self
-                .share_remote
+                .share_source
                 .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
 
@@ -108,14 +111,14 @@ where
         &mut self,
         share_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let share_info = self.share_remote.get_pan189_share_info(share_code).await?;
+        let share_info = self.share_source.get_pan189_share_info(share_code).await?;
 
         let mut traversal =
             ShareTraversal::new((share_info.file_id, share_info.file_name.to_owned()));
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
-                .share_remote
+                .share_source
                 .list_pan189_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
 
@@ -138,7 +141,7 @@ where
 
         while let Some((cid, parent_path)) = traversal.next_dir() {
             let entries = self
-                .share_remote
+                .share_source
                 .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
 

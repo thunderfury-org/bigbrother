@@ -9,14 +9,17 @@ use super::{
     policy::{SeasonTransferState, accumulate_episode_transfer_result, select_largest_media_file},
     transfer_support::{build_imported_tv_result, should_skip_existing_media},
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::{error::AppResult, log_time};
 
-impl<L, S, M> Importer<L, S, M>
+impl<L, S, M, F> Importer<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
     M: MetadataCatalog,
+    F: ImportLocalStore,
 {
     pub(super) async fn transfer_media_files(
         &mut self,
@@ -54,7 +57,7 @@ where
         ));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.library_remote.library_remote_path();
+        let remote_path = self.local.remote_library_path();
         let movie_path = library::get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .get_or_create_dir_in_library(movie_path.as_str())
@@ -93,10 +96,10 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", library::get_tv_base_name(detail)));
 
-        let remote_path = self.library_remote.library_remote_path();
+        let remote_path = self.local.remote_library_path();
         let tv_path = library::get_tv_path_in_library(remote_path, detail);
         let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.library_remote.list_library_dir_ids(tv_dir_id).await?;
+        let season_dir_ids = self.library_gateway.list_library_dir_ids(tv_dir_id).await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {

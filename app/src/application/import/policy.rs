@@ -272,11 +272,11 @@ pub(super) fn accumulate_episode_transfer_result(
 #[cfg(test)]
 mod tests {
     use crate::{
-        domain::media::Metadata,
-        library::import::{
+        application::import::{
             Genre, Season,
             inner::{Etag, RawFile},
         },
+        domain::media::Metadata,
     };
 
     use super::*;
