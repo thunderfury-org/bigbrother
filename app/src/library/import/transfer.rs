@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 
 use tracing::{error, info};
 
@@ -14,6 +15,37 @@ use super::{
 };
 use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
 use crate::{error::AppResult, log_time};
+
+fn should_skip_existing_media(existing_files: &[MediaFile], media_file: &MediaFile) -> bool {
+    !existing_files.is_empty() && !need_overwrite_existing_files(existing_files, media_file)
+}
+
+fn build_imported_tv_result(
+    detail: &TvDetail,
+    season_number: u32,
+    state: SeasonTransferState,
+    existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
+    cost: Duration,
+) -> ImportedMedia {
+    let max_episode_number = get_max_episode_number(&state.episodes, existing_episode_files);
+
+    ImportedMedia::Tv {
+        name: detail.name.to_owned(),
+        year: library::get_year_from_date(detail.first_air_date.as_str()).to_owned(),
+        season: season_number,
+        missing_episodes: get_missing_episodes(
+            max_episode_number,
+            &state.episodes,
+            existing_episode_files,
+        ),
+        episodes: state.episodes,
+        max_episode_number,
+        total_size: state.total_size,
+        number_of_episodes: get_number_of_episodes_in_season(detail, season_number),
+        cost,
+        _has_failed: state.has_failed,
+    }
+}
 
 impl<L, S, M> Importer<L, S, M>
 where
@@ -66,12 +98,8 @@ where
         let media_file =
             select_largest_media_file(media_files, format!("movie {}", detail.title).as_str())?;
 
-        if !existing_files.is_empty() {
-            // existing files found, check if need overwrite
-            if !need_overwrite_existing_files(&existing_files, media_file) {
-                // do not need overwrite existing files, skip
-                return Ok(None);
-            }
+        if should_skip_existing_media(&existing_files, media_file) {
+            return Ok(None);
         }
 
         let name_prefix = format!(
@@ -168,24 +196,13 @@ where
             accumulate_episode_transfer_result(&mut state, *episode_number, res);
         }
 
-        let max_episode_number = get_max_episode_number(&state.episodes, &existing_episode_files);
-
-        Ok(ImportedMedia::Tv {
-            name: detail.name.to_owned(),
-            year: library::get_year_from_date(detail.first_air_date.as_str()).to_owned(),
-            season: *season_number,
-            missing_episodes: get_missing_episodes(
-                max_episode_number,
-                &state.episodes,
-                &existing_episode_files,
-            ),
-            episodes: state.episodes,
-            max_episode_number,
-            total_size: state.total_size,
-            number_of_episodes: get_number_of_episodes_in_season(detail, *season_number),
-            cost: start_time.elapsed(),
-            _has_failed: state.has_failed,
-        })
+        Ok(build_imported_tv_result(
+            detail,
+            *season_number,
+            state,
+            &existing_episode_files,
+            start_time.elapsed(),
+        ))
     }
 
     async fn transfer_episode(
@@ -201,14 +218,12 @@ where
             .as_str(),
         )?;
 
-        if let Some(existing_files) = args.existing_episode_files.get(&args.episode_number)
-            && !existing_files.is_empty()
+        if args
+            .existing_episode_files
+            .get(&args.episode_number)
+            .is_some_and(|existing_files| should_skip_existing_media(existing_files, media_file))
         {
-            // episode file already exists in library
-            if !need_overwrite_existing_files(existing_files, media_file) {
-                // existing file size is larger than new file, skip
-                return Ok(None);
-            }
+            return Ok(None);
         }
 
         // save episode file
@@ -558,5 +573,100 @@ where
                     .await?
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        domain::media::Metadata,
+        library::import::{
+            Genre, Season,
+            inner::{Etag, RawFile},
+        },
+    };
+
+    fn create_media_file(name: &str, size: u64) -> MediaFile {
+        MediaFile {
+            metadata: Box::new(Metadata {
+                extension: ".mkv".into(),
+                ..Default::default()
+            }),
+            video: RawFile {
+                id: Some(1),
+                name: name.into(),
+                etag: Etag::Md5("etag".into()),
+                size,
+                path: "/remote/path".into(),
+            },
+            subtitles: Vec::new(),
+        }
+    }
+
+    fn create_tv_detail() -> TvDetail {
+        TvDetail {
+            id: 1,
+            name: "Test Show".into(),
+            first_air_date: "2024-01-01".into(),
+            number_of_episodes: 10,
+            number_of_seasons: 1,
+            origin_country: vec![],
+            original_language: "en".into(),
+            original_name: "Test Show".into(),
+            genres: vec![Genre {
+                id: 1,
+                name: "Drama".into(),
+            }],
+            seasons: vec![Season {
+                id: 11,
+                name: "Season 1".into(),
+                season_number: 1,
+                episode_count: 8,
+            }],
+        }
+    }
+
+    #[test]
+    fn should_skip_existing_media_only_when_existing_is_not_smaller() {
+        let incoming = create_media_file("incoming.mkv", 100);
+        let smaller_existing = vec![create_media_file("existing.mkv", 99)];
+        let larger_existing = vec![create_media_file("existing.mkv", 101)];
+
+        assert!(!should_skip_existing_media(&[], &incoming));
+        assert!(!should_skip_existing_media(&smaller_existing, &incoming));
+        assert!(should_skip_existing_media(&larger_existing, &incoming));
+    }
+
+    #[test]
+    fn build_imported_tv_result_merges_existing_episode_presence() {
+        let detail = create_tv_detail();
+        let state = SeasonTransferState {
+            has_failed: false,
+            total_size: 2048,
+            episodes: vec![1, 3],
+        };
+        let existing_episode_files =
+            HashMap::from([(2, vec![create_media_file("S01E02.mkv", 100)])]);
+
+        let imported = build_imported_tv_result(
+            &detail,
+            1,
+            state,
+            &existing_episode_files,
+            Duration::from_secs(3),
+        );
+
+        assert!(matches!(
+            imported,
+            ImportedMedia::Tv {
+                season: 1,
+                max_episode_number: 3,
+                total_size: 2048,
+                number_of_episodes: 8,
+                missing_episodes,
+                ..
+            } if missing_episodes.is_empty()
+        ));
     }
 }
