@@ -240,7 +240,8 @@ migration
 - 导入入口已经上提到 application
 - import ports 已上提到 application 所有
 - application 已不再通过 `ImportGateway` 间接承载 orchestration
-- 但真实导入规则和流程细节仍主要在 `library/import`
+- `application/import_media.rs` 已补 movie / tv / share URL 三类 fake-backed regression
+- 真实导入规则和流程细节仍主要在 `library/import`
 
 #### `notify`
 
@@ -646,7 +647,11 @@ interface/telegram/msg
 - `share_walk.rs` / `share_collect.rs` 承接 share 侧纯 helper
 - `transfer_cleanup.rs` / `transfer_save.rs` / `transfer_target.rs` / `transfer_support.rs` 承接 transfer 侧 helper 与保存/清理细节
 
-这些 helper 都已经补了直接测试。
+这些 helper 都已经补了直接测试；同时 `application/import_media.rs` 已经具备更接近真实导入路径的 fake-backed regression：
+
+- `import_from_json` 的 movie 场景
+- `import_from_json` 的 tv 场景
+- `import_from_share_url` 的 pan123 遍历场景
 
 ---
 
@@ -691,6 +696,12 @@ interface/telegram/msg
 - 保持 `share.rs` / `transfer.rs` 的 orchestration-only 边界，不要让 helper 回流
 - 在 helper 边界稳定后，再决定哪些规则可以继续上提到更清晰的 application/domain 子模块
 - 继续评估 `remote.rs` wrapper 是否还需要进一步压缩
+
+从当前代码成熟度看，这一块已经不再是“继续拆文件”的问题，而更像是：
+
+- 是否把稳定的 import-specific 纯规则继续迁层
+- 是否增加真实 provider 的手动 smoke 验收
+- 是否为 `fslink` 入口再补一条与 share/json 对称的 fake-backed regression
 
 ### 7.3 `bootstrap` 仍然是宽 wiring 容器
 
@@ -804,6 +815,8 @@ bootstrap
 
 - 保持 `share.rs` / `transfer.rs` 作为 orchestration-only 文件
 - 为新增 helper 继续补直接回归测试
+- 维持 `application/import_media.rs` 中 movie / tv / share URL 三类 fake-backed regression
+- 视需要再为 `import_from_fslink` 补一条对称 regression
 - 当 helper 边界稳定后，再评估是否把 `library/import` 中稳定规则继续迁到更清晰的 application/domain 子模块
 - 继续观察 `remote.rs` / `local.rs` 是否还存在可压缩的过渡包装
 
@@ -852,6 +865,12 @@ bootstrap
 
 - 证明 service 编排逻辑不依赖真实外部系统
 
+当前 `application/import_media.rs` 已经覆盖：
+
+- JSON movie 导入 -> TMDB -> library path -> upload -> `.strm`
+- JSON TV 导入 -> season 目录 -> episode 聚合 -> season `.strm`
+- pan123 share URL 导入 -> share 遍历 -> 媒体过滤 -> upload -> `.strm`
+
 ### 10.3 adapter / runtime 集成测试
 
 适用模块：
@@ -864,7 +883,8 @@ bootstrap
 
 - 覆盖事件 drain、ack、错误映射、路由行为
 
-当前代码已经在这三个方向都有样例，后续只需要沿着已有模式补齐，不需要推翻测试体系。
+当前代码已经在这三个方向都有样例，后续只需要沿着已有模式补齐，不需要推翻测试体系。  
+如果继续加强导入链路测试，优先级最高的是为 `import_from_fslink` 增加一条与 JSON/share 对称的 fake-backed regression。
 
 ---
 
