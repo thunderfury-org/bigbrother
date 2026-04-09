@@ -77,6 +77,20 @@ fn renamed_subtitle_file_name(
     )
 }
 
+fn files_pending_cleanup<'a>(
+    existing_files: Option<&'a [MediaFile]>,
+    saved_filename: Option<&str>,
+) -> Vec<&'a MediaFile> {
+    let Some(existing_files) = existing_files else {
+        return Vec::new();
+    };
+    let Some(saved_filename) = saved_filename else {
+        return Vec::new();
+    };
+
+    collect_replaced_media_files(existing_files, &Some(saved_filename.to_string()))
+}
+
 impl<L, S, M> Importer<L, S, M>
 where
     L: LibraryGateway,
@@ -295,13 +309,8 @@ where
         existing_files: &[MediaFile],
         saved_filename: &Option<String>,
     ) -> AppResult<()> {
-        let files = collect_replaced_media_files(existing_files, saved_filename);
-        if files.is_empty() {
-            return Ok(());
-        }
-
-        self.delete_files_in_library(&files).await?;
-        self.delete_files_in_local(movie_path, &files).await
+        self.cleanup_replaced_files(movie_path, Some(existing_files), saved_filename.as_deref())
+            .await
     }
 
     async fn cleanup_replaced_episode_files(
@@ -310,17 +319,27 @@ where
         existing_files: Option<&Vec<MediaFile>>,
         saved_filename: &str,
     ) -> AppResult<()> {
-        let Some(existing_files) = existing_files else {
-            return Ok(());
-        };
+        self.cleanup_replaced_files(
+            season_full_path,
+            existing_files.map(|files| files.as_slice()),
+            Some(saved_filename),
+        )
+        .await
+    }
 
-        let files = collect_replaced_media_files(existing_files, &Some(saved_filename.to_string()));
+    async fn cleanup_replaced_files(
+        &self,
+        remote_parent_path: &str,
+        existing_files: Option<&[MediaFile]>,
+        saved_filename: Option<&str>,
+    ) -> AppResult<()> {
+        let files = files_pending_cleanup(existing_files, saved_filename);
         if files.is_empty() {
             return Ok(());
         }
 
         self.delete_files_in_library(&files).await?;
-        self.delete_files_in_local(season_full_path, &files).await
+        self.delete_files_in_local(remote_parent_path, &files).await
     }
 
     async fn resolve_season_target(
@@ -720,5 +739,25 @@ mod tests {
                 "/local/show/Show.S01E01.en.ass".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn files_pending_cleanup_returns_only_replaced_files() {
+        let kept = create_media_file("kept.mkv", 100);
+        let replaced = create_media_file("replaced.mkv", 90);
+        let existing = vec![kept, replaced];
+
+        let files = files_pending_cleanup(Some(&existing), Some("kept.mkv"));
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].video.name, "replaced.mkv");
+    }
+
+    #[test]
+    fn files_pending_cleanup_returns_empty_without_inputs() {
+        let existing = vec![create_media_file("kept.mkv", 100)];
+
+        assert!(files_pending_cleanup(None, Some("kept.mkv")).is_empty());
+        assert!(files_pending_cleanup(Some(&existing), None).is_empty());
     }
 }
