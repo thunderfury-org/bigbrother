@@ -1,6 +1,7 @@
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
+use std::ops::{Deref, DerefMut};
 
 mod group;
 pub(super) mod json;
@@ -43,7 +44,15 @@ pub enum ImportedMedia {
     },
 }
 
-pub(crate) struct Importer<L, S, M, F> {
+#[derive(Clone)]
+pub(crate) struct ImportContext<L, S, M, F> {
+    library_gateway: L,
+    share_source: S,
+    metadata_catalog: M,
+    local: F,
+}
+
+pub(crate) struct ImportWorkflow<L, S, M, F> {
     library_gateway: L,
     share_source: S,
     local: F,
@@ -51,7 +60,15 @@ pub(crate) struct Importer<L, S, M, F> {
     metadata_lookup: metadata::MetadataLookup,
 }
 
-impl<L, S, M, F> Importer<L, S, M, F>
+pub(crate) struct ShareImportUseCase<L, S, M, F> {
+    workflow: ImportWorkflow<L, S, M, F>,
+}
+
+pub(crate) struct JsonImportUseCase<L, S, M, F> {
+    workflow: ImportWorkflow<L, S, M, F>,
+}
+
+impl<L, S, M, F> ImportContext<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
@@ -67,9 +84,74 @@ where
         Self {
             library_gateway,
             share_source,
+            metadata_catalog,
             local: local_store,
-            tmdb_lookup: tmdb_info::TmdbLookup::new(metadata_catalog),
+        }
+    }
+
+    fn workflow(&self) -> ImportWorkflow<L, S, M, F> {
+        ImportWorkflow {
+            library_gateway: self.library_gateway.clone(),
+            share_source: self.share_source.clone(),
+            local: self.local.clone(),
+            tmdb_lookup: tmdb_info::TmdbLookup::new(self.metadata_catalog.clone()),
             metadata_lookup: metadata::MetadataLookup::default(),
         }
+    }
+}
+
+impl<L, S, M, F> ShareImportUseCase<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
+        Self {
+            workflow: context.workflow(),
+        }
+    }
+}
+
+impl<L, S, M, F> JsonImportUseCase<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
+        Self {
+            workflow: context.workflow(),
+        }
+    }
+}
+
+impl<L, S, M, F> Deref for ShareImportUseCase<L, S, M, F> {
+    type Target = ImportWorkflow<L, S, M, F>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.workflow
+    }
+}
+
+impl<L, S, M, F> DerefMut for ShareImportUseCase<L, S, M, F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.workflow
+    }
+}
+
+impl<L, S, M, F> Deref for JsonImportUseCase<L, S, M, F> {
+    type Target = ImportWorkflow<L, S, M, F>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.workflow
+    }
+}
+
+impl<L, S, M, F> DerefMut for JsonImportUseCase<L, S, M, F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.workflow
     }
 }

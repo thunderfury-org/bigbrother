@@ -9,7 +9,7 @@ use crate::domain::import::{
 };
 use crate::domain::media::Metadata;
 
-use super::Importer;
+use super::ImportWorkflow;
 
 #[derive(Default)]
 pub(super) struct MetadataLookup {
@@ -70,7 +70,7 @@ impl MetadataLookup {
     }
 }
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

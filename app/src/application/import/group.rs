@@ -10,10 +10,10 @@ use crate::domain::import::{
 };
 use std::collections::HashMap;
 
-use super::Importer;
+use super::ImportWorkflow;
 use crate::error::AppResult;
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

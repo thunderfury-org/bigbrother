@@ -1,7 +1,7 @@
 use crate::domain::import::inner::MediaFile;
 
 use super::{
-    Importer,
+    ImportWorkflow,
     transfer_support::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
@@ -12,7 +12,7 @@ use crate::application::import_ports::{
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

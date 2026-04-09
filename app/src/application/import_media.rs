@@ -1,5 +1,7 @@
 use crate::{
-    application::import::{ImportedMedia, Importer, ShareUrl},
+    application::import::{
+        ImportContext, ImportedMedia, JsonImportUseCase, ShareImportUseCase, ShareUrl,
+    },
     application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource},
     error::AppResult,
 };
@@ -30,8 +32,8 @@ where
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    fn importer(&self) -> Importer<L, S, M, F> {
-        Importer::new(
+    fn import_context(&self) -> ImportContext<L, S, M, F> {
+        ImportContext::new(
             self.library_gateway.clone(),
             self.share_source.clone(),
             self.metadata_catalog.clone(),
@@ -40,15 +42,21 @@ where
     }
 
     pub async fn import_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<ImportedMedia>> {
-        self.importer().import_from_share_url(url).await
+        ShareImportUseCase::new(self.import_context())
+            .import_from_share_url(url)
+            .await
     }
 
     pub async fn import_from_fslink(&self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        self.importer().import_from_fslink(fslink).await
+        JsonImportUseCase::new(self.import_context())
+            .import_from_fslink(fslink)
+            .await
     }
 
     pub async fn import_from_json(&self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-        self.importer().import_from_json(json).await
+        JsonImportUseCase::new(self.import_context())
+            .import_from_json(json)
+            .await
     }
 }
 

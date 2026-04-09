@@ -2,7 +2,7 @@ use crate::domain::import::inner::{Etag, MediaFile, RawFile};
 use crate::domain::import::policy::format_video_file_name;
 
 use super::{
-    Importer,
+    ImportWorkflow,
     transfer_support::{
         build_subtitle_transfer_plan, log_file_not_saved, log_file_saved, remote_child_path,
     },
@@ -13,7 +13,7 @@ use crate::application::import_ports::{
 use crate::error::AppResult;
 use tracing::{error, info};
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

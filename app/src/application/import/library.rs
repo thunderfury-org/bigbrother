@@ -8,9 +8,9 @@ use crate::application::import_ports::{
 use crate::domain::import::inner::{MediaFile, RawFile};
 use crate::error::AppResult;
 
-use super::Importer;
+use super::ImportWorkflow;
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> ImportWorkflow<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,

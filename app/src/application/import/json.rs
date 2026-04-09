@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tracing::info;
 
-use super::{ImportedMedia, Importer};
+use super::{ImportedMedia, JsonImportUseCase};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
@@ -12,7 +12,7 @@ use crate::domain::import::{
 };
 use crate::error::AppResult;
 
-impl<L, S, M, F> Importer<L, S, M, F>
+impl<L, S, M, F> JsonImportUseCase<L, S, M, F>
 where
     L: LibraryGateway,
     S: ShareSource,
