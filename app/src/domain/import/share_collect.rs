@@ -5,7 +5,7 @@ use super::{
     share_walk::{DirectoryEntries, child_share_path},
 };
 
-pub(super) fn collect_pan123_directory_entries(
+pub(crate) fn collect_pan123_directory_entries(
     files: &[LibraryFile],
     parent_path: &str,
 ) -> DirectoryEntries<i64> {
@@ -29,7 +29,7 @@ pub(super) fn collect_pan123_directory_entries(
     DirectoryEntries::new(child_dirs, raw_files)
 }
 
-pub(super) fn collect_pan189_directory_entries(
+pub(crate) fn collect_pan189_directory_entries(
     folders: &[Pan189Folder],
     files: &[Pan189File],
     parent_path: &str,
@@ -58,7 +58,7 @@ pub(super) fn collect_pan189_directory_entries(
     DirectoryEntries::new(child_dirs, raw_files)
 }
 
-pub(super) fn collect_pan115_directory_entries(
+pub(crate) fn collect_pan115_directory_entries(
     entries: &[Pan115FileEntry],
     parent_path: &str,
 ) -> DirectoryEntries<String> {

@@ -4,7 +4,7 @@ use tracing::info;
 
 use crate::error::{AppError, AppResult};
 
-pub enum ShareUrl<'a> {
+pub(crate) enum ShareUrl<'a> {
     Pan123(&'a Url),
     Pan189(&'a Url),
     Pan115(&'a Url),
@@ -41,21 +41,21 @@ impl<'a> ShareUrl<'a> {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ResourceFile {
-    pub(super) path: String,
-    pub(super) etag: String,
-    pub(super) size: u64,
+pub(crate) struct ResourceFile {
+    pub(crate) path: String,
+    pub(crate) etag: String,
+    pub(crate) size: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-pub(super) struct ResourceJson {
+pub(crate) struct ResourceJson {
     #[serde(rename = "commonPath")]
-    pub(super) common_path: String,
-    pub(super) files: Vec<ResourceFile>,
+    pub(crate) common_path: String,
+    pub(crate) files: Vec<ResourceFile>,
 }
 
-pub(super) fn parse_pan123_share_parts(url: &Url) -> (String, String) {
+pub(crate) fn parse_pan123_share_parts(url: &Url) -> (String, String) {
     let share_key = url
         .path_segments()
         .map(|mut segments| segments.next_back().unwrap_or_default())
@@ -69,7 +69,7 @@ pub(super) fn parse_pan123_share_parts(url: &Url) -> (String, String) {
     (share_key, share_password)
 }
 
-pub(super) fn parse_pan189_share_code(url: &Url) -> String {
+pub(crate) fn parse_pan189_share_code(url: &Url) -> String {
     url.query_pairs()
         .find(|(key, _)| key == "code")
         .map(|(_, value)| value.to_string())
@@ -85,7 +85,7 @@ pub(super) fn parse_pan189_share_code(url: &Url) -> String {
         })
 }
 
-pub(super) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
+pub(crate) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
     let share_code = url
         .path_segments()
         .map(|mut segments| segments.next_back().unwrap_or_default())
@@ -99,13 +99,13 @@ pub(super) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
     (share_code, receive_code)
 }
 
-pub fn is_fslink(content: &str) -> bool {
+pub(crate) fn is_fslink(content: &str) -> bool {
     ["123FSLinkV2$", "123FLCPV2$"]
         .iter()
         .any(|prefix| content.starts_with(prefix))
 }
 
-pub(super) fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFile>> {
+pub(crate) fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFile>> {
     let mut files = Vec::new();
     for segment in fslink.split('$') {
         let parts = segment.split('#').collect::<Vec<_>>();
@@ -131,7 +131,7 @@ pub(super) fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFil
     Ok(files)
 }
 
-pub(super) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
+pub(crate) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
     if let Ok(resource) = serde_json::from_slice::<ResourceJson>(&json) {
         return Ok(resource);
     }

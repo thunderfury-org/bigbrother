@@ -1,12 +1,12 @@
 use crate::domain::import::inner::RawFile;
 
-pub(super) struct DirectoryEntries<T> {
-    pub(super) child_dirs: Vec<(T, String)>,
-    pub(super) raw_files: Vec<RawFile>,
+pub(crate) struct DirectoryEntries<T> {
+    pub(crate) child_dirs: Vec<(T, String)>,
+    pub(crate) raw_files: Vec<RawFile>,
 }
 
 impl<T> DirectoryEntries<T> {
-    pub(super) fn new(child_dirs: Vec<(T, String)>, raw_files: Vec<RawFile>) -> Self {
+    pub(crate) fn new(child_dirs: Vec<(T, String)>, raw_files: Vec<RawFile>) -> Self {
         Self {
             child_dirs,
             raw_files,
@@ -14,34 +14,34 @@ impl<T> DirectoryEntries<T> {
     }
 }
 
-pub(super) struct ShareTraversal<T> {
+pub(crate) struct ShareTraversal<T> {
     pending_dirs: Vec<(T, String)>,
     raw_files: Vec<RawFile>,
 }
 
 impl<T> ShareTraversal<T> {
-    pub(super) fn new(root: (T, String)) -> Self {
+    pub(crate) fn new(root: (T, String)) -> Self {
         Self {
             pending_dirs: vec![root],
             raw_files: Vec::new(),
         }
     }
 
-    pub(super) fn next_dir(&mut self) -> Option<(T, String)> {
+    pub(crate) fn next_dir(&mut self) -> Option<(T, String)> {
         self.pending_dirs.pop()
     }
 
-    pub(super) fn extend(&mut self, entries: DirectoryEntries<T>) {
+    pub(crate) fn extend(&mut self, entries: DirectoryEntries<T>) {
         self.pending_dirs.extend(entries.child_dirs);
         self.raw_files.extend(entries.raw_files);
     }
 
-    pub(super) fn into_raw_files(self) -> Vec<RawFile> {
+    pub(crate) fn into_raw_files(self) -> Vec<RawFile> {
         self.raw_files
     }
 }
 
-pub(super) fn child_share_path(parent_path: &str, name: &str) -> String {
+pub(crate) fn child_share_path(parent_path: &str, name: &str) -> String {
     format!("{}/{}", parent_path, name)
 }
 

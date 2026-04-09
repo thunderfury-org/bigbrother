@@ -1,10 +1,13 @@
 use reqwest::Url;
 use tracing::info;
 
-pub use super::source::ShareUrl;
-
-use super::{
-    ImportedMedia, Importer,
+use super::{ImportedMedia, Importer};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
+use crate::domain::import::{
+    ShareUrl,
+    inner::MediaFile,
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
         collect_pan189_directory_entries,
@@ -12,10 +15,6 @@ use super::{
     share_walk::ShareTraversal,
     source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
 };
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
-use crate::domain::import::inner::MediaFile;
 use crate::error::{AppError, AppResult};
 
 impl<L, S, M, F> Importer<L, S, M, F>

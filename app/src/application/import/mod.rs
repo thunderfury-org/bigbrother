@@ -7,9 +7,6 @@ pub(super) mod json;
 mod library;
 mod metadata;
 pub(super) mod share;
-mod share_collect;
-mod share_walk;
-mod source;
 mod tmdb_info;
 mod transfer;
 mod transfer_cleanup;
@@ -21,8 +18,7 @@ pub(crate) use crate::domain::import::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
-pub use share::ShareUrl;
-pub use source::is_fslink;
+pub(crate) use crate::domain::import::{ShareUrl, is_fslink};
 
 #[derive(Debug)]
 pub enum ImportedMedia {
