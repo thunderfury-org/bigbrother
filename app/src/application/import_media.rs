@@ -287,6 +287,14 @@ mod tests {
         std::env::temp_dir().join(format!("bigbrother-import-test-{suffix}"))
     }
 
+    fn local_store_for(local_dir: &PathBuf) -> FilesystemImportLocalStore {
+        FilesystemImportLocalStore::new(
+            "/remote".into(),
+            local_dir.to_string_lossy().into_owned(),
+            "http://localhost/d".into(),
+        )
+    }
+
     #[tokio::test]
     async fn import_from_json_writes_strm_and_records_upload() {
         let local_dir = unique_temp_dir();
@@ -295,11 +303,7 @@ mod tests {
             gateway.clone(),
             FakeShareSource::default(),
             FakeMetadataCatalog,
-            FilesystemImportLocalStore::new(
-                "/remote".into(),
-                local_dir.to_string_lossy().into_owned(),
-                "http://localhost/d".into(),
-            ),
+            local_store_for(&local_dir),
         );
 
         let json = serde_json::to_vec(&serde_json::json!({
@@ -359,11 +363,7 @@ mod tests {
             gateway.clone(),
             FakeShareSource::default(),
             FakeMetadataCatalog,
-            FilesystemImportLocalStore::new(
-                "/remote".into(),
-                local_dir.to_string_lossy().into_owned(),
-                "http://localhost/d".into(),
-            ),
+            local_store_for(&local_dir),
         );
 
         let json = serde_json::to_vec(&serde_json::json!({
@@ -495,11 +495,7 @@ mod tests {
             gateway.clone(),
             share_source.clone(),
             FakeMetadataCatalog,
-            FilesystemImportLocalStore::new(
-                "/remote".into(),
-                local_dir.to_string_lossy().into_owned(),
-                "http://localhost/d".into(),
-            ),
+            local_store_for(&local_dir),
         );
         let url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
         let share = ShareUrl::from(&url).unwrap();
@@ -535,6 +531,59 @@ mod tests {
         let strm_path =
             local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.strm");
         assert!(strm_path.exists());
+
+        let _ = fs::remove_dir_all(local_dir);
+    }
+
+    #[tokio::test]
+    async fn import_from_fslink_parses_prefixed_common_path_and_writes_strm() {
+        let local_dir = unique_temp_dir();
+        let gateway = FakeLibraryGateway::default();
+        let service = ImportMediaService::new(
+            gateway.clone(),
+            FakeShareSource::default(),
+            FakeMetadataCatalog,
+            local_store_for(&local_dir),
+        );
+
+        let fslink = "123FSLinkV2$共享目录/Movies%0123456789abcdef0123456789abcdef#1234#Inception.2010.1080p.mkv";
+
+        let imported = service.import_from_fslink(fslink).await.unwrap();
+
+        assert!(matches!(
+            imported.as_slice(),
+            [ImportedMedia::Movie {
+                title,
+                year,
+                size,
+                has_failed,
+                ..
+            }] if title == "Inception" && year == "2010" && *size == 1234 && !has_failed
+        ));
+
+        let state = gateway.state.lock().unwrap();
+        assert_eq!(
+            state.mkdir_paths,
+            vec!["/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string()]
+        );
+        assert_eq!(
+            state.fast_uploads,
+            vec![(
+                1,
+                "Inception.2010.1080p.mkv".to_string(),
+                "0123456789abcdef0123456789abcdef".to_string(),
+                1234
+            )]
+        );
+        drop(state);
+
+        let strm_path =
+            local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.strm");
+        let strm_content = fs::read_to_string(&strm_path).unwrap();
+        assert_eq!(
+            strm_content,
+            "http://localhost/d/remote/电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.mkv?file_id=42"
+        );
 
         let _ = fs::remove_dir_all(local_dir);
     }
