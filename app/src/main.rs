@@ -1,5 +1,6 @@
 use bootstrap::{AppContext, AppRuntime};
 use clap::Parser;
+use error::AppResult;
 use interface::cli::{Cli, Commands};
 
 mod application;
@@ -18,14 +19,15 @@ async fn main() {
 
     match &cli.command {
         Commands::Server(args) => {
-            run_server(args.data_dir.as_str()).await;
+            if let Err(err) = run_server(args.data_dir.as_str()).await {
+                eprintln!("Failed to start server: {err}");
+                std::process::exit(1);
+            }
         }
     }
 }
 
-async fn run_server(data_dir: &str) {
-    let app = AppContext::new(data_dir)
-        .await
-        .expect("Failed to initialize application state");
-    AppRuntime::from_app(app).run().await;
+async fn run_server(data_dir: &str) -> AppResult<()> {
+    let app = AppContext::new(data_dir).await?;
+    AppRuntime::from_app(app)?.run().await
 }

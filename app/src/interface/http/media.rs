@@ -53,12 +53,11 @@ where
     C: crate::application::ports::DownloadUrlCache,
     S: crate::application::ports::DownloadUrlSource,
 {
-    let file_id = params.get("file_id");
-    if file_id.is_none() {
+    let Some(file_id) = params.get("file_id") else {
         return (StatusCode::BAD_REQUEST, "file_id is required").into_response();
-    }
+    };
 
-    match file_id.unwrap().parse::<i64>() {
+    match file_id.parse::<i64>() {
         Err(e) => (
             StatusCode::BAD_REQUEST,
             format!("file_id is invalid: {}", e),

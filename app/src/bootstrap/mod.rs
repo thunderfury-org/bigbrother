@@ -13,6 +13,7 @@ use crate::{
         notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
     },
     bootstrap::services::MediaDownloadUrlService,
+    error::{AppError, AppResult},
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
         client::library_remote::Pan123LibraryRemote,
@@ -61,20 +62,25 @@ pub struct CacheCleanupRuntime {
 }
 
 impl AppRuntime {
-    pub fn from_app(app: AppContext) -> Self {
+    pub fn from_app(app: AppContext) -> AppResult<Self> {
         let inputs = app.runtime_inputs();
         let bot = inputs.bot.clone();
         let cache = inputs.cache.clone();
         let event_bus = inputs.event_bus.clone();
         let media_server = media::new_router(media_server_context(&inputs));
+        let user_id = inputs
+            .telegram_user_id
+            .try_into()
+            .map(teloxide::types::UserId)
+            .map_err(|_| AppError::InvalidParameter("invalid telegram user id".to_owned()))?;
 
-        Self {
+        Ok(Self {
             log_dir: inputs.log_dir.clone(),
             db: inputs.db.clone(),
             server: ServerRuntime {
                 bot,
                 bot_runtime: telegram::BotRuntime::new(
-                    teloxide::types::UserId(inputs.telegram_user_id.try_into().unwrap()),
+                    user_id,
                     ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone())),
                     ImportMediaService::new(
                         PanLibraryGateway::new(inputs.clients.pan123.clone()),
@@ -111,29 +117,47 @@ impl AppRuntime {
                 cache,
                 interval: Duration::from_hours(12),
             },
-        }
+        })
     }
 
-    pub async fn run(self) {
+    pub async fn run(self) -> AppResult<()> {
         logger::init(self.log_dir.as_str());
 
-        Migrator::up(&self.db, None)
-            .await
-            .expect("Migration failed");
-        tokio::join!(
+        Migrator::up(&self.db, None).await?;
+        let (server_result, event_result, _) = tokio::join!(
             self.server.run(),
             self.event_delivery.run(),
             self.cache_cleanup.run()
         );
+        server_result?;
+        event_result?;
+        Ok(())
     }
 }
 
 impl ServerRuntime {
-    async fn run(self) {
-        tokio::join!(
-            http::run(self.media_server_addr, self.media_server),
-            telegram::run(self.bot, self.bot_runtime)
-        );
+    async fn run(self) -> AppResult<()> {
+        let mut http_task = tokio::spawn(http::run(self.media_server_addr, self.media_server));
+        let mut bot_task = tokio::spawn(telegram::run(self.bot, self.bot_runtime));
+
+        tokio::select! {
+            http_result = &mut http_task => {
+                bot_task.abort();
+                match http_result {
+                    Ok(result) => result,
+                    Err(err) => Err(AppError::Internal(format!("http task failed: {err}"))),
+                }
+            }
+            bot_result = &mut bot_task => {
+                match bot_result {
+                    Ok(_) => {
+                        http_task.abort();
+                        Ok(())
+                    }
+                    Err(err) => Err(AppError::Internal(format!("telegram task failed: {err}"))),
+                }
+            }
+        }
     }
 }
 
@@ -148,18 +172,18 @@ fn media_server_context(inputs: &RuntimeBootstrapInputs) -> MediaServerContext {
 }
 
 impl EventDeliveryRuntime {
-    async fn run(self) {
+    async fn run(self) -> AppResult<()> {
         self.event_bus
             .subscribe(
                 self.telegram_delivery,
                 crate::interface::telegram::delivery::on_send_telegram_message,
             )
-            .await
-            .unwrap();
+            .await?;
 
         info!("Event bus is running");
         shutdown_signal("event bus").await;
         info!("Shutting down event bus...");
+        Ok(())
     }
 }
 
