@@ -1,7 +1,6 @@
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
-use std::ops::{Deref, DerefMut};
 
 mod group;
 pub(super) mod json;
@@ -118,6 +117,14 @@ where
             workflow: context.workflow(),
         }
     }
+
+    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
+        &self.workflow
+    }
+
+    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
+        &mut self.workflow
+    }
 }
 
 impl<L, S, M, F> JsonImportUseCase<L, S, M, F>
@@ -131,6 +138,14 @@ where
         Self {
             workflow: context.workflow(),
         }
+    }
+
+    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
+        &self.workflow
+    }
+
+    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
+        &mut self.workflow
     }
 }
 
@@ -146,6 +161,14 @@ where
             workflow: context.workflow(),
         }
     }
+
+    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
+        &self.workflow
+    }
+
+    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
+        &mut self.workflow
+    }
 }
 
 impl<L, S, M, F> ImportWorkflow<L, S, M, F>
@@ -155,54 +178,12 @@ where
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    fn context(&self) -> ImportContext<L, S, M, F> {
+    pub(super) fn context(&self) -> ImportContext<L, S, M, F> {
         ImportContext::new(
             self.library_gateway.clone(),
             self.share_source.clone(),
             self.metadata_catalog.clone(),
             self.local.clone(),
         )
-    }
-}
-
-impl<L, S, M, F> Deref for ShareImportUseCase<L, S, M, F> {
-    type Target = ImportWorkflow<L, S, M, F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.workflow
-    }
-}
-
-impl<L, S, M, F> DerefMut for ShareImportUseCase<L, S, M, F> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.workflow
-    }
-}
-
-impl<L, S, M, F> Deref for JsonImportUseCase<L, S, M, F> {
-    type Target = ImportWorkflow<L, S, M, F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.workflow
-    }
-}
-
-impl<L, S, M, F> DerefMut for JsonImportUseCase<L, S, M, F> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.workflow
-    }
-}
-
-impl<L, S, M, F> Deref for TransferImportUseCase<L, S, M, F> {
-    type Target = ImportWorkflow<L, S, M, F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.workflow
-    }
-}
-
-impl<L, S, M, F> DerefMut for TransferImportUseCase<L, S, M, F> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.workflow
     }
 }

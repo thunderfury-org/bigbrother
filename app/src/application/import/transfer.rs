@@ -33,7 +33,7 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         let mut results = Vec::with_capacity(media_files.len());
 
-        let medias = self.group_media_files(media_files).await?;
+        let medias = self.workflow_mut().group_media_files(media_files).await?;
         info!("Grouped into {} media items", medias.len());
 
         for media in &medias {
@@ -60,12 +60,16 @@ where
         log_time!(format!("transfer movie {}", get_movie_base_name(detail)));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.local.remote_library_path();
+        let remote_path = self.workflow().local.remote_library_path();
         let movie_path = get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
+            .workflow()
             .get_or_create_dir_in_library(movie_path.as_str())
             .await?;
-        let existing_files = self.list_movie_files_in_library(movie_dir_id).await?;
+        let existing_files = self
+            .workflow_mut()
+            .list_movie_files_in_library(movie_dir_id)
+            .await?;
         let media_file =
             select_largest_media_file(media_files, format!("movie {}", detail.title).as_str())?;
 
@@ -79,9 +83,11 @@ where
             get_year_from_date(detail.release_date.as_str()),
         );
         let saved_filename = self
+            .workflow()
             .transfer_media_file(&movie_path, movie_dir_id, name_prefix.as_str(), media_file)
             .await?;
-        self.cleanup_replaced_movie_files(movie_path.as_str(), &existing_files, &saved_filename)
+        self.workflow()
+            .cleanup_replaced_movie_files(movie_path.as_str(), &existing_files, &saved_filename)
             .await?;
         Ok(Some(ImportedMedia::Movie {
             title: detail.title.to_owned(),
@@ -99,10 +105,14 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", get_tv_base_name(detail)));
 
-        let remote_path = self.local.remote_library_path();
+        let remote_path = self.workflow().local.remote_library_path();
         let tv_path = get_tv_path_in_library(remote_path, detail);
-        let tv_dir_id = self.get_or_create_dir_in_library(tv_path.as_str()).await?;
-        let season_dir_ids = self.library_gateway.list_library_dir_ids(tv_dir_id).await?;
+        let tv_dir_id = self.workflow().get_or_create_dir_in_library(tv_path.as_str()).await?;
+        let season_dir_ids = self
+            .workflow()
+            .library_gateway
+            .list_library_dir_ids(tv_dir_id)
+            .await?;
 
         let mut results = Vec::new();
         for (season_number, season_files) in files {
@@ -140,6 +150,7 @@ where
 
         let season_dir = format!("Season {:02}", season_number);
         let (season_dir_id, existing_episode_files) = self
+            .workflow_mut()
             .resolve_season_target(
                 detail,
                 season_number,
@@ -206,6 +217,7 @@ where
             args.episode_number
         );
         let saved_filename = self
+            .workflow()
             .transfer_media_file(
                 args.season_full_path,
                 args.season_dir_id,
@@ -216,7 +228,7 @@ where
 
         match saved_filename {
             Some(name) => {
-                self.cleanup_replaced_episode_files(
+                self.workflow().cleanup_replaced_episode_files(
                     args.season_full_path,
                     args.existing_episode_files.get(&args.episode_number),
                     name.as_str(),

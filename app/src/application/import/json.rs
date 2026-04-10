@@ -45,7 +45,7 @@ where
         resource: &ResourceJson,
     ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.list_files_from_json(resource);
-        TransferImportUseCase::new(self.context())
+        TransferImportUseCase::new(self.workflow().context())
             .transfer_media_files(&media_files)
             .await
     }
@@ -74,6 +74,6 @@ where
             });
         }
 
-        self.build_media_files(raw_files)
+        self.workflow_mut().build_media_files(raw_files)
     }
 }

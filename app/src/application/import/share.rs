@@ -84,7 +84,7 @@ where
             media_files.len(),
             provider
         );
-        TransferImportUseCase::new(self.context())
+        TransferImportUseCase::new(self.workflow().context())
             .transfer_media_files(&media_files)
             .await
     }
@@ -98,6 +98,7 @@ where
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let files = self
+                .workflow()
                 .share_source
                 .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
@@ -105,20 +106,27 @@ where
             traversal.extend(collect_pan123_directory_entries(&files, &parent_path));
         }
 
-        Ok(self.build_media_files(traversal.into_raw_files()))
+        Ok(self
+            .workflow_mut()
+            .build_media_files(traversal.into_raw_files()))
     }
 
     async fn list_files_from_pan189_share(
         &mut self,
         share_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
-        let share_info = self.share_source.get_pan189_share_info(share_code).await?;
+        let share_info = self
+            .workflow()
+            .share_source
+            .get_pan189_share_info(share_code)
+            .await?;
 
         let mut traversal =
             ShareTraversal::new((share_info.file_id, share_info.file_name.to_owned()));
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
+                .workflow()
                 .share_source
                 .list_pan189_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
@@ -130,7 +138,9 @@ where
             ));
         }
 
-        Ok(self.build_media_files(traversal.into_raw_files()))
+        Ok(self
+            .workflow_mut()
+            .build_media_files(traversal.into_raw_files()))
     }
 
     async fn list_files_from_pan115_share(
@@ -142,6 +152,7 @@ where
 
         while let Some((cid, parent_path)) = traversal.next_dir() {
             let entries = self
+                .workflow()
                 .share_source
                 .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
@@ -149,6 +160,8 @@ where
             traversal.extend(collect_pan115_directory_entries(&entries, &parent_path));
         }
 
-        Ok(self.build_media_files(traversal.into_raw_files()))
+        Ok(self
+            .workflow_mut()
+            .build_media_files(traversal.into_raw_files()))
     }
 }
