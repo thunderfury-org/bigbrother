@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
     inner::{MediaFile, RawFile},
     policy::group_video_and_subtitle_files,
 };
 use crate::domain::media::Metadata;
 
-use super::ImportWorkflow;
+use super::TransferWorkflow;
 
 #[derive(Default)]
 pub(super) struct MetadataLookup {
@@ -54,7 +52,7 @@ impl MetadataLookup {
         meta
     }
 
-    fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
+    pub(super) fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
         let mut parsed_files = Vec::new();
 
         for raw_file in raw_files {
@@ -70,10 +68,9 @@ impl MetadataLookup {
     }
 }
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {

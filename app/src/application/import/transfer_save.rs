@@ -2,21 +2,18 @@ use crate::domain::import::inner::{Etag, MediaFile, RawFile};
 use crate::domain::import::policy::format_video_file_name;
 
 use super::{
-    ImportWorkflow,
+    TransferWorkflow,
     transfer_support::{
         build_subtitle_transfer_plan, log_file_not_saved, log_file_saved, remote_child_path,
     },
 };
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
 use tracing::{error, info};
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
@@ -159,9 +156,9 @@ where
     ) -> AppResult<bool> {
         log_file_saved(file_name, file_id);
         let local_file_path = self
-            .local
+            .local()
             .local_path_for_remote(remote_child_path(parent_path, file_name).as_str());
-        self.library_gateway
+        self.library_gateway()
             .download_library_file(file_id, local_file_path.as_str())
             .await?;
         info!("Subtitle file {} downloaded", local_file_path);

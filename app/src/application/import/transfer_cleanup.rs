@@ -1,21 +1,18 @@
 use crate::domain::import::inner::MediaFile;
 
 use super::{
-    ImportWorkflow,
+    TransferWorkflow,
     transfer_support::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
 };
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
@@ -81,12 +78,12 @@ where
         remote_parent_path: &str,
         files: &[&MediaFile],
     ) -> AppResult<()> {
-        let local_parent_path = self.local.local_path_for_remote(remote_parent_path);
+        let local_parent_path = self.local().local_path_for_remote(remote_parent_path);
 
         for f in files {
             for local_file_path in build_local_cleanup_paths(&local_parent_path, f) {
                 info!("Deleting local file {}", local_file_path);
-                self.local
+                self.local()
                     .remove_local_file_if_exists(local_file_path.as_str())
                     .await?;
             }

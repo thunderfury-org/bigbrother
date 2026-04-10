@@ -2,17 +2,14 @@ use std::collections::HashMap;
 
 use crate::domain::import::inner::MediaFile;
 
-use super::{ImportWorkflow, TvDetail, transfer_support::existing_season_dir_id};
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use super::{TransferWorkflow, TvDetail, transfer_support::existing_season_dir_id};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {

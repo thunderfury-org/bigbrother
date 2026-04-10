@@ -2,20 +2,17 @@ use std::path::Path;
 
 use tracing::info;
 
-use super::{ImportedMedia, JsonImportUseCase, TransferImportUseCase};
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use super::{ImportedMedia, JsonImportUseCase};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
     inner::{MediaFile, RawFile},
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
 use crate::error::AppResult;
 
-impl<L, S, M, F> JsonImportUseCase<L, S, M, F>
+impl<L, M, F> JsonImportUseCase<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
@@ -45,9 +42,7 @@ where
         resource: &ResourceJson,
     ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.list_files_from_json(resource);
-        TransferImportUseCase::new(self.workflow().context())
-            .transfer_media_files(&media_files)
-            .await
+        self.transfer_mut().transfer_media_files(&media_files).await
     }
 
     fn list_files_from_json(&mut self, resource: &ResourceJson) -> Vec<MediaFile> {
@@ -74,6 +69,6 @@ where
             });
         }
 
-        self.workflow_mut().build_media_files(raw_files)
+        self.metadata_lookup_mut().build_media_files(raw_files)
     }
 }

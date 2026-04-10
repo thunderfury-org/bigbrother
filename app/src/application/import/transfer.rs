@@ -15,15 +15,12 @@ use super::{
     ImportedMedia, MovieDetail, TransferImportUseCase, TvDetail,
     transfer_support::{build_imported_tv_result, should_skip_existing_media},
 };
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::{error::AppResult, log_time};
 
-impl<L, S, M, F> TransferImportUseCase<L, S, M, F>
+impl<L, M, F> TransferImportUseCase<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
@@ -60,7 +57,7 @@ where
         log_time!(format!("transfer movie {}", get_movie_base_name(detail)));
         let start_time = std::time::Instant::now();
 
-        let remote_path = self.workflow().local.remote_library_path();
+        let remote_path = self.workflow().local().remote_library_path();
         let movie_path = get_movie_path_in_library(remote_path, detail);
         let movie_dir_id = self
             .workflow()
@@ -105,12 +102,15 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         log_time!(format!("transfer tv {}", get_tv_base_name(detail)));
 
-        let remote_path = self.workflow().local.remote_library_path();
+        let remote_path = self.workflow().local().remote_library_path();
         let tv_path = get_tv_path_in_library(remote_path, detail);
-        let tv_dir_id = self.workflow().get_or_create_dir_in_library(tv_path.as_str()).await?;
+        let tv_dir_id = self
+            .workflow()
+            .get_or_create_dir_in_library(tv_path.as_str())
+            .await?;
         let season_dir_ids = self
             .workflow()
-            .library_gateway
+            .library_gateway()
             .list_library_dir_ids(tv_dir_id)
             .await?;
 
@@ -228,12 +228,13 @@ where
 
         match saved_filename {
             Some(name) => {
-                self.workflow().cleanup_replaced_episode_files(
-                    args.season_full_path,
-                    args.existing_episode_files.get(&args.episode_number),
-                    name.as_str(),
-                )
-                .await?;
+                self.workflow()
+                    .cleanup_replaced_episode_files(
+                        args.season_full_path,
+                        args.existing_episode_files.get(&args.episode_number),
+                        name.as_str(),
+                    )
+                    .await?;
 
                 Ok(Some((true, media_file.video.size)))
             }

@@ -1,6 +1,4 @@
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
     inner::{Media, MediaFile},
     policy::{
@@ -10,13 +8,12 @@ use crate::domain::import::{
 };
 use std::collections::HashMap;
 
-use super::ImportWorkflow;
+use super::TransferWorkflow;
 use crate::error::AppResult;
 
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {

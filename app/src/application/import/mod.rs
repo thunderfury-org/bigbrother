@@ -51,25 +51,26 @@ pub(crate) struct ImportContext<L, S, M, F> {
     local: F,
 }
 
-pub(crate) struct ImportWorkflow<L, S, M, F> {
+pub(crate) struct TransferWorkflow<L, M, F> {
     library_gateway: L,
-    share_source: S,
-    metadata_catalog: M,
     local: F,
     tmdb_lookup: tmdb_info::TmdbLookup<M>,
     metadata_lookup: metadata::MetadataLookup,
 }
 
 pub(crate) struct ShareImportUseCase<L, S, M, F> {
-    workflow: ImportWorkflow<L, S, M, F>,
+    share_source: S,
+    metadata_lookup: metadata::MetadataLookup,
+    transfer: TransferImportUseCase<L, M, F>,
 }
 
-pub(crate) struct JsonImportUseCase<L, S, M, F> {
-    workflow: ImportWorkflow<L, S, M, F>,
+pub(crate) struct JsonImportUseCase<L, M, F> {
+    metadata_lookup: metadata::MetadataLookup,
+    transfer: TransferImportUseCase<L, M, F>,
 }
 
-pub(crate) struct TransferImportUseCase<L, S, M, F> {
-    workflow: ImportWorkflow<L, S, M, F>,
+pub(crate) struct TransferImportUseCase<L, M, F> {
+    workflow: TransferWorkflow<L, M, F>,
 }
 
 impl<L, S, M, F> ImportContext<L, S, M, F>
@@ -93,11 +94,9 @@ where
         }
     }
 
-    fn workflow(&self) -> ImportWorkflow<L, S, M, F> {
-        ImportWorkflow {
+    fn transfer_workflow(&self) -> TransferWorkflow<L, M, F> {
+        TransferWorkflow {
             library_gateway: self.library_gateway.clone(),
-            share_source: self.share_source.clone(),
-            metadata_catalog: self.metadata_catalog.clone(),
             local: self.local.clone(),
             tmdb_lookup: tmdb_info::TmdbLookup::new(self.metadata_catalog.clone()),
             metadata_lookup: metadata::MetadataLookup::default(),
@@ -113,77 +112,82 @@ where
     F: ImportLocalStore,
 {
     pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
+        let transfer = TransferImportUseCase::new(context.transfer_workflow());
         Self {
-            workflow: context.workflow(),
+            share_source: context.share_source,
+            metadata_lookup: metadata::MetadataLookup::default(),
+            transfer,
         }
     }
 
-    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
+    fn share_source(&self) -> &S {
+        &self.share_source
+    }
+
+    fn metadata_lookup_mut(&mut self) -> &mut metadata::MetadataLookup {
+        &mut self.metadata_lookup
+    }
+
+    fn transfer_mut(&mut self) -> &mut TransferImportUseCase<L, M, F> {
+        &mut self.transfer
+    }
+}
+
+impl<L, M, F> JsonImportUseCase<L, M, F>
+where
+    L: LibraryGateway,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub(crate) fn new<S>(context: ImportContext<L, S, M, F>) -> Self
+    where
+        S: ShareSource,
+    {
+        Self {
+            metadata_lookup: metadata::MetadataLookup::default(),
+            transfer: TransferImportUseCase::new(context.transfer_workflow()),
+        }
+    }
+
+    fn metadata_lookup_mut(&mut self) -> &mut metadata::MetadataLookup {
+        &mut self.metadata_lookup
+    }
+
+    fn transfer_mut(&mut self) -> &mut TransferImportUseCase<L, M, F> {
+        &mut self.transfer
+    }
+}
+
+impl<L, M, F> TransferImportUseCase<L, M, F>
+where
+    L: LibraryGateway,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub(crate) fn new(workflow: TransferWorkflow<L, M, F>) -> Self {
+        Self { workflow }
+    }
+
+    fn workflow(&self) -> &TransferWorkflow<L, M, F> {
         &self.workflow
     }
 
-    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
+    fn workflow_mut(&mut self) -> &mut TransferWorkflow<L, M, F> {
         &mut self.workflow
     }
 }
 
-impl<L, S, M, F> JsonImportUseCase<L, S, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
-        Self {
-            workflow: context.workflow(),
-        }
+    fn local(&self) -> &F {
+        &self.local
     }
 
-    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
-        &self.workflow
-    }
-
-    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
-        &mut self.workflow
-    }
-}
-
-impl<L, S, M, F> TransferImportUseCase<L, S, M, F>
-where
-    L: LibraryGateway,
-    S: ShareSource,
-    M: MetadataCatalog,
-    F: ImportLocalStore,
-{
-    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
-        Self {
-            workflow: context.workflow(),
-        }
-    }
-
-    pub(super) fn workflow(&self) -> &ImportWorkflow<L, S, M, F> {
-        &self.workflow
-    }
-
-    pub(super) fn workflow_mut(&mut self) -> &mut ImportWorkflow<L, S, M, F> {
-        &mut self.workflow
-    }
-}
-
-impl<L, S, M, F> ImportWorkflow<L, S, M, F>
-where
-    L: LibraryGateway,
-    S: ShareSource,
-    M: MetadataCatalog,
-    F: ImportLocalStore,
-{
-    pub(super) fn context(&self) -> ImportContext<L, S, M, F> {
-        ImportContext::new(
-            self.library_gateway.clone(),
-            self.share_source.clone(),
-            self.metadata_catalog.clone(),
-            self.local.clone(),
-        )
+    fn library_gateway(&self) -> &L {
+        &self.library_gateway
     }
 }
