@@ -1,8 +1,9 @@
+mod id;
 mod resolve;
 
 use std::collections::HashMap;
 
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{
     application::import_ports::MetadataCatalog,
@@ -12,6 +13,7 @@ use crate::{
     },
     error::AppResult,
 };
+use id::parsed_tmdb_id;
 use resolve::{resolve_movie_candidate, resolve_tv_candidate};
 
 pub(super) struct TmdbLookup<M> {
@@ -114,29 +116,6 @@ where
             }
         }
         Ok(None)
-    }
-}
-
-fn parsed_tmdb_id(meta: &Metadata, media_type: &str) -> Option<u32> {
-    if meta.tmdb_id.is_empty() {
-        return None;
-    }
-
-    match meta.tmdb_id.parse() {
-        Ok(tmdb_id) => Some(tmdb_id),
-        Err(error) => {
-            warn!(
-                "Invalid {} tmdb id '{}', title candidates: {:?}, error: {}",
-                media_type,
-                meta.tmdb_id,
-                meta.titles
-                    .iter()
-                    .map(|title| &title.title)
-                    .collect::<Vec<_>>(),
-                error
-            );
-            None
-        }
     }
 }
 
