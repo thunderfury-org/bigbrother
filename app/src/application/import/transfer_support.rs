@@ -1,3 +1,4 @@
+mod cleanup;
 mod paths;
 
 use std::collections::HashMap;
@@ -9,12 +10,13 @@ use crate::domain::import::{
     inner::MediaFile,
     paths::get_year_from_date,
     policy::{
-        SeasonTransferState, collect_replaced_media_files, get_max_episode_number,
-        get_missing_episodes, get_number_of_episodes_in_season, need_overwrite_existing_files,
+        SeasonTransferState, get_max_episode_number, get_missing_episodes,
+        get_number_of_episodes_in_season, need_overwrite_existing_files,
     },
 };
 
 use super::{ImportedMedia, TvDetail};
+pub(super) use cleanup::{collect_library_file_ids, existing_season_dir_id, files_pending_cleanup};
 pub(super) use paths::{
     build_local_cleanup_paths, build_subtitle_transfer_plan, remote_child_path,
     renamed_subtitle_file_name,
@@ -52,45 +54,6 @@ pub(super) fn build_imported_tv_result(
         cost,
         _has_failed: state.has_failed,
     }
-}
-
-pub(super) fn files_pending_cleanup<'a>(
-    existing_files: Option<&'a [MediaFile]>,
-    saved_filename: Option<&str>,
-) -> Vec<&'a MediaFile> {
-    let Some(existing_files) = existing_files else {
-        return Vec::new();
-    };
-    let Some(saved_filename) = saved_filename else {
-        return Vec::new();
-    };
-
-    collect_replaced_media_files(existing_files, &Some(saved_filename.to_string()))
-}
-
-pub(super) fn collect_library_file_ids(files: &[&MediaFile]) -> Vec<i64> {
-    let mut file_ids = Vec::new();
-
-    for media_file in files {
-        if let Some(id) = media_file.video.id {
-            file_ids.push(id);
-        }
-        file_ids.extend(
-            media_file
-                .subtitles
-                .iter()
-                .filter_map(|subtitle| subtitle.id),
-        );
-    }
-
-    file_ids
-}
-
-pub(super) fn existing_season_dir_id(
-    season_dir: &str,
-    season_dir_ids: &HashMap<String, i64>,
-) -> Option<i64> {
-    season_dir_ids.get(season_dir).copied()
 }
 
 pub(super) fn log_file_not_saved(file_name: &str) {
