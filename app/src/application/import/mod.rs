@@ -3,6 +3,7 @@ mod group;
 pub(super) mod json;
 mod library;
 mod metadata;
+mod model;
 pub(super) mod share;
 mod tmdb_info;
 mod transfer;
@@ -20,26 +21,4 @@ pub(crate) use factory::{
     ImportUseCaseFactory, JsonImportUseCase, ShareImportUseCase, TransferImportUseCase,
     TransferWorkflow,
 };
-
-#[derive(Debug)]
-pub enum ImportedMedia {
-    Movie {
-        title: String,
-        year: String,
-        size: u64,
-        cost: std::time::Duration,
-        has_failed: bool,
-    },
-    Tv {
-        name: String,
-        year: String,
-        season: u32,
-        episodes: Vec<u32>,
-        missing_episodes: Vec<u32>,
-        max_episode_number: u32,
-        total_size: u64,
-        number_of_episodes: u32,
-        cost: std::time::Duration,
-        _has_failed: bool,
-    },
-}
+pub(crate) use model::ImportedMedia;
