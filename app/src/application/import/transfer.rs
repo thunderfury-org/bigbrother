@@ -1,5 +1,6 @@
 mod episode;
 mod movie;
+mod season;
 mod tv;
 
 use tracing::info;
