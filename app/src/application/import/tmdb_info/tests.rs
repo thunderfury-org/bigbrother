@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::*;
+use crate::domain::import::{SearchMovieResult, SearchTvResult};
 use crate::domain::media::{Metadata, Title};
 
 #[derive(Clone, Default)]
