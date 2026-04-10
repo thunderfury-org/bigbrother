@@ -1,3 +1,4 @@
+mod episode;
 mod movie;
 mod tv;
 
