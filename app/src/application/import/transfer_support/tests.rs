@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     application::import::{Genre, Season},
-    domain::import::inner::Etag,
+    domain::import::inner::{Etag, RawFile},
     domain::media::Metadata,
 };
 
