@@ -1,4 +1,6 @@
-use crate::domain::import::inner::{Etag, MediaFile, RawFile};
+mod upload;
+
+use crate::domain::import::inner::{MediaFile, RawFile};
 use crate::domain::import::policy::format_video_file_name;
 
 use super::{
@@ -9,7 +11,7 @@ use super::{
 };
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
-use tracing::{error, info};
+use tracing::info;
 
 impl<L, M, F> TransferWorkflow<L, M, F>
 where
@@ -163,40 +165,5 @@ where
             .await?;
         info!("Subtitle file {} downloaded", local_file_path);
         Ok(true)
-    }
-
-    async fn transfer_raw_file(
-        &self,
-        parent_dir_id: i64,
-        file_name: &str,
-        size: u64,
-        etag: &Etag,
-    ) -> AppResult<Option<i64>> {
-        Ok(match &etag {
-            Etag::Md5(etag) => {
-                self.library_gateway
-                    .fast_upload_md5(parent_dir_id, file_name, etag, size)
-                    .await?
-            }
-            Etag::Sha1(sha1) => {
-                self.library_gateway
-                    .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
-                    .await?
-            }
-        })
-    }
-
-    async fn transfer_raw_file_with_logging(
-        &self,
-        parent_dir_id: i64,
-        file_name: &str,
-        size: u64,
-        etag: &Etag,
-    ) -> AppResult<Option<i64>> {
-        self.transfer_raw_file(parent_dir_id, file_name, size, etag)
-            .await
-            .inspect_err(|e| {
-                error!("Failed to transfer file {}, error: {}", file_name, e);
-            })
     }
 }
