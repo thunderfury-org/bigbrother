@@ -6,6 +6,7 @@ use crate::error::{AppError, AppResult};
 
 use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
 
+#[derive(Debug)]
 pub enum ResolveDownloadUrlResult {
     Redirect(String),
     Unauthorized,
@@ -38,7 +39,9 @@ where
         match self.source.get_download_url(file_id).await {
             Ok(url) => {
                 if url.is_empty() {
-                    return Err(AppError::Internal("failed to get download url".to_owned()));
+                    return Err(AppError::RuleRejected(
+                        "download url source returned empty url".to_owned(),
+                    ));
                 }
 
                 if let Err(err) = self
@@ -53,7 +56,7 @@ where
             }
             Err(DownloadUrlError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
             Err(DownloadUrlError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
-            Err(err) => Err(AppError::Internal(format!(
+            Err(err) => Err(AppError::Dependency(format!(
                 "failed to get download url: {err}"
             ))),
         }
@@ -130,5 +133,18 @@ mod tests {
 
         let result = service.resolve(1).await.unwrap();
         assert!(matches!(result, ResolveDownloadUrlResult::NotFound));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_source_error_to_dependency_error() {
+        let service = ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            FakeSource {
+                result: Arc::new(Mutex::new(Err("boom"))),
+            },
+        );
+
+        let error = service.resolve(1).await.unwrap_err();
+        assert!(matches!(error, AppError::Dependency(_)));
     }
 }

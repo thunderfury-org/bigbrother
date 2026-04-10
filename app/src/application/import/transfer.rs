@@ -7,9 +7,7 @@ use tracing::info;
 
 use crate::domain::import::inner::{Media, MediaFile};
 
-use super::{
-    ImportedMedia, TransferImportUseCase, TvDetail, transfer_support::should_skip_existing_media,
-};
+use super::{ImportedMedia, TransferImportUseCase, TvDetail};
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
 

@@ -54,6 +54,13 @@ pub(crate) fn get_missing_episodes(
     missing_episodes
 }
 
+pub(crate) fn should_skip_existing_media(
+    existing_files: &[MediaFile],
+    media_file: &MediaFile,
+) -> bool {
+    !existing_files.is_empty() && !need_overwrite_existing_files(existing_files, media_file)
+}
+
 pub(crate) fn group_video_and_subtitle_files(
     raw_files: Vec<(Box<Metadata>, RawFile)>,
 ) -> Vec<MediaFile> {
@@ -575,6 +582,17 @@ mod tests {
             &existing_files_4,
             &new_file_4
         ));
+    }
+
+    #[test]
+    fn test_should_skip_existing_media_only_when_existing_is_not_smaller() {
+        let incoming = create_mock_media_file(100);
+        let smaller_existing = vec![create_mock_media_file(99)];
+        let larger_existing = vec![create_mock_media_file(101)];
+
+        assert!(!should_skip_existing_media(&[], &incoming));
+        assert!(!should_skip_existing_media(&smaller_existing, &incoming));
+        assert!(should_skip_existing_media(&larger_existing, &incoming));
     }
 
     #[test]

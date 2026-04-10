@@ -12,6 +12,7 @@ use tracing::error;
 use crate::{
     application::resolve_download_url::{ResolveDownloadUrlResult, ResolveDownloadUrlService},
     bootstrap::services::MediaDownloadUrlService,
+    error::{AppError, AppErrorKind},
 };
 
 #[derive(Clone)]
@@ -83,13 +84,27 @@ where
                     "Failed to get download url of file {}, id: {}, {}",
                     path, id, e
                 );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to get download url",
-                )
-                    .into_response()
+                map_app_error_to_response(e)
             }
         },
+    }
+}
+
+fn map_app_error_to_response(error: AppError) -> Response {
+    match error.kind() {
+        AppErrorKind::InvalidParameter => {
+            (StatusCode::BAD_REQUEST, error.to_string()).into_response()
+        }
+        AppErrorKind::NotFound => (StatusCode::NOT_FOUND, error.to_string()).into_response(),
+        AppErrorKind::Dependency => (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
+        AppErrorKind::RuleRejected => {
+            (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()).into_response()
+        }
+        AppErrorKind::Runtime | AppErrorKind::Internal => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to get download url",
+        )
+            .into_response(),
     }
 }
 
@@ -132,6 +147,7 @@ mod tests {
     enum FakeSourceResult {
         Url(String),
         NotFound,
+        Error,
     }
 
     #[derive(Clone)]
@@ -146,6 +162,7 @@ mod tests {
                 FakeSourceResult::NotFound => {
                     Err(DownloadUrlError::NotFound("missing".to_string()))
                 }
+                FakeSourceResult::Error => Err(DownloadUrlError::Error("upstream failed".into())),
             }
         }
     }
@@ -224,5 +241,18 @@ mod tests {
 
         let (parts, _body) = response.into_parts();
         assert_eq!(parts.status, HttpStatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_redirect_dependency_error_maps_to_bad_gateway() {
+        let response = redirect_with_resolver(
+            &resolver(FakeSourceResult::Error),
+            "test.mp4".to_string(),
+            HashMap::from([("file_id".to_string(), "12345".to_string())]),
+        )
+        .await;
+
+        let (parts, _body) = response.into_parts();
+        assert_eq!(parts.status, HttpStatusCode::BAD_GATEWAY);
     }
 }

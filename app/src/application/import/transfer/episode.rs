@@ -1,7 +1,8 @@
-use crate::application::import::transfer_support::should_skip_existing_media;
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
-    inner::TransferEpisodeArgs, paths::get_year_from_date, policy::select_largest_media_file,
+    inner::TransferEpisodeArgs,
+    paths::get_year_from_date,
+    policy::{select_largest_media_file, should_skip_existing_media},
 };
 use crate::error::AppResult;
 

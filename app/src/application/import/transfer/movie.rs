@@ -1,10 +1,10 @@
 use crate::domain::import::{
     inner::MediaFile,
     paths::{get_movie_base_name, get_movie_path_in_library, get_year_from_date},
-    policy::select_largest_media_file,
+    policy::{select_largest_media_file, should_skip_existing_media},
 };
 
-use super::{ImportedMedia, TransferImportUseCase, should_skip_existing_media};
+use super::{ImportedMedia, TransferImportUseCase};
 use crate::application::import::MovieDetail;
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::{error::AppResult, log_time};

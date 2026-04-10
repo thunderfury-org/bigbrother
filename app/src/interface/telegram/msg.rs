@@ -12,6 +12,7 @@ use super::format::format_imported_media;
 use crate::bootstrap::services::{ImportService, NotifyService};
 use crate::{
     application::import::{ImportedMedia, ShareUrl, is_fslink},
+    error::{AppError, AppErrorKind},
     log_time,
 };
 
@@ -79,7 +80,8 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from json failed: {}", e);
-                self.send_message(format!("JSON 文件处理失败: {}", e)).await;
+                self.send_message(format_import_error("JSON 文件处理失败", &e))
+                    .await;
             }
         }
 
@@ -98,7 +100,8 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from share url {} failed: {}", url.get_url(), e);
-                self.send_message(format!("分享处理失败: {}", e)).await;
+                self.send_message(format_import_error("分享处理失败", &e))
+                    .await;
             }
         }
 
@@ -116,7 +119,8 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from fslink {} failed: {}", fslink, e);
-                self.send_message(format!("秒传处理失败: {}", e)).await;
+                self.send_message(format_import_error("秒传处理失败", &e))
+                    .await;
             }
         }
 
@@ -191,4 +195,15 @@ impl MsgProcessor<'_> {
             error!("Failed publish send telegram message event: {}", e);
         }
     }
+}
+
+fn format_import_error(prefix: &str, error: &AppError) -> String {
+    let suffix = match error.kind() {
+        AppErrorKind::InvalidParameter => format!("参数错误：{}", error),
+        AppErrorKind::NotFound => format!("未找到资源：{}", error),
+        AppErrorKind::Dependency => format!("外部依赖失败：{}", error),
+        AppErrorKind::RuleRejected => format!("规则拒绝：{}", error),
+        AppErrorKind::Runtime | AppErrorKind::Internal => format!("系统错误：{}", error),
+    };
+    format!("{prefix}: {suffix}")
 }

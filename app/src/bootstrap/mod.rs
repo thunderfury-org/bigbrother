@@ -123,7 +123,9 @@ impl AppRuntime {
     pub async fn run(self) -> AppResult<()> {
         logger::init(self.log_dir.as_str());
 
-        Migrator::up(&self.db, None).await?;
+        Migrator::up(&self.db, None)
+            .await
+            .map_err(|err| AppError::Runtime(format!("failed to run migration: {err}")))?;
         let (server_result, event_result, _) = tokio::join!(
             self.server.run(),
             self.event_delivery.run(),
@@ -145,7 +147,7 @@ impl ServerRuntime {
                 bot_task.abort();
                 match http_result {
                     Ok(result) => result,
-                    Err(err) => Err(AppError::Internal(format!("http task failed: {err}"))),
+                    Err(err) => Err(AppError::Runtime(format!("http task failed: {err}"))),
                 }
             }
             bot_result = &mut bot_task => {
@@ -154,7 +156,7 @@ impl ServerRuntime {
                         http_task.abort();
                         Ok(())
                     }
-                    Err(err) => Err(AppError::Internal(format!("telegram task failed: {err}"))),
+                    Err(err) => Err(AppError::Runtime(format!("telegram task failed: {err}"))),
                 }
             }
         }

@@ -11,7 +11,7 @@ use crate::domain::import::{
     paths::get_year_from_date,
     policy::{
         SeasonTransferState, get_max_episode_number, get_missing_episodes,
-        get_number_of_episodes_in_season, need_overwrite_existing_files,
+        get_number_of_episodes_in_season,
     },
 };
 
@@ -21,13 +21,6 @@ pub(super) use paths::{
     build_local_cleanup_paths, build_subtitle_transfer_plan, remote_child_path,
     renamed_subtitle_file_name,
 };
-
-pub(super) fn should_skip_existing_media(
-    existing_files: &[MediaFile],
-    media_file: &MediaFile,
-) -> bool {
-    !existing_files.is_empty() && !need_overwrite_existing_files(existing_files, media_file)
-}
 
 pub(super) fn build_imported_tv_result(
     detail: &TvDetail,

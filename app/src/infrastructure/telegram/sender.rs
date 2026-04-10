@@ -40,8 +40,8 @@ impl TelegramMessageSender for TelegramBotSender {
             }
         };
 
-        result
-            .map(|_| ())
-            .map_err(|err| AppError::Internal(format!("failed to send telegram message: {}", err)))
+        result.map(|_| ()).map_err(|err| {
+            AppError::Dependency(format!("failed to send telegram message: {}", err))
+        })
     }
 }

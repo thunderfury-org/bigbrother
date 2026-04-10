@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     application::import::{Genre, Season},
     domain::import::inner::{Etag, RawFile},
+    domain::import::policy::should_skip_existing_media,
     domain::media::Metadata,
 };
 

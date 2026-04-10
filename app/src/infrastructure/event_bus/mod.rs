@@ -102,9 +102,18 @@ impl EventBus {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
     use sea_orm::{ConnectOptions, Database};
     use serde::{Deserialize, Serialize};
+    use tokio::time::{Duration, sleep};
+
+    use crate::{
+        application::notify::PublishTelegramMessageService,
+        infrastructure::event::publisher::EventBusPublisher,
+    };
+    use migration::{Migrator, MigratorTrait};
 
     #[derive(Clone, Serialize, Deserialize)]
     struct SampleEvent;
@@ -116,7 +125,9 @@ mod tests {
     async fn test_bus() -> EventBus {
         let mut options = ConnectOptions::new("sqlite::memory:");
         options.sqlx_logging(false);
-        EventBus::new(Database::connect(options).await.unwrap())
+        let db = Database::connect(options).await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        EventBus::new(db)
     }
 
     #[tokio::test]
@@ -133,5 +144,35 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("already subscribed"));
+    }
+
+    #[tokio::test]
+    async fn publish_service_reaches_subscribed_handler() {
+        let bus = test_bus().await;
+        let received = Arc::new(Mutex::new(Vec::new()));
+
+        bus.subscribe::<Arc<Mutex<Vec<String>>>, crate::application::notify::SendTelegramMessage, _, _>(
+            received.clone(),
+            |received, payload| async move {
+                received.lock().unwrap().push(payload.message);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        PublishTelegramMessageService::new(EventBusPublisher::new(bus.clone()))
+            .send_message("hello chain", Some(7))
+            .await
+            .unwrap();
+
+        for _ in 0..20 {
+            if received.lock().unwrap().len() == 1 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(received.lock().unwrap().as_slice(), ["hello chain"]);
     }
 }
