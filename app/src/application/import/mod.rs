@@ -44,7 +44,7 @@ pub enum ImportedMedia {
 }
 
 #[derive(Clone)]
-pub(crate) struct ImportContext<L, S, M, F> {
+pub(crate) struct ImportUseCaseFactory<L, S, M, F> {
     library_gateway: L,
     share_source: S,
     metadata_catalog: M,
@@ -73,13 +73,7 @@ pub(crate) struct TransferImportUseCase<L, M, F> {
     workflow: TransferWorkflow<L, M, F>,
 }
 
-impl<L, S, M, F> ImportContext<L, S, M, F>
-where
-    L: LibraryGateway,
-    S: ShareSource,
-    M: MetadataCatalog,
-    F: ImportLocalStore,
-{
+impl<L, S, M, F> ImportUseCaseFactory<L, S, M, F> {
     pub(crate) fn new(
         library_gateway: L,
         share_source: S,
@@ -93,7 +87,15 @@ where
             local: local_store,
         }
     }
+}
 
+impl<L, S, M, F> ImportUseCaseFactory<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
     fn transfer_workflow(&self) -> TransferWorkflow<L, M, F> {
         TransferWorkflow {
             library_gateway: self.library_gateway.clone(),
@@ -101,6 +103,14 @@ where
             tmdb_lookup: tmdb_info::TmdbLookup::new(self.metadata_catalog.clone()),
             metadata_lookup: metadata::MetadataLookup::default(),
         }
+    }
+
+    pub(crate) fn share_import(&self) -> ShareImportUseCase<L, S, M, F> {
+        ShareImportUseCase::new(self.share_source.clone(), self.transfer_workflow())
+    }
+
+    pub(crate) fn json_import(&self) -> JsonImportUseCase<L, M, F> {
+        JsonImportUseCase::new(self.transfer_workflow())
     }
 }
 
@@ -111,12 +121,11 @@ where
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub(crate) fn new(context: ImportContext<L, S, M, F>) -> Self {
-        let transfer = TransferImportUseCase::new(context.transfer_workflow());
+    fn new(share_source: S, transfer_workflow: TransferWorkflow<L, M, F>) -> Self {
         Self {
-            share_source: context.share_source,
+            share_source,
             metadata_lookup: metadata::MetadataLookup::default(),
-            transfer,
+            transfer: TransferImportUseCase::new(transfer_workflow),
         }
     }
 
@@ -139,13 +148,10 @@ where
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub(crate) fn new<S>(context: ImportContext<L, S, M, F>) -> Self
-    where
-        S: ShareSource,
-    {
+    fn new(transfer_workflow: TransferWorkflow<L, M, F>) -> Self {
         Self {
             metadata_lookup: metadata::MetadataLookup::default(),
-            transfer: TransferImportUseCase::new(context.transfer_workflow()),
+            transfer: TransferImportUseCase::new(transfer_workflow),
         }
     }
 
