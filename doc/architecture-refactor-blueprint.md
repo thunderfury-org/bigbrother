@@ -1,23 +1,28 @@
-# BigBrother 架构重构蓝图（按当前代码重梳）
+# BigBrother 架构重构蓝图（基于当前代码重审）
 
-> 更新时间：2026-04-09（已根据本轮连续重构更新）  
-> 依据代码：`app/src/*`、`migration/src/*`
+> 更新时间：2026-04-10  
+> 审查范围：`app/src/*`、`migration/src/*`、`Makefile`
 
-## 1. 目标
+## 0. 结论摘要
 
-这份文档不再描述一个抽象的“理想架构”，而是基于当前代码回答三个问题：
+当前代码已经从“以运行时状态为中心的脚本式实现”演进到了“`bootstrap` 组装 + `application` 用例 + `domain` 规则 + `infrastructure` 适配器 + `interface` 入口”的分层形态，整体方向是对的，而且**主干已经可用**。
 
-- 现在系统实际上是怎么分层和运行的
-- 哪些重构已经落地，哪些还只是半完成状态
-- 下一步应该沿着什么边界继续收口
+但从严格分层和长期可维护性看，项目还处于“**结构已成型、边界未完全收口**”的阶段，主要问题集中在：
 
-当前仓库已经明显从“全局 `AppState` 驱动”走向了“bootstrap + application service + adapter”的结构，但还没有完全进入严格分层。
+1. `bootstrap` 和 `interface` 仍然知道过多具体实现类型。
+2. import 链路已经拆层，但内部仍偏大、偏深，理解成本高。
+3. 错误模型过粗，很多外部失败被压平为 `AppError::Internal`。
+4. 测试总量不错，但偏单元测试，缺少更高一层的用例/装配回归测试。
+
+当前建议不是再做一次“大重写”，而是沿现有结构继续收口，优先做**边界去具体化、import 链路瘦身、测试分层补齐**。
 
 ---
 
-## 2. 当前代码里的真实结构
+## 1. 架构
 
-当前 `app` crate 可以概括为 6 个部分：
+### 1.1 当前实际分层
+
+当前 `app` crate 的真实结构可以概括为：
 
 ```text
 main
@@ -25,878 +30,652 @@ main
     -> interface
       -> application
         -> domain
-        -> application ports
-      -> infrastructure adapters
-    -> runtime workers
+      -> infrastructure
+  -> background runtime
+
 migration
 ```
 
-对应代码位置：
+对应目录：
 
 - 入口：`app/src/main.rs`
-- 运行时组装：`app/src/bootstrap/mod.rs`、`app/src/bootstrap/app.rs`
-- 应用层：`app/src/application/*`
+- 运行时装配：`app/src/bootstrap/app.rs`、`app/src/bootstrap/mod.rs`
+- 用例层：`app/src/application/*`
 - 领域层：`app/src/domain/*`
-- 接口层：`app/src/interface/*`
 - 基础设施层：`app/src/infrastructure/*`
-- 仍待继续收口的旧业务核心：`app/src/library/*`
+- 入口适配层：`app/src/interface/*`
+- 数据迁移：`migration/src/*`
 
-这里最关键的现实是：**四层目录已经落地，但 `library/import` 仍然是一个尚未完全拆开的核心业务区。**
+### 1.2 启动与运行时链路
 
----
+启动过程较清晰：
 
-## 3. 运行时启动链路
-
-### 3.1 入口
-
-`app/src/main.rs:1` 当前只有一个 CLI 子命令入口：`server`。
-
-执行流程：
-
-1. 解析 CLI 参数
-2. 调用 `AppContext::new(data_dir)`
-3. 通过 `AppRuntime::from_app(app)` 组装运行时
-4. `AppRuntime::run()` 并行启动：
-   - HTTP server
-   - Telegram bot dispatcher
+1. `main` 只解析 CLI，并进入 `server` 子命令。
+2. `AppContext::new` 负责创建底层依赖：
+   - 配置
+   - SQLite 连接
+   - Telegram Bot
+   - Cache
+   - EventBus
+   - pan115/pan123/pan189/tmdb client
+3. `AppRuntime::from_app` 负责把依赖装配成可运行服务：
+   - Telegram bot runtime
+   - HTTP media server
    - event delivery worker
    - cache cleanup loop
+4. `AppRuntime::run` 负责执行 migration 并并发拉起运行时任务。
 
-### 3.2 Bootstrap 的实际职责
+这说明项目已经不再是“业务逻辑直接共享一个巨大的全局状态”，而是**先构造依赖，再注入到具体用例中运行**。
 
-`app/src/bootstrap/app.rs:1` 的 `AppContext` 负责创建底层运行时输入：
+### 1.3 已经比较成熟的部分
 
-- `DatabaseConnection`
-- `teloxide::Bot`
-- `Cache`
-- `EventBus`
-- 外部 client 集合（`pan115` / `pan123` / `pan189` / `tmdb`）
-- import/sync 所需配置
+#### 领域层
 
-`app/src/bootstrap/mod.rs:1` 的 `AppRuntime::from_app` 再把这些输入组装成具体 service：
+`domain` 中有两块已经比较像稳定内核：
 
-- `ManageKeywordsService<SeaOrmKeywordRepository>`
-- `ImportMediaService<PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway>`
-- `PublishTelegramMessageService<EventBusPublisher>`
-- `SyncStrmService<Pan123LibraryRemote, TokioFileStore>`
-- `ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>`
+- `domain/media`
+  - 文件名解析、规范化、标题/语言/季集/画质提取
+  - 规则密集，基础设施依赖少
+  - 测试覆盖较多
+- `domain/library`
+  - 路径映射
+  - `.strm` 同步计划构建
+  - 输入输出明确，纯函数比例高
 
-这说明当前已经不是“业务函数直接吃 `AppState`”，而是：
+这两块说明：**项目最有价值的规则已经开始沉淀到 domain，而不是散落在入口或 client 中。**
 
-- bootstrap 仍持有宽依赖
-- interface 层拿到的是已组装好的 service
-- application 层大多只依赖 trait 或明确的 adapter
+#### 应用层
 
-这是当前架构最重要的进步。
+以下 service 边界已经相对清楚：
 
----
+- `ManageKeywordsService`
+  - 标准 CRUD 用例服务
+- `ResolveDownloadUrlService`
+  - 先查缓存，再查远端，再做结果映射
+- `SyncStrmService`
+  - 采集远端/本地快照，调用 domain 生成同步计划，再执行写入与清理
+- `PublishTelegramMessageService` / `DeliverTelegramMessageService`
+  - 把“发消息”拆成发布与投递两个用例
+- `ImportMediaService`
+  - 已经成为 import 的应用入口，而不是从 interface 直接穿透到一堆 client
 
-## 4. 分层现状
+### 1.4 当前架构的主要问题
 
-### 4.1 Domain 层：已经比较清晰
+#### 问题一：`bootstrap` 仍是“总装配中心 + 知识汇聚点”
 
-代码位置：`app/src/domain/*`
+`bootstrap/mod.rs` 当前承担了过多职责：
 
-当前真正符合 domain 特征的模块主要有两块：
+- 创建具体 adapter
+- 决定 service 组合方式
+- 决定 interface 层所见的具体类型
+- 决定后台任务拓扑
 
-#### `domain/media`
+这在工程初期合理，但随着模块增多，`bootstrap` 会持续膨胀，并成为“修改一个用例时必须同步理解的地方”。
 
-代码位置：
+#### 问题二：`interface` 仍然直接绑定基础设施具体类型
 
-- `app/src/domain/media/mod.rs`
-- `app/src/domain/media/parser.rs`
-- `app/src/domain/media/normalize.rs`
+例如 Telegram runtime 中直接写死了：
 
-职责：
-
-- 文件名解析
-- 标题/语言/编码/HDR/分辨率等归一化
-- 视频/字幕类型识别
-- 季/集/年份/TMDB id 提取
-
-特点：
-
-- 规则密集
-- 基本不依赖基础设施
-- 有较多测试样本
-- 已经是稳定的纯业务资产
-
-#### `domain/library`
-
-代码位置：
-
-- `app/src/domain/library/path_mapping.rs`
-- `app/src/domain/library/sync_plan.rs`
-
-职责：
-
-- 远端路径 -> 本地路径映射
-- `.strm` 路径推导
-- 根据远端快照和本地快照生成同步计划
-- 识别 stale files / stale dirs
-
-特点：
-
-- 纯函数比例高
-- 逻辑和 IO 解耦较好
-- 已经支撑 `SyncStrmService`
-
-#### 现状判断
-
-`domain` 层目前已经不是蓝图里的目标态，而是**已经部分落地**。  
-其中 `media` 和 `sync_plan` 是当前代码中最接近“可长期稳定复用”的内核。
-
----
-
-### 4.2 Application 层：主干已经成型
-
-代码位置：`app/src/application/*`
-
-当前 application 层主要包含 5 组 service。
-
-#### `SyncStrmService`
-
-文件：`app/src/application/sync_strm.rs`
-
-依赖：
-
-- `LibraryRemote`
-- `FileStore`
-- `domain::library::{SyncPathMapper, build_sync_plan}`
-- `domain::media::Metadata`
-
-职责：
-
-- 找到远端根目录 id
-- 遍历远端目录形成快照
-- 遍历本地目录形成快照
-- 调用 domain 生成同步计划
-- 执行 `.strm` 写入、字幕下载、脏文件清理
-
-结论：
-
-- 这是当前分层最清晰的用例服务之一
-- 编排与规则已基本分离
-- 已具备 fake 依赖测试能力
-
-#### `ManageKeywordsService`
-
-文件：`app/src/application/manage_keywords.rs`
-
-依赖：
-
-- `KeywordRepository`
-
-职责：
-
-- 列表查询
-- keyword trim / empty 校验
-- 添加、删除关键字
-
-结论：
-
-- 这是一个典型的小型 use case service
-- 结构已经符合目标态
-
-#### `ResolveDownloadUrlService`
-
-文件：`app/src/application/resolve_download_url.rs`
-
-依赖：
-
-- `DownloadUrlCache`
-- `DownloadUrlSource`
-
-职责：
-
-- 优先查缓存
-- 缓存未命中时获取下载地址
-- 将 source error 映射为 redirect / unauthorized / not found
-
-结论：
-
-- 这是 HTTP 下载跳转用例的标准 application service
-- 当前设计简洁、边界清楚
-
-#### `ImportMediaService`
-
-文件：`app/src/application/import_media.rs`
-
-依赖：
-
-- `LibraryGateway`
-- `ShareSource`
-- `MetadataCatalog`
-- `ImportPathConfig`
-
-职责：
-
-- 对外暴露 `import_from_share_url` / `import_from_fslink` / `import_from_json`
-- 在 application 层组装 `Importer`
-- 作为导入用例的应用层入口
-
-结论：
-
-- 导入入口已经上提到 application
-- import ports 已上提到 application 所有
-- application 已不再通过 `ImportGateway` 间接承载 orchestration
-- `application/import_media.rs` 已补 movie / tv / share URL 三类 fake-backed regression
-- 真实导入规则和流程细节仍主要在 `library/import`
-
-#### `notify`
-
-文件：`app/src/application/notify.rs`
-
-包含：
-
-- `PublishTelegramMessageService`
-- `DeliverTelegramMessageService`
-
-职责：
-
-- 发送 Telegram 消息事件
-- 消费事件并调用发送器
-
-结论：
-
-- 用例编排思路已基本收口
-- `SendTelegramMessage` 已迁到 application，通知链路不再存在 `application -> infrastructure` 的 payload 反向依赖
-
----
-
-### 4.3 Application Ports：已经形成统一端口面
-
-文件：`app/src/application/ports.rs`
-
-以及：
-
-- `app/src/application/import_ports.rs`
-
-当前已经存在的端口包括：
-
-- `KeywordRepository`
-- `DownloadUrlCache`
-- `DownloadUrlSource`
-- `LibraryRemote`
-- `FileStore`
-
-这些端口有两个明显特征：
-
-1. 是按“用例需要的能力”切的，而不是按技术框架切的
-2. 目前重点覆盖了关键字管理、下载地址解析、strm 同步三个方向
-
-这部分已经是当前代码中最值得继续沿用的设计。
-
-导入链路现在已经纳入 application 端口面，只是暂时单独放在 `app/src/application/import_ports.rs`。当前导入相关端口包括：
-
-- `LibraryGateway`
-- `ShareSource`
-- `MetadataCatalog`
-
-这意味着导入端口的所有权已经不再属于 `library/import` 过渡区，而是归 application 所有。
-
----
-
-### 4.4 Interface 层：已从“直接写业务”收缩为“service adapter”
-
-代码位置：`app/src/interface/*`
-
-#### HTTP
-
-文件：
-
-- `app/src/interface/http/mod.rs`
-- `app/src/interface/http/media.rs`
-
-当前媒体下载接口的职责比较清楚：
-
-- 读取 path / query 参数
-- 校验 `file_id`
-- 调用 `ResolveDownloadUrlService`
-- 映射为 HTTP 响应
-
-`interface/http/media.rs:1` 里仍然显式使用了：
-
-- `StringCacheStore`
+- `SeaOrmKeywordRepository`
+- `PanLibraryGateway`
+- `ShareImportGateway`
+- `TmdbMetadataGateway`
+- `FilesystemImportLocalStore`
 - `Pan123LibraryRemote`
+- `TokioFileStore`
 
-但这部分组装发生在 router context 层，而不是 handler 内部，因此问题不大。
+这说明 interface 虽然不直接操作数据库/HTTP，但它仍然**知道太多实现细节**。现在这些类型别名只是在 interface 内部隐藏了一层，没有真正实现“按端口依赖”。
 
-#### Telegram
+#### 问题三：import 链路虽然分层，但内部复杂度仍高
 
-文件：
+import 相关代码已经从旧路径迁到：
 
-- `app/src/interface/telegram/mod.rs`
-- `app/src/interface/telegram/cmd.rs`
-- `app/src/interface/telegram/msg.rs`
-- `app/src/interface/telegram/delivery.rs`
-- `app/src/interface/telegram/format.rs`
+- `application/import_media.rs`
+- `application/import/*`
+- `domain/import/*`
+- `infrastructure/import/*`
 
-当前 Telegram 层的职责分为三类：
+这是明显进步；但 import 仍然是当前系统最复杂的一块，表现为：
 
-1. bot runtime 和 handler 注册
-2. command 到 application service 的调用
-3. message 文本/URL/文档提取与结果格式化
+- 文件体量大
+- 模块跳转深
+- workflow 与策略逻辑交织
+- 同一用例跨越 metadata、share、transfer、cleanup、save 多个模块
 
-已经完成的收口：
+这类设计短期可运行，长期会拖慢理解和改动效率。
 
-- `/list_keywords`、`/add_keyword`、`/delete_keyword` 走 `ManageKeywordsService`
-- `/sync_strm` 走 `SyncStrmService`
-- 通知发送走 `PublishTelegramMessageService`
-- event 消费后的真正发送走 `DeliverTelegramMessageService`
+#### 问题四：领域边界尚不完全统一
 
-仍然较厚的部分：
+目前存在两种并行风格：
 
-- `interface/telegram/msg.rs` 还承担了较多输入提取和导入触发逻辑
-- 它虽然没有直接访问数据库，但仍然包含较复杂的消息解析流程
-- 这块更像“interface-specific orchestration”，不算严重越层，但复杂度已经不低
+- 一部分功能已经是“domain 纯规则 + application 编排”
+- 另一部分仍是“application 子模块自己承接不少规则细节”
 
-#### CLI
+典型表现是 import 相关规则分散在：
 
-文件：`app/src/interface/cli/mod.rs`
+- `domain/import/policy.rs`
+- `application/import/group.rs`
+- `application/import/transfer_support.rs`
+- `application/import/transfer.rs`
 
-当前 CLI 很薄，只负责解析 `server --data-dir`。
+边界不算错，但还没有收敛成一致心智模型。
 
----
+### 1.5 推荐的下一阶段架构方向
 
-### 4.5 Infrastructure 层：接入实现已基本归位
+建议继续沿现在的结构演进，而不是推翻重来。
 
-代码位置：`app/src/infrastructure/*`
+#### 阶段 A：先把接口层和装配层收口
 
-#### 典型 adapter
+目标：
 
-- `app/src/infrastructure/repo/keyword.rs`  
-  `SeaOrmKeywordRepository` 实现 `KeywordRepository`
-- `app/src/infrastructure/cache/string_store.rs`  
-  `StringCacheStore` 实现 `DownloadUrlCache`
-- `app/src/infrastructure/client/library_remote.rs`  
-  `Pan123LibraryRemote` 实现 `LibraryRemote` 与 `DownloadUrlSource`
-- `app/src/infrastructure/fs/tokio_file_store.rs`  
-  `TokioFileStore` 实现 `FileStore`
-- `app/src/infrastructure/event/publisher.rs`  
-  `EventBusPublisher` 实现 `TelegramMessagePublisher`
-- `app/src/infrastructure/telegram/sender.rs`  
-  Telegram 发送器承接实际消息下发
+- `interface` 只依赖 runtime 暴露的 service，不依赖基础设施具体类型
+- `bootstrap` 只负责装配，不承载业务判断
 
-#### 事件系统拆分
+建议动作：
 
-当前事件相关代码分成两层：
+1. 为 `BotRuntime`、`MediaServerContext` 引入更抽象的 service 字段类型。
+2. 把 `interface/telegram/mod.rs` 中的具体 type alias 逐步下沉到 `bootstrap`。
+3. 让 `bootstrap` 输出更稳定的 runtime DTO / context，而不是一堆具体泛型实现。
 
-##### event payload / store adapter
+#### 阶段 B：继续压缩 import 用例复杂度
 
-文件：
+目标：
 
-- `app/src/infrastructure/event/mod.rs`
-- `app/src/infrastructure/event/store.rs`
-- `app/src/infrastructure/event/publisher.rs`
+- `ImportMediaService` 仍做总入口
+- `application/import/*` 只保留编排
+- 规则进一步下沉到 `domain/import`
 
-职责：
+建议动作：
 
-- 为 application payload 提供 `Event` 适配
-- 将 payload 写入持久化事件表
-- 为应用层提供发布 adapter
+1. 以“媒体识别 / 分组 / 传输决策 / 本地落盘”重新梳理 import 子模块边界。
+2. 将 `group.rs`、`transfer_support.rs` 中稳定规则逐步下沉到 domain。
+3. 给 import 引入更明确的中间模型，减少函数间隐式约定。
 
-##### runtime event bus / worker
+#### 阶段 C：统一后台任务模型
 
-文件：
+当前后台任务包括：
 
-- `app/src/infrastructure/event_bus/mod.rs`
-- `app/src/infrastructure/event_bus/worker.rs`
+- HTTP server
+- Telegram dispatcher
+- event delivery
+- cache cleanup
 
-职责：
+建议后续为它们引入统一的 runtime task 抽象，至少做到：
 
-- 订阅事件名
-- 通过 `watch` 通知触发 drain
-- 批量读取 pending event
-- 重试处理失败事件
-- ack 已消费事件
+- 生命周期一致
+- 日志入口一致
+- shutdown 行为一致
+- 失败策略一致
 
-结论：
-
-- 事件机制已经从“直接调用 bot”进化为“持久化事件 + worker delivery”
-- 这是当前代码里非常重要的一层解耦
-- `SendTelegramMessage` 的所有权已经上提到 application；infrastructure 这里只保留事件适配和持久化职责
+这能避免未来任务数增加后 `AppRuntime::run` 继续膨胀。
 
 ---
 
-### 4.6 `library/import`：当前最大的“半拆分核心”
+## 2. 代码质量
 
-代码位置：`app/src/library/import.rs` 与 `app/src/library/import/*`
+### 2.1 总体评价
 
-这是目前最需要准确描述、也最容易被误判的一块。
+代码质量整体处于“**中上，可持续演进，但仍需结构性收口**”的状态。
 
-#### 当前它不再是旧式全局状态驱动
+优点：
 
-`library/import` 现在已经不直接吃 `AppState` 或 `ImportContext` 这类宽对象。  
-`Importer<L, S, M>` 当前持有的是：
+- 模块命名基本统一
+- 用例层大量采用 trait 端口
+- 纯规则模块开始沉淀到 domain
+- 已经有不少 fake-backed 单元测试
+- Workspace、migration、运行命令都比较清楚
 
-- `LibraryRemote<L>`
-- `ShareRemote<S>`
-- `ImportLocalStore`
-- `TmdbLookup<M>`
-- `MetadataLookup`
+主要风险：
 
-其中远端库、分享源、TMDB、以及本地 `.strm` 文件能力都已经拆成独立边界。  
-这说明导入链路已经不只是“第一轮端口化”，而是已经完成了**多轮能力拆分**。
+- 大文件较多
+- 错误抽象偏粗
+- 若干边界上仍有具体实现泄漏
+- import 子系统理解成本偏高
 
-#### 但它仍然是混合层
+### 2.2 目前最明显的质量优势
 
-`library/import` 同时包含了：
+#### 优势一：已经有明确的“端口 + 适配器”趋势
 
-- 媒体元数据解析后的业务规则
-- TMDB 查询策略
-- 目录分类与命名规则
-- 远端库遍历与目录创建
-- 快传 / 下载 / 覆盖 / 删除流程
-- 本地 `.strm` 文件写入与删除的用例编排
+`application/ports.rs`、`application/import_ports.rs` 把用例对外部系统的依赖抽成了接口，这使得：
 
-也就是说，它不是纯 domain，也不是纯 application，更不是纯 infrastructure。
+- `SyncStrmService` 可以对远端文件系统和本地文件系统做 fake 测试
+- `ResolveDownloadUrlService` 可以独立于 cache/source 测试
+- `ManageKeywordsService` 可以独立于数据库测试
+- import service 可以在不依赖真实网盘的情况下回归
 
-#### 当前内部的职责分布
+这是当前代码最值得保留和强化的设计资产。
 
-- `library/import/metadata.rs`：路径与文件名元数据合并
-- `library/import/group.rs`：视频/字幕分组、媒体聚合
-- `library/import/library.rs`：库目录命名和路径计算、列目录
-- `library/import/policy.rs`：覆盖决策、命名、缺失集数、季状态累计等纯规则
-- `library/import/source.rs`：share URL / fslink / json 解析与资源描述转换
-- `library/import/tmdb_info.rs`：TMDB 查询与缓存 helper
-- `library/import/share.rs`：各分享链接的 provider orchestration
-- `library/import/share_walk.rs`：share 遍历状态与路径推进
-- `library/import/share_collect.rs`：各 provider 的目录页收集/转换
-- `library/import/transfer.rs`：movie/tv/season/episode orchestration
-- `library/import/transfer_cleanup.rs`：替换文件清理与本地/远端删除
-- `library/import/transfer_save.rs`：上传、字幕保存、strm 落盘
-- `library/import/transfer_target.rs`：season 目标目录解析
-- `library/import/transfer_support.rs`：transfer 共用纯 helper
-- `library/import/remote.rs`：application-owned import ports 的内部 wrapper
-- `library/import/local.rs`：本地 `.strm` 文件与本地路径 adapter
-- `app/src/domain/library/import_paths.rs`：导入路径/分类/命名规则
-- `app/src/application/import_ports.rs`：导入链路的 application ports
-- `app/src/infrastructure/import/gateway.rs`：`PanLibraryGateway` / `ShareImportGateway` / `TmdbMetadataGateway`
+#### 优势二：领域规则并未继续往 interface/infrastructure 扩散
 
-#### 现状判断
+像文件名解析、同步计划、导入策略等规则，已经主要停留在 `domain` 或 `application/import`，没有继续扩散到 Telegram/HTTP handler 中。说明架构方向是健康的。
 
-导入链路已经比旧结构健康很多，目前属于：
+#### 优势三：重构不是“纯目录迁移”，而是已经有行为收敛
 
-> “导入入口与能力边界已经拆开，`share.rs` / `transfer.rs` 已收口为 orchestration 文件，但 `library/import` 作为整体仍是 import-specific 过渡子域”
+比如 `SyncStrmService` 并不只是换个目录，而是把：
 
-因此，文档里不应再把它描述成“仍然直接依赖所有 concrete client 的泥团”，也不应误写成“已经完全 domain/application 化”。  
-**它现在处于中间态。**
+- 快照采集
+- 同步计划生成
+- 执行写入/删除
+
+分成了较清晰的阶段。这类演进比“只是把文件挪到新目录”更有价值。
+
+### 2.3 当前主要质量问题
+
+#### 问题一：大文件过多，热点集中
+
+当前体量最大的模块包括：
+
+- `app/src/domain/import/policy.rs`
+- `app/src/infrastructure/client/pan123.rs`
+- `app/src/application/import_media.rs`
+- `app/src/infrastructure/client/http.rs`
+- `app/src/domain/media/parser.rs`
+- `app/src/application/sync_strm.rs`
+
+这些大文件不一定说明实现错误，但会带来：
+
+- 理解成本高
+- 局部修改时回归面大
+- 容易让测试与生产代码混在一起放大文件体积
+
+其中最需要优先瘦身的是 **import 链路** 和 **pan123/http client**。
+
+#### 问题二：错误模型过于扁平
+
+`AppError` 目前只有：
+
+- `InvalidParameter`
+- `NotFound`
+- `Internal`
+
+这对项目初期够用，但随着模块增多，问题会逐渐显现：
+
+- application 无法保留足够上下文
+- interface 只能做有限映射
+- 外部依赖失败、领域规则失败、装配失败都容易被压平
+
+建议逐步引入分层错误语义，例如：
+
+- domain 级校验错误
+- external dependency 错误
+- use case 执行错误
+- startup/runtime 错误
+
+不是为了做复杂错误体系，而是为了避免“所有东西都变成 internal error”。
+
+#### 问题三：运行时代码里存在较多 `unwrap` / `expect`
+
+仓库中有不少 `unwrap`，其中一部分只是测试代码或 `LazyLock<Regex>` 初始化，这没问题；但运行路径里仍有一些值得收敛的点，例如：
+
+- 启动时对 migration、初始化、listener 绑定直接 `expect/unwrap`
+- Telegram user id 转换直接 `unwrap`
+- 若干文件路径父目录推断直接 `unwrap`
+
+这些点不一定马上出故障，但会让运行时错误以 panic 形式暴露，不利于服务稳定性与问题定位。
+
+建议原则：
+
+- 测试代码可接受 `unwrap`
+- 静态正则初始化可接受 `unwrap`
+- 运行时 IO/配置/网络相关路径尽量返回 `AppResult`
+
+#### 问题四：interface 层承担了部分流程判断
+
+以 Telegram 消息处理为例，`MsgProcessor` 不只是“翻译输入”，还承担了：
+
+- URL/秒传/JSON 的识别与分流
+- 发送过程提示消息
+- 部分去重与流程控制
+
+这部分并非错误，但继续增长后会让 interface 变成“半个应用层”。建议后续把“消息解析后的命令语义”整理成更明确的 application 输入模型。
+
+### 2.4 代码质量改进优先级
+
+建议按下面顺序推进：
+
+1. **收敛装配边界**  
+   把 interface 对具体 adapter 的认知继续下沉。
+
+2. **拆小 import 热点文件**  
+   优先减轻 `import_media.rs`、`group.rs`、`transfer_support.rs` 的认知负担。
+
+3. **细化错误语义**  
+   至少区分启动错误、外部依赖错误、用例错误。
+
+4. **减少运行路径 panic 点**  
+   将关键 `unwrap/expect` 改为显式错误返回和日志。
+
+5. **建立模块规模红线**  
+   新增逻辑避免继续堆入超大文件。
 
 ---
 
-## 5. 当前依赖关系（按代码实际情况）
+## 3. 测试
 
-当前较准确的依赖方向如下：
+### 3.1 当前测试现状
 
-```text
-main
-  -> bootstrap
+当前测试基础明显好于很多同规模项目。
 
-bootstrap
-  -> application services
-  -> infrastructure adapters
-  -> interface runtime
+本次审查已执行：
 
-interface
-  -> application services
-  -> 少量 runtime context/type alias
-
-application
-  -> domain
-  -> application ports
-  -> `library/import` 子域入口
-
-infrastructure
-  -> application ports / application traits
-  -> domain
-  -> `library/import` wrappers / adapters
-
-library/import
-  -> domain::media
-  -> domain::library::{path_mapping, import_paths}
-  -> external IO through `LibraryGateway` / `ShareSource` / `MetadataCatalog`
+```bash
+cargo test -q
 ```
 
-所以目前真实情况不是严格的：
+结果：
 
-```text
-interface -> application -> domain
-infrastructure -> application::ports
-```
+- `154 passed`
+- `0 failed`
 
-而是：
+测试分布也比较健康，覆盖了：
 
-- `sync_strm` 链路已经非常接近这个目标
-- `keyword` 和 `download url` 链路基本达到这个目标
-- `notify` 链路也已经基本达到这个目标
-- `import` 仍然是主要过渡区
+- `domain/media` 文件名解析与归一化
+- `domain/library` 路径与同步计划
+- `domain/import` share/fslink/策略逻辑
+- `application` service 的 fake-backed 测试
+- `interface/http/media` 的 handler 行为
+- `infrastructure/cache`、`event_bus`、`client/http` 等适配层
 
----
+### 3.2 当前测试的优点
 
-## 6. 已经完成的重构成果
+#### 优点一：核心规则层已有较强单元测试
 
-基于当前代码，以下事情可以视为“已落地”，不应再放在待办区：
+尤其是：
 
-### 6.1 目录重组已完成主体迁移
+- 媒体解析
+- 导入策略
+- 路径/同步计划
 
-当前已经存在并实际使用：
+这些最容易因“看似小改动”被破坏的地方，已经有比较扎实的保护网。
 
-- `domain/`
-- `application/`
-- `infrastructure/`
-- `interface/`
-- `bootstrap/`
+#### 优点二：应用层已经可用 fake 做隔离测试
 
-这说明重构重点已经不是“改目录名”，而是**继续压缩跨层泄漏**。
+这是当前测试设计最重要的价值。说明端口抽象不是摆设，而是真正帮助用例测试脱离外部依赖。
 
-### 6.2 `sync_strm` 已从混合逻辑中抽出主干
-
-`app/src/application/sync_strm.rs:1` 已明确体现：
-
-- domain 负责计划计算
-- application 负责编排与执行
-- infrastructure 提供 remote / fs adapter
-
-这是当前项目最成熟的参考样板。
-
-### 6.3 `keyword` 与 `download url` 已实现 use case + port 模式
-
-对应文件：
-
-- `app/src/application/manage_keywords.rs`
-- `app/src/application/resolve_download_url.rs`
-- `app/src/application/ports.rs`
-
-这部分已经证明：当前代码库完全能够承受“application service + port + adapter”的模式。
-
-### 6.4 `notify` payload 已上提到 application
-
-对应文件：
-
-- `app/src/application/notify.rs`
-- `app/src/infrastructure/event/mod.rs`
-- `app/src/interface/telegram/delivery.rs`
-
-当前通知链路已经做到：
-
-- payload 归 application 所有
-- infrastructure 仅负责 `Event` 适配、持久化和 delivery adapter
-- worker 继续通过 event bus 消费并发送消息
-
-### 6.5 Telegram 发送已通过事件总线异步化
-
-发送链路现在是：
-
-```text
-interface/telegram/msg
-  -> PublishTelegramMessageService
-    -> EventBusPublisher
-      -> EventBus / SeaOrmEventStore
-        -> EventWorker
-          -> DeliverTelegramMessageService
-            -> TelegramBotSender
-```
-
-这比直接在消息处理里同步发 bot 消息要稳健得多。
-
-### 6.6 导入路径/分类规则已迁到 domain
-
-对应文件：
-
-- `app/src/domain/library/import_paths.rs`
-- `app/src/library/import/library.rs`
-
-这说明导入相关的“分类 / 子类 / 基础命名 / 路径拼接”规则已经不再困在 `library/import` 的本地模块里。
-
-### 6.7 导入能力端口已上提到 application
-
-`app/src/application/import_ports.rs:1` 当前定义：
-
-- `LibraryGateway`
-- `ShareSource`
-- `MetadataCatalog`
-
-`app/src/library/import/remote.rs:1` 现在只保留这些端口的内部 wrapper。
-
-`app/src/library/import/local.rs:1` 则承接本地 `.strm` / 路径能力。
-
-### 6.8 导入 orchestration 已上提到 application
-
-`app/src/application/import_media.rs:1` 当前已经负责：
-
-- 注入 `LibraryGateway` / `ShareSource` / `MetadataCatalog`
-- 创建 `Importer`
-- 暴露导入 use case
-
-这意味着 infrastructure 不再拥有导入入口的 orchestration 所有权。
-
-### 6.9 `Importer` 已从“宽状态对象”收缩为“helper 组合器”
-
-当前 `Importer` 的主要状态已经被拆到内部 helper：
-
-- `TmdbLookup`
-- `MetadataLookup`
-- `policy` 中的一组 import-specific 纯规则
-- `source` 中的一组 share/fslink/json 解析规则
-
-同时导入链路已经完成了一轮明确的文件级拆分：
-
-- `share.rs` 只保留 provider flow + 遍历 orchestration
-- `transfer.rs` 只保留 movie/tv/season/episode orchestration
-- `share_walk.rs` / `share_collect.rs` 承接 share 侧纯 helper
-- `transfer_cleanup.rs` / `transfer_save.rs` / `transfer_target.rs` / `transfer_support.rs` 承接 transfer 侧 helper 与保存/清理细节
-
-这些 helper 都已经补了直接测试；同时 `application/import_media.rs` 已经具备更接近真实导入路径的 fake-backed regression：
-
-- `import_from_json` 的 movie 场景
-- `import_from_json` 的 tv 场景
-- `import_from_share_url` 的 pan123 遍历场景
-
----
-
-## 7. 当前仍存在的结构性问题
-
-### 7.1 `AppContext` 仍然是宽 bootstrap 容器
-
-文件：`app/src/bootstrap/app.rs:1`
-
-问题不是它“存在”，而是它当前仍持有过宽的运行时输入：
-
-- DB
-- cache
-- bot
-- event bus
-- 所有外部 client
-- 所有 import/sync 配置
-
-这在 bootstrap 阶段是可接受的，但会带来两个风险：
-
-- 新功能容易继续往这里堆依赖
-- service 组装逻辑容易越来越难测、难替换
-
-建议：
-
-- 保留 `AppContext` 作为 composition root 输入容器
-- 但不要让它重新渗透回业务层
-- 后续可进一步拆成按 runtime concern 组织的 builder/input structs
-
-### 7.2 `library/import` 仍然混合了规则、编排和接入细节
-
-这是当前最大的剩余重构面。
-
-典型症状：
-
-- `Importer` 虽然已经明显瘦身，并且 `share.rs` / `transfer.rs` 已经收口为 orchestration 文件，但它们仍然是 import-specific orchestration 的主要承载点
-- import-specific helper 已拆到多个 sibling module，但它们仍然共同位于 `library/import` 过渡区
-- import-specific 模型与流程还没有像 `sync_strm` 一样进一步切成更明确的 application/domain 单元
-
-建议：
-
-- 保持 `share.rs` / `transfer.rs` 的 orchestration-only 边界，不要让 helper 回流
-- 在 helper 边界稳定后，再决定哪些规则可以继续上提到更清晰的 application/domain 子模块
-- 继续评估 `remote.rs` wrapper 是否还需要进一步压缩
-
-从当前代码成熟度看，这一块已经不再是“继续拆文件”的问题，而更像是：
-
-- 是否把稳定的 import-specific 纯规则继续迁层
-- 是否增加真实 provider 的手动 smoke 验收
-- 是否为 `fslink` 入口再补一条与 share/json 对称的 fake-backed regression
-
-### 7.3 `bootstrap` 仍然是宽 wiring 容器
-
-虽然导入 orchestration 已上提到 application，但 `bootstrap/mod.rs` 里仍要显式拼接多组 adapter。  
-这本身不是错误，但它仍然是一个偏宽的 wiring 点。
-
-### 7.4 Interface 层仍有少量“组装即使用”的强绑定
+#### 优点三：基础设施层也有必要的回归测试
 
 例如：
 
-- `interface/http/media.rs` 直接使用 `StringCacheStore` + `Pan123LibraryRemote` type alias
-- `interface/telegram/mod.rs` 通过具体 type alias 固定 service concrete type
+- cache store
+- event bus / worker
+- HTTP client
 
-这不算严重问题，但意味着 interface 还没有做到完全依赖抽象对象。
+这避免了“只有纯函数有测试，真正会坏的适配层没人测”的常见问题。
 
-建议：
+### 3.3 当前测试的缺口
 
-- 在当前规模下可以接受
-- 若后续入口继续变多，再考虑把 interface runtime context 抽成纯 trait object / generic builder
+#### 缺口一：缺少更高层的装配回归测试
 
-### 7.5 缺少一套统一的“分层标准”来约束新增代码
+目前大多数测试停在模块级、service 级。缺少几类更高层验证：
 
-当前代码已经呈现出两种风格并存：
+- `bootstrap` 装配是否完整
+- runtime 关键依赖能否顺利连通
+- 主要 handler 与 service 的装配兼容性
 
-- 新风格：`sync_strm` / `resolve_download_url` / `manage_keywords`
-- 过渡风格：`library/import`
+不一定要做完整端到端，但至少应有少量“thin integration test”覆盖主链路。
 
-如果没有明确约束，新需求很容易继续写回 bootstrap 或 interface。
+#### 缺口二：import 主流程的场景测试还可以继续补
 
----
+虽然 import 已有不少回归测试，但它仍是最复杂、最容易退化的部分。建议补强：
 
-## 8. 建议的目标架构（基于现状渐进演进）
+- 混合字幕/视频/重复文件场景
+- 多来源 share 的边界行为
+- 已存在目标文件时的覆盖/跳过策略
+- metadata 缺失或歧义时的处理
 
-不是推倒重来，而是在现状上继续收口成下面的形态：
+#### 缺口三：运行时异常路径测试较少
 
-```text
-interface
-  -> application
-    -> domain
-    -> ports
+当前大多数测试偏成功路径或单点失败路径，建议后续增加：
 
-infrastructure
-  -> application::ports
-  -> domain
+- 配置错误
+- migration 失败
+- event handler 连续失败
+- 文件系统权限问题
+- 外部 client 返回非法数据
 
-bootstrap
-  -> wiring only
-```
+这些更接近真实线上故障。
 
-### 8.1 对 `sync_strm` 链路
+### 3.4 推荐的测试策略
 
-保持现状，仅做增量优化：
+后续建议采用三层测试结构：
 
-- 继续补测试
-- 避免新逻辑回流到 infrastructure/client 或 interface
+#### 第一层：domain 规则测试
 
-### 8.2 对 `keyword` / `download url` 链路
+继续保持高密度、小粒度、快速执行。
 
-保持现状，可视为模板：
+适合对象：
 
-- 新增类似用例时优先复制这种模式
+- parser
+- policy
+- path mapping
+- sync plan
 
-### 8.3 对 `notify` 链路
+#### 第二层：application 用例测试
 
-目标：
+继续使用 fake / stub adapter，验证：
 
-- application 拥有消息 payload
-- infrastructure 负责 event store / bus / telegram sender
+- 编排顺序
+- 错误传播
+- 状态变化
+- 输出摘要
 
-建议最终拆分：
+适合对象：
 
-- 这部分已经基本达到目标
-- 后续重点转为维持边界，不再回退
+- `SyncStrmService`
+- `ImportMediaService`
+- `ResolveDownloadUrlService`
 
-### 8.4 对 `import` 链路
+#### 第三层：少量集成测试
 
-目标不是一次性重写，而是逐段拆。
+只保留少量但关键的“穿层”测试，重点保护主链路：
 
-建议分成 4 类职责：
+- HTTP redirect 主路径
+- Telegram message -> import service 的一条关键流程
+- event publish -> delivery 的链路
+- migration + repository 的基本可用性
 
-1. **Import Domain Rules**  
-   文件命名、分类、分组、覆盖策略、缺失集计算
-2. **Import Application Use Cases**  
-   `import_from_share_url` / `import_from_fslink` / `import_from_json`
-3. **Import Ports**  
-   share source、library remote、metadata catalog、local strm store
-4. **Infrastructure Adapters**  
-   pan123 / pan189 / pan115 / tmdb / local fs
-
-当前已经完成了第 3、4 类的大部分拆分，也完成了 `library/import` 内部的一轮 orchestration/helper 文件级拆分；后续重点转向评估第 1、2 类里哪些稳定规则值得继续迁层。
-
----
-
-## 9. 分阶段重构建议
-
-### Phase 1：巩固已落地分层
-
-目标：防止回退。
-
-建议动作：
-
-- 新增功能优先走 `application + ports + infrastructure adapter`
-- 不再新增直接吃 `AppContext` 的业务逻辑
-- 不再把新规则堆进 interface handler
-
-### Phase 2：继续压缩 `library/import`
-
-目标：继续缩小 import-specific orchestration。
-
-建议动作：
-
-- 保持 `share.rs` / `transfer.rs` 作为 orchestration-only 文件
-- 为新增 helper 继续补直接回归测试
-- 维持 `application/import_media.rs` 中 movie / tv / share URL 三类 fake-backed regression
-- 视需要再为 `import_from_fslink` 补一条对称 regression
-- 当 helper 边界稳定后，再评估是否把 `library/import` 中稳定规则继续迁到更清晰的 application/domain 子模块
-- 继续观察 `remote.rs` / `local.rs` 是否还存在可压缩的过渡包装
-
-### Phase 3：瘦身 bootstrap
-
-目标：让 `bootstrap` 只剩 wiring。
-
-建议动作：
-
-- 将 `RuntimeBootstrapInputs` 拆成按 runtime concern 分组的输入结构
-- 将 router/bot/service 组装辅助函数继续下沉到专门 builder
-- 保持 `AppRuntime::run()` 只负责编排生命周期
+目标不是追求数量，而是补上当前“模块都测了，但装起来是否工作”这一层空白。
 
 ---
 
-## 10. 测试策略（按当前代码成熟度）
+## 4. 分阶段重构建议
 
-当前测试结构已经说明项目适合按三层验证：
+### P0：立即可做
 
-### 10.1 纯规则测试
+1. 收敛 `interface` 对具体基础设施类型的直接认知。  
+2. 为 import 子模块建立更稳定的中间模型和命名边界。  
+3. 处理运行路径上的关键 `unwrap/expect`。  
 
-适用模块：
+### P1：下一轮重构
 
-- `domain/media/*`
-- `domain/library/*`
-- `domain/library/import_paths.rs`
-- `library/import/group.rs`
-- `library/import/library.rs` 中的纯命名/路径规则
+1. 拆小 import 热点文件。  
+2. 细化错误模型。  
+3. 增加少量运行时装配/集成测试。  
 
-目标：
+### P2：中期优化
 
-- 规则可直接单测
-- 不需要 DB、HTTP、Bot
-
-### 10.2 应用层 fake 依赖测试
-
-适用模块：
-
-- `application/sync_strm.rs`
-- `application/manage_keywords.rs`
-- `application/resolve_download_url.rs`
-- `application/import_media.rs`
-- `application/notify.rs`
-
-目标：
-
-- 证明 service 编排逻辑不依赖真实外部系统
-
-当前 `application/import_media.rs` 已经覆盖：
-
-- JSON movie 导入 -> TMDB -> library path -> upload -> `.strm`
-- JSON TV 导入 -> season 目录 -> episode 聚合 -> season `.strm`
-- pan123 share URL 导入 -> share 遍历 -> 媒体过滤 -> upload -> `.strm`
-
-### 10.3 adapter / runtime 集成测试
-
-适用模块：
-
-- `infrastructure/event_bus/*`
-- `interface/http/media.rs`
-- `bootstrap` 关键 wiring
-
-目标：
-
-- 覆盖事件 drain、ack、错误映射、路由行为
-
-当前代码已经在这三个方向都有样例，后续只需要沿着已有模式补齐，不需要推翻测试体系。  
-如果继续加强导入链路测试，优先级最高的是为 `import_from_fslink` 增加一条与 JSON/share 对称的 fake-backed regression。
+1. 统一后台任务抽象。  
+2. 继续把稳定规则从 application 下沉到 domain。  
+3. 根据变化频率拆分 pan123/http client 内部模块。  
 
 ---
 
-## 11. 一句话结论
+## 5. 最终判断
 
-当前 BigBrother 的代码现实可以概括为：
+这份代码的当前状态，不应被定义为“架构混乱”，更准确的判断是：
 
-> **分层主骨架已经搭起来了，`sync_strm` / `keyword` / `download url` 已基本进入目标态；真正还需要继续拆的是 `library/import` 和少量 notify/bootstrap 边界泄漏。**
+**主干架构已经建立，且方向正确；现在最大的任务不是重做，而是把已经出现的好边界继续收紧。**
 
-所以后续重构重点不应再放在“建新目录”或“发明新抽象”，而应放在：
+如果继续沿当前路线演进，优先解决：
 
-- 继续把过渡区拆小
-- 让 application 拥有更完整的用例边界
-- 让 infrastructure 回到纯 adapter 角色
-- 让 bootstrap 只负责 wiring
+- 装配层过宽
+- interface 对具体实现泄漏
+- import 子系统复杂度
+- 测试层级不均衡
+
+那么这个项目可以比较平滑地进入“**业务继续增长，但结构仍可控**”的阶段。
+
+---
+
+## 6. 可执行任务清单
+
+下面的任务按“可单独提交 PR”来组织，目标是让后续重构更容易排期、拆分和验收。
+
+### 6.1 PR-1：收敛 interface 对具体实现的依赖
+
+目标：
+
+- 让 `interface` 只面向 service 能力，不直接感知具体 adapter 类型
+
+建议改动：
+
+1. 重构 `app/src/interface/telegram/mod.rs`
+   - 去掉面向具体实现的 type alias
+   - 让 `BotRuntime` 持有更稳定的 service 字段
+2. 重构 `app/src/interface/http/media.rs`
+   - 让 `MediaServerContext` 只依赖下载地址解析 service
+   - 避免在 interface 层重新拼具体 cache/source 组合
+3. 把具体装配逻辑集中到 `app/src/bootstrap/mod.rs`
+
+验收标准：
+
+- `interface/*` 中不再出现 `SeaOrmKeywordRepository`、`PanLibraryGateway`、`TokioFileStore` 这类基础设施实现名
+- `cargo test` 通过
+
+### 6.2 PR-2：拆小 import 入口和 workflow
+
+目标：
+
+- 降低 import 主链路的阅读和修改成本
+
+建议改动：
+
+1. 拆分 `app/src/application/import_media.rs`
+   - 保留 service 门面
+   - 将测试辅助和场景回归拆到更独立位置
+2. 继续整理 `app/src/application/import/mod.rs`
+   - 明确 factory、use case、workflow 三层职责
+3. 给 import 中间模型补统一命名
+   - 避免同类概念在不同模块中重复表达
+
+验收标准：
+
+- `import_media.rs` 明显瘦身
+- import 主链路文件职责更单一
+- 现有 import 回归测试继续通过
+
+### 6.3 PR-3：把稳定规则继续下沉到 domain/import
+
+目标：
+
+- 让 application/import 更聚焦编排
+
+建议改动：
+
+1. 评估并下沉 `app/src/application/import/group.rs` 中稳定规则
+2. 评估并下沉 `app/src/application/import/transfer_support.rs` 中稳定规则
+3. 为迁移后的纯规则补直接单元测试
+
+优先迁移的规则类型：
+
+- 文件分组
+- 文件名决策
+- 覆盖策略
+- 集数缺失计算
+
+验收标准：
+
+- `application/import/*` 中的纯规则函数数量下降
+- `domain/import/*` 的测试覆盖提升
+
+### 6.4 PR-4：细化错误模型
+
+目标：
+
+- 避免所有异常都被压成 `AppError::Internal`
+
+建议改动：
+
+1. 扩展 `app/src/error.rs`
+2. 为 application 层补更有语义的错误映射
+3. 为 interface 层补更稳定的错误到响应/消息映射
+
+建议优先区分：
+
+- 参数错误
+- 外部依赖错误
+- 业务规则拒绝
+- 启动/运行时错误
+
+验收标准：
+
+- 关键用例不再依赖字符串拼接区分错误类型
+- HTTP / Telegram 入口的错误表现更一致
+
+### 6.5 PR-5：减少运行路径 panic 点
+
+目标：
+
+- 降低服务因配置、IO、转换异常直接 panic 的概率
+
+建议改动：
+
+1. 清理 `main`、`bootstrap`、`interface/http` 中的关键 `unwrap/expect`
+2. 对路径父目录、监听地址、用户 ID 转换等点改为显式错误返回
+3. 保留测试代码中的 `unwrap`
+
+验收标准：
+
+- 运行路径上的关键 `unwrap/expect` 数量明显下降
+- 失败时日志可定位具体原因
+
+### 6.6 PR-6：补运行时装配级测试
+
+目标：
+
+- 填补“模块都测了，但装起来是否工作”这一层空白
+
+建议改动：
+
+1. 为 event publish -> delivery 增加一条装配链路测试
+2. 为 HTTP redirect 主路径增加一条更接近运行时的测试
+3. 为 import 主链路增加一条更高层的 thin integration test
+
+验收标准：
+
+- 新增测试不依赖真实外部服务
+- 覆盖至少 2 条跨层主链路
+
+---
+
+## 7. issue 拆分建议
+
+如果要进一步拆成 issue，建议至少建下面 8 个：
+
+1. `refactor: decouple telegram runtime from concrete adapters`
+2. `refactor: decouple media http context from concrete adapter wiring`
+3. `refactor: slim import media service and workflow factory`
+4. `refactor: move stable import rules into domain`
+5. `refactor: introduce richer app error taxonomy`
+6. `refactor: remove panic-prone unwrap/expect in runtime path`
+7. `test: add thin integration tests for runtime chains`
+8. `docs: keep architecture blueprint in sync with refactor progress`
+
+---
+
+## 8. 建议执行顺序
+
+推荐顺序如下：
+
+1. 先做 `PR-1`
+   - 因为收益高、风险相对可控
+2. 再做 `PR-5`
+   - 能先提升运行稳定性
+3. 然后做 `PR-2` + `PR-3`
+   - 集中处理 import 复杂度
+4. 再做 `PR-4`
+   - 在边界相对稳定后细化错误模型
+5. 最后做 `PR-6`
+   - 用装配级测试给前面的重构兜底
+
+这样推进，可以避免一开始就在 import 和错误体系上同时大动干戈，降低单轮重构风险。
