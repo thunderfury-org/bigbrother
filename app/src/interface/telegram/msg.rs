@@ -8,7 +8,8 @@ use teloxide::{
 };
 use tracing::{error, info};
 
-use super::{ImportService, NotifyService, format::format_imported_media};
+use super::format::format_imported_media;
+use crate::bootstrap::services::{ImportService, NotifyService};
 use crate::{
     application::import::{ImportedMedia, ShareUrl, is_fslink},
     log_time,

@@ -10,14 +10,9 @@ use reqwest::StatusCode;
 use tracing::error;
 
 use crate::{
-    application::ports::{DownloadUrlCache, DownloadUrlSource},
     application::resolve_download_url::{ResolveDownloadUrlResult, ResolveDownloadUrlService},
-    infrastructure::{
-        cache::string_store::StringCacheStore, client::library_remote::Pan123LibraryRemote,
-    },
+    bootstrap::services::MediaDownloadUrlService,
 };
-
-type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;
 
 #[derive(Clone)]
 pub(crate) struct MediaServerContext {
@@ -55,8 +50,8 @@ async fn redirect_with_resolver<C, S>(
     params: HashMap<String, String>,
 ) -> Response
 where
-    C: DownloadUrlCache,
-    S: DownloadUrlSource,
+    C: crate::application::ports::DownloadUrlCache,
+    S: crate::application::ports::DownloadUrlSource,
 {
     let file_id = params.get("file_id");
     if file_id.is_none() {
@@ -156,15 +151,14 @@ mod tests {
         }
     }
 
+    fn resolver(result: FakeSourceResult) -> ResolveDownloadUrlService<FakeCache, FakeSource> {
+        ResolveDownloadUrlService::new(FakeCache::default(), FakeSource { result })
+    }
+
     #[tokio::test]
     async fn test_redirect_missing_file_id() {
         let response = redirect_with_resolver(
-            &ResolveDownloadUrlService::new(
-                FakeCache::default(),
-                FakeSource {
-                    result: FakeSourceResult::Url("https://example.com".to_string()),
-                },
-            ),
+            &resolver(FakeSourceResult::Url("https://example.com".into())),
             "test.mp4".to_string(),
             HashMap::new(),
         )
@@ -180,12 +174,7 @@ mod tests {
         params.insert("file_id".to_string(), "not_a_number".to_string());
 
         let response = redirect_with_resolver(
-            &ResolveDownloadUrlService::new(
-                FakeCache::default(),
-                FakeSource {
-                    result: FakeSourceResult::Url("https://example.com".to_string()),
-                },
-            ),
+            &resolver(FakeSourceResult::Url("https://example.com".into())),
             "test.mp4".to_string(),
             params,
         )
@@ -228,12 +217,7 @@ mod tests {
     #[tokio::test]
     async fn test_redirect_not_found() {
         let response = redirect_with_resolver(
-            &ResolveDownloadUrlService::new(
-                FakeCache::default(),
-                FakeSource {
-                    result: FakeSourceResult::NotFound,
-                },
-            ),
+            &resolver(FakeSourceResult::NotFound),
             "test.mp4".to_string(),
             HashMap::from([("file_id".to_string(), "12345".to_string())]),
         )

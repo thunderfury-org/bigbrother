@@ -3,37 +3,12 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use tracing::{error, info};
 
-use crate::{
-    application::{
-        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
-    },
-    infrastructure::{
-        client::library_remote::Pan123LibraryRemote,
-        event::publisher::EventBusPublisher,
-        fs::tokio_file_store::TokioFileStore,
-        import::{
-            gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
-            local_store::FilesystemImportLocalStore,
-        },
-        repo::keyword::SeaOrmKeywordRepository,
-    },
-};
+use crate::bootstrap::services::{ImportService, KeywordService, NotifyService, SyncService};
 
 mod cmd;
 pub(crate) mod delivery;
 mod format;
 mod msg;
-
-pub(crate) type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
-pub(crate) type ImportService = ImportMediaService<
-    PanLibraryGateway,
-    ShareImportGateway,
-    TmdbMetadataGateway,
-    FilesystemImportLocalStore,
->;
-pub(crate) type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
-pub(crate) type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 
 struct BotServices {
     keyword: KeywordService,

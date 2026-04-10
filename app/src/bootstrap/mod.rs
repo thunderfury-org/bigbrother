@@ -3,15 +3,16 @@ use sea_orm::DatabaseConnection;
 use std::time::Duration;
 
 pub mod app;
+pub mod services;
 
 pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
         import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, resolve_download_url::ResolveDownloadUrlService,
-        sync_strm::SyncStrmService,
+        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
     },
+    bootstrap::services::MediaDownloadUrlService,
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
         client::library_remote::Pan123LibraryRemote,
@@ -139,7 +140,7 @@ impl ServerRuntime {
 fn media_server_context(inputs: &RuntimeBootstrapInputs) -> MediaServerContext {
     MediaServerContext::new(
         inputs.media_server_strm_path_prefix.clone(),
-        ResolveDownloadUrlService::new(
+        MediaDownloadUrlService::new(
             StringCacheStore::new(inputs.cache.clone()),
             Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
         ),
