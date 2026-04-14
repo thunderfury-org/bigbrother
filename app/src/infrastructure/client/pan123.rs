@@ -128,6 +128,7 @@ struct AccessToken {
 pub struct Client {
     passport: String,
     password: String,
+    host: String,
     cache_dir: String,
     token: Arc<RwLock<Option<AccessToken>>>,
 }
@@ -137,9 +138,30 @@ impl Client {
         Self {
             passport: passport.to_owned(),
             password: password.to_owned(),
+            host: API_BASE.to_owned(),
             cache_dir: cache_dir.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_host(passport: &str, password: &str, cache_dir: &str, host: &str) -> Self {
+        Self {
+            passport: passport.to_owned(),
+            password: password.to_owned(),
+            host: host.to_owned(),
+            cache_dir: cache_dir.to_owned(),
+            token: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn set_token_for_test(&self, token: &str, expired_at: time::OffsetDateTime) {
+        let mut guard = self.token.write().await;
+        *guard = Some(AccessToken {
+            token: token.to_owned(),
+            expired_at,
+        });
     }
 
     pub async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
@@ -532,7 +554,7 @@ impl Client {
 
     #[inline]
     fn build_api_url(&self, path: &str) -> String {
-        format!("{}{}", API_BASE, path)
+        format!("{}{}", self.host, path)
     }
 
     async fn get_token(&self) -> RequestResult<String> {
@@ -677,5 +699,316 @@ impl Client {
                 response.code, response.message
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_json, header, method, path, query_param},
+    };
+
+    fn unique_cache_dir() -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("bigbrother-pan123-{nanos}"))
+            .display()
+            .to_string()
+    }
+
+    async fn client(server: &MockServer) -> Client {
+        let client = Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
+        client
+            .set_token_for_test(
+                "test-token",
+                time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            )
+            .await;
+        client
+    }
+
+    fn file_json(file_id: i64, file_name: &str, file_type: i32, abs_path: &str) -> serde_json::Value {
+        serde_json::json!({
+            "FileId": file_id,
+            "FileName": file_name,
+            "Type": file_type,
+            "Size": 1234,
+            "CreateAt": "2024-01-01T00:00:00Z",
+            "UpdateAt": "2024-01-01T00:00:00Z",
+            "Etag": format!("etag-{file_id}"),
+            "AbsPath": abs_path,
+        })
+    }
+
+    #[test]
+    fn process_response_maps_common_error_codes() {
+        let client = Client::new("user", "pass", "/tmp/pan123-tests");
+
+        assert!(matches!(
+            client.process_response::<serde_json::Value>(CommonResponse {
+                code: 1,
+                message: "exists".to_string(),
+                data: None,
+            }),
+            Err(RequestError::AlreadyExists)
+        ));
+        assert!(matches!(
+            client.process_response::<serde_json::Value>(CommonResponse {
+                code: 401,
+                message: "unauthorized".to_string(),
+                data: None,
+            }),
+            Err(RequestError::Unauthorized)
+        ));
+        assert!(matches!(
+            client.process_response::<serde_json::Value>(CommonResponse {
+                code: 429,
+                message: "busy".to_string(),
+                data: None,
+            }),
+            Err(RequestError::TooManyRequests)
+        ));
+        assert!(matches!(
+            client.process_response::<serde_json::Value>(CommonResponse {
+                code: 5066,
+                message: "missing".to_string(),
+                data: None,
+            }),
+            Err(RequestError::NotFound(message)) if message == "missing"
+        ));
+    }
+
+    #[test]
+    fn write_then_read_token_cache_file_round_trips() {
+        let cache_dir = unique_cache_dir();
+        let client = Client::new("user", "pass", &cache_dir);
+        let token = AccessToken {
+            token: "cached-token".to_string(),
+            expired_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+        };
+
+        client.write_token_to_cache_file(&token).unwrap();
+        let loaded = client.read_token_from_cache_file().unwrap().unwrap();
+
+        assert_eq!(loaded.token, "cached-token");
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn list_dir_ids_returns_only_directories() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/file/list/new"))
+            .and(query_param("parentFileId", "42"))
+            .and(query_param("operateType", "1"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "Next": "0",
+                    "Len": 2,
+                    "IsFirst": true,
+                    "InfoList": [
+                        file_json(10, "Season 1", 1, "/10"),
+                        file_json(11, "episode.mkv", 0, "/11")
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.list_dir_ids(42).await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("Season 1"), Some(&10));
+    }
+
+    #[tokio::test]
+    async fn get_download_url_returns_prefixed_path() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .and(header("authorization", "Bearer test-token"))
+            .and(body_json(serde_json::json!({
+                "fileIdList": [{"FileId": 99}]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": [{
+                        "FileId": 99,
+                        "FileName": "movie.mkv",
+                        "Size": 2048,
+                        "Etag": "etag-99",
+                        "S3KeyFlag": "flag-99"
+                    }]
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/file/download_info"))
+            .and(header("authorization", "Bearer test-token"))
+            .and(body_json(serde_json::json!({
+                "driveId": 0,
+                "fileId": 99,
+                "etag": "etag-99",
+                "size": 2048,
+                "s3keyFlag": "flag-99",
+                "fileName": "movie.mkv",
+                "type": 0
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "downloadPath": "/download/movie.mkv",
+                    "dispatchList": [{"prefix": "https://cdn.example.com"}]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.get_download_url(99).await.unwrap();
+
+        assert_eq!(result, "https://cdn.example.com/download/movie.mkv");
+    }
+
+    #[tokio::test]
+    async fn get_download_url_returns_not_found_when_multi_get_misses() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": []
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client.get_download_url(99).await.unwrap_err();
+
+        match error {
+            RequestError::NotFound(message) => assert!(message.contains("file 99 not found")),
+            other => panic!("expected not found, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_download_url_returns_error_when_dispatch_is_empty() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": [{
+                        "FileId": 99,
+                        "FileName": "movie.mkv",
+                        "Size": 2048,
+                        "Etag": "etag-99",
+                        "S3KeyFlag": "flag-99"
+                    }]
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/file/download_info"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "downloadPath": "/download/movie.mkv",
+                    "dispatchList": []
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client.get_download_url(99).await.unwrap_err();
+
+        match error {
+            RequestError::Error(message) => {
+                assert!(message.contains("no dispatch available"));
+            }
+            other => panic!("expected request error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_file_id_by_path_returns_matching_file_id() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/file/list/new"))
+            .and(query_param("SearchData", "movie.mkv"))
+            .and(query_param("operateType", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "Next": "0",
+                    "Len": 1,
+                    "IsFirst": true,
+                    "InfoList": [
+                        file_json(30, "movie.mkv", 0, "/10/20/30")
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .and(body_json(serde_json::json!({
+                "fileIdList": [
+                    {"FileId": 10},
+                    {"FileId": 20},
+                    {"FileId": 30}
+                ]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": [
+                        {"FileId": 10, "FileName": "Shows", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
+                        {"FileId": 20, "FileName": "Season 1", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
+                        {"FileId": 30, "FileName": "movie.mkv", "Size": 1234, "Etag": "e30", "S3KeyFlag": "s30"}
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client
+            .get_file_id_by_path("/Shows/Season 1/movie.mkv")
+            .await
+            .unwrap();
+
+        assert_eq!(result, Some(30));
     }
 }

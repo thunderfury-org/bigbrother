@@ -65,3 +65,127 @@ fn map_download_url_error(err: RequestError) -> DownloadUrlError {
         RequestError::Error(message) => DownloadUrlError::Error(message),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+    use crate::application::ports::{DownloadUrlSource, LibraryRemote};
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_json, header, method, path, query_param},
+    };
+
+    fn unique_cache_dir() -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("bigbrother-library-remote-{nanos}"))
+            .display()
+            .to_string()
+    }
+
+    fn file_json(file_id: i64, file_name: &str, file_type: i32) -> serde_json::Value {
+        serde_json::json!({
+            "FileId": file_id,
+            "FileName": file_name,
+            "Type": file_type,
+            "Size": 1234,
+            "CreateAt": "2024-01-01T00:00:00Z",
+            "UpdateAt": "2024-01-01T00:00:00Z",
+            "Etag": format!("etag-{file_id}"),
+            "AbsPath": format!("/{file_id}"),
+        })
+    }
+
+    async fn remote(server: &MockServer) -> Pan123LibraryRemote {
+        let client = pan123::Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
+        client
+            .set_token_for_test(
+                "test-token",
+                time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            )
+            .await;
+        Pan123LibraryRemote::new(client)
+    }
+
+    #[test]
+    fn map_download_url_error_preserves_expected_variants() {
+        assert!(matches!(
+            map_download_url_error(RequestError::Unauthorized),
+            DownloadUrlError::Unauthorized
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::NotFound("missing".to_string())),
+            DownloadUrlError::NotFound(message) if message == "missing"
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::TooManyRequests),
+            DownloadUrlError::Error(message) if message == "too many requests"
+        ));
+    }
+
+    #[tokio::test]
+    async fn list_dir_maps_pan123_entries_to_remote_entries() {
+        let server = MockServer::start().await;
+        let remote = remote(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/file/list/new"))
+            .and(query_param("parentFileId", "42"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "Next": "0",
+                    "Len": 2,
+                    "IsFirst": true,
+                    "InfoList": [
+                        file_json(10, "Season 1", 1),
+                        file_json(11, "episode.mkv", 0)
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let entries = remote.list_dir(42).await.unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].file_id, 10);
+        assert!(entries[0].is_dir);
+        assert_eq!(entries[1].file_name, "episode.mkv");
+        assert!(!entries[1].is_dir);
+    }
+
+    #[tokio::test]
+    async fn get_download_url_maps_not_found_error() {
+        let server = MockServer::start().await;
+        let remote = remote(&server).await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .and(body_json(serde_json::json!({
+                "fileIdList": [{"FileId": 99}]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": []
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = DownloadUrlSource::get_download_url(&remote, 99)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DownloadUrlError::NotFound(message) if message.contains("file 99 not found")));
+    }
+}
