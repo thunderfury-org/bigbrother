@@ -26,23 +26,37 @@ where
         url: &ShareUrl<'_>,
     ) -> AppResult<Vec<ImportedMedia>> {
         info!("Importing from share URL: {}", url.get_url());
+        let (provider, media_files) = self.collect_media_files(url).await?;
+        self.execute_import(provider, media_files).await
+    }
+
+    async fn collect_media_files(
+        &mut self,
+        url: &ShareUrl<'_>,
+    ) -> AppResult<(&'static str, Vec<MediaFile>)> {
         match url {
-            ShareUrl::Pan123(url) => self.import_pan123_share(url).await,
-            ShareUrl::Pan189(url) => self.import_pan189_share(url).await,
-            ShareUrl::Pan115(url) => self.import_pan115_share(url).await,
+            ShareUrl::Pan123(url) => self.collect_pan123_media_files(url).await,
+            ShareUrl::Pan189(url) => self.collect_pan189_media_files(url).await,
+            ShareUrl::Pan115(url) => self.collect_pan115_media_files(url).await,
         }
     }
 
-    async fn import_pan123_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
+    async fn collect_pan123_media_files(
+        &mut self,
+        url: &Url,
+    ) -> AppResult<(&'static str, Vec<MediaFile>)> {
         let (share_key, share_password) = parse_pan123_share_parts(url);
 
         let media_files = self
             .list_files_from_pan123_share(share_key.as_str(), share_password.as_str())
             .await?;
-        self.finish_share_import("pan123", media_files).await
+        Ok(("pan123", media_files))
     }
 
-    async fn import_pan189_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
+    async fn collect_pan189_media_files(
+        &mut self,
+        url: &Url,
+    ) -> AppResult<(&'static str, Vec<MediaFile>)> {
         let share_code = parse_pan189_share_code(url);
         if share_code.is_empty() {
             return Err(AppError::NotFound(format!(
@@ -52,10 +66,13 @@ where
         }
 
         let media_files = self.list_files_from_pan189_share(&share_code).await?;
-        self.finish_share_import("pan189", media_files).await
+        Ok(("pan189", media_files))
     }
 
-    async fn import_pan115_share(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
+    async fn collect_pan115_media_files(
+        &mut self,
+        url: &Url,
+    ) -> AppResult<(&'static str, Vec<MediaFile>)> {
         let (share_code, receive_code) = parse_pan115_share_parts(url);
 
         if share_code.is_empty() {
@@ -68,10 +85,10 @@ where
         let media_files = self
             .list_files_from_pan115_share(&share_code, &receive_code)
             .await?;
-        self.finish_share_import("pan115", media_files).await
+        Ok(("pan115", media_files))
     }
 
-    async fn finish_share_import(
+    async fn execute_import(
         &mut self,
         provider: &str,
         media_files: Vec<MediaFile>,

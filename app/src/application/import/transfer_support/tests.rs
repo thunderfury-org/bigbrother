@@ -99,6 +99,71 @@ fn build_imported_tv_result_merges_existing_episode_presence() {
 }
 
 #[test]
+fn accumulate_episode_transfer_result_ignores_none() {
+    let mut state = SeasonTransferState::default();
+
+    accumulate_episode_transfer_result(&mut state, 3, None);
+
+    assert_eq!(state, SeasonTransferState::default());
+}
+
+#[test]
+fn accumulate_episode_transfer_result_records_success() {
+    let mut state = SeasonTransferState::default();
+
+    accumulate_episode_transfer_result(&mut state, 3, Some((true, 1024)));
+
+    assert_eq!(
+        state,
+        SeasonTransferState {
+            has_failed: false,
+            total_size: 1024,
+            episodes: vec![3],
+        }
+    );
+}
+
+#[test]
+fn accumulate_episode_transfer_result_records_failure_without_episode() {
+    let mut state = SeasonTransferState::default();
+
+    accumulate_episode_transfer_result(&mut state, 3, Some((false, 1024)));
+
+    assert_eq!(
+        state,
+        SeasonTransferState {
+            has_failed: true,
+            total_size: 0,
+            episodes: vec![],
+        }
+    );
+}
+
+#[test]
+fn get_number_of_episodes_in_season_returns_matching_count() {
+    assert_eq!(get_number_of_episodes_in_season(&create_tv_detail(), 1), 8);
+}
+
+#[test]
+fn get_number_of_episodes_in_season_returns_zero_when_missing() {
+    assert_eq!(get_number_of_episodes_in_season(&create_tv_detail(), 3), 0);
+}
+
+#[test]
+fn get_max_episode_number_considers_imported_and_existing() {
+    let existing = HashMap::from([(6, vec![create_media_file("S01E06.mkv", 100)])]);
+
+    assert_eq!(get_max_episode_number(&[1, 2, 4], &existing), 6);
+}
+
+#[test]
+fn get_missing_episodes_merges_imported_and_existing() {
+    let existing = HashMap::from([(4, vec![create_media_file("S01E04.mkv", 100)])]);
+
+    assert_eq!(get_missing_episodes(5, &[1, 3], &existing), vec![2, 5]);
+}
+
+#[test]
 fn renamed_subtitle_file_name_tracks_video_rename() {
     let subtitle = create_subtitle("Show.S01E01.zh.srt");
 

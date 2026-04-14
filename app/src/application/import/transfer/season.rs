@@ -5,11 +5,13 @@ use crate::application::import_ports::{ImportLocalStore, LibraryGateway, Metadat
 use crate::domain::import::{
     inner::{MediaFile, TransferEpisodeArgs},
     paths::get_tv_base_name,
-    policy::{SeasonTransferState, accumulate_episode_transfer_result},
 };
 use crate::{error::AppResult, log_time};
 
 use super::{ImportedMedia, TransferImportUseCase, TvDetail};
+use crate::application::import::transfer_support::{
+    SeasonTransferState, accumulate_episode_transfer_result,
+};
 
 impl<L, M, F> TransferImportUseCase<L, M, F>
 where

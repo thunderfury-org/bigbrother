@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use tracing::info;
 
@@ -8,51 +8,6 @@ use super::{
 };
 use crate::domain::media::Metadata;
 use crate::error::{AppError, AppResult};
-
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct SeasonTransferState {
-    pub(crate) has_failed: bool,
-    pub(crate) total_size: u64,
-    pub(crate) episodes: Vec<u32>,
-}
-
-pub(crate) fn get_number_of_episodes_in_season(detail: &TvDetail, season_number: u32) -> u32 {
-    detail
-        .seasons
-        .iter()
-        .find(|season| season.season_number == season_number)
-        .map(|season| season.episode_count)
-        .unwrap_or_default()
-}
-
-pub(crate) fn get_max_episode_number(
-    episodes: &[u32],
-    existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
-) -> u32 {
-    std::cmp::max(
-        *episodes.iter().max().unwrap_or(&0),
-        *existing_episode_files.keys().max().unwrap_or(&0),
-    )
-}
-
-pub(crate) fn get_missing_episodes(
-    max_episode_number: u32,
-    episodes: &[u32],
-    existing_episode_files: &HashMap<u32, Vec<MediaFile>>,
-) -> Vec<u32> {
-    let mut existing_episodes: HashSet<u32> = episodes.iter().copied().collect();
-    for episode in existing_episode_files.keys() {
-        existing_episodes.insert(*episode);
-    }
-
-    let mut missing_episodes = Vec::new();
-    for episode_number in 1..=max_episode_number {
-        if !existing_episodes.contains(&episode_number) {
-            missing_episodes.push(episode_number);
-        }
-    }
-    missing_episodes
-}
 
 pub(crate) fn should_skip_existing_media(
     existing_files: &[MediaFile],
@@ -259,30 +214,9 @@ pub(crate) fn select_largest_media_file<'a>(
         .ok_or_else(|| AppError::NotFound(format!("no video file found when transfer {}", context)))
 }
 
-pub(crate) fn accumulate_episode_transfer_result(
-    state: &mut SeasonTransferState,
-    episode_number: u32,
-    result: Option<(bool, u64)>,
-) {
-    let Some((success, size)) = result else {
-        return;
-    };
-
-    if success {
-        state.total_size += size;
-        state.episodes.push(episode_number);
-    } else {
-        state.has_failed = true;
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{
-        application::import::{Genre, Season},
-        domain::import::inner::{Etag, RawFile},
-        domain::media::Metadata,
-    };
+    use crate::{domain::import::inner::{Etag, RawFile}, domain::media::Metadata};
 
     use super::*;
 
@@ -311,37 +245,6 @@ mod tests {
                 path: "/path".to_string(),
             },
             subtitles: Vec::new(),
-        }
-    }
-
-    fn create_tv_detail() -> TvDetail {
-        TvDetail {
-            id: 1,
-            name: "Test Show".to_string(),
-            first_air_date: "2024-01-01".to_string(),
-            number_of_episodes: 20,
-            number_of_seasons: 2,
-            origin_country: vec![],
-            original_language: "en".to_string(),
-            original_name: "Test Show".to_string(),
-            genres: vec![Genre {
-                id: 1,
-                name: "Drama".to_string(),
-            }],
-            seasons: vec![
-                Season {
-                    id: 11,
-                    name: "Season 1".to_string(),
-                    season_number: 1,
-                    episode_count: 10,
-                },
-                Season {
-                    id: 12,
-                    name: "Season 2".to_string(),
-                    season_number: 2,
-                    episode_count: 8,
-                },
-            ],
         }
     }
 
@@ -644,70 +547,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_accumulate_episode_transfer_result_ignores_none() {
-        let mut state = SeasonTransferState::default();
-
-        accumulate_episode_transfer_result(&mut state, 3, None);
-
-        assert_eq!(state, SeasonTransferState::default());
-    }
-
-    #[test]
-    fn test_accumulate_episode_transfer_result_records_success() {
-        let mut state = SeasonTransferState::default();
-
-        accumulate_episode_transfer_result(&mut state, 3, Some((true, 1024)));
-
-        assert_eq!(
-            state,
-            SeasonTransferState {
-                has_failed: false,
-                total_size: 1024,
-                episodes: vec![3],
-            }
-        );
-    }
-
-    #[test]
-    fn test_accumulate_episode_transfer_result_records_failure_without_episode() {
-        let mut state = SeasonTransferState::default();
-
-        accumulate_episode_transfer_result(&mut state, 3, Some((false, 1024)));
-
-        assert_eq!(
-            state,
-            SeasonTransferState {
-                has_failed: true,
-                total_size: 0,
-                episodes: vec![],
-            }
-        );
-    }
-
-    #[test]
-    fn test_get_number_of_episodes_in_season_returns_matching_count() {
-        assert_eq!(get_number_of_episodes_in_season(&create_tv_detail(), 2), 8);
-    }
-
-    #[test]
-    fn test_get_number_of_episodes_in_season_returns_zero_when_missing() {
-        assert_eq!(get_number_of_episodes_in_season(&create_tv_detail(), 3), 0);
-    }
-
-    #[test]
-    fn test_get_max_episode_number_considers_imported_and_existing() {
-        let mut existing = HashMap::new();
-        existing.insert(6, vec![create_mock_media_file(100)]);
-
-        assert_eq!(get_max_episode_number(&[1, 2, 4], &existing), 6);
-    }
-
-    #[test]
-    fn test_get_missing_episodes_merges_imported_and_existing() {
-        let mut existing = HashMap::new();
-        existing.insert(4, vec![create_mock_media_file(100)]);
-
-        assert_eq!(get_missing_episodes(5, &[1, 3], &existing), vec![2, 5]);
-    }
 }

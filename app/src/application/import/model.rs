@@ -17,6 +17,6 @@ pub enum ImportedMedia {
         total_size: u64,
         number_of_episodes: u32,
         cost: std::time::Duration,
-        _has_failed: bool,
+        has_failed: bool,
     },
 }

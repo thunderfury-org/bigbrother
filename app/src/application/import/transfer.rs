@@ -21,12 +21,25 @@ where
         &mut self,
         media_files: &[MediaFile],
     ) -> AppResult<Vec<ImportedMedia>> {
-        let mut results = Vec::with_capacity(media_files.len());
+        let medias = self.build_import_plan(media_files).await?;
+        self.execute_import_plan(&medias).await
+    }
 
+    async fn build_import_plan<'a>(
+        &mut self,
+        media_files: &'a [MediaFile],
+    ) -> AppResult<Vec<Media<'a>>> {
         let medias = self.workflow_mut().group_media_files(media_files).await?;
         info!("Grouped into {} media items", medias.len());
+        Ok(medias)
+    }
 
-        for media in &medias {
+    async fn execute_import_plan(
+        &mut self,
+        medias: &[Media<'_>],
+    ) -> AppResult<Vec<ImportedMedia>> {
+        let mut results = Vec::with_capacity(medias.len());
+        for media in medias {
             match media {
                 Media::Movie { detail, files } => {
                     if let Some(imported) = self.transfer_movie(detail, files).await? {
