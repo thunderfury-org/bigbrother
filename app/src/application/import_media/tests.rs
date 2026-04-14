@@ -16,7 +16,8 @@ use crate::application::import::{
     LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, TvDetail,
 };
-use crate::application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource};
+use crate::error::AppError;
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -93,6 +94,9 @@ struct FakeLibraryState {
     mkdir_dirs: Vec<(i64, String)>,
     fast_uploads: Vec<(i64, String, String, u64)>,
     trashed_file_ids: Vec<Vec<i64>>,
+    fail_mkdir_path: bool,
+    fail_mkdir_dir: bool,
+    md5_upload_returns_none: bool,
 }
 
 #[derive(Clone, Default)]
@@ -103,6 +107,14 @@ struct FakeShareSource {
 
 #[derive(Clone, Default)]
 struct FakeMetadataCatalog;
+
+#[derive(Clone)]
+struct FakeLocalStore {
+    remote_path: String,
+    local_root: PathBuf,
+    strm_download_url: String,
+    fail_remove: bool,
+}
 
 impl LibraryGateway for FakeLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
@@ -125,6 +137,9 @@ impl LibraryGateway for FakeLibraryGateway {
             .copied())
     }
     async fn mkdir_library_path(&self, path: &str) -> AppResult<i64> {
+        if self.state.lock().unwrap().fail_mkdir_path {
+            return Err(AppError::Dependency("mkdir path failed".into()));
+        }
         self.state
             .lock()
             .unwrap()
@@ -146,6 +161,9 @@ impl LibraryGateway for FakeLibraryGateway {
             .unwrap_or_default())
     }
     async fn mkdir_library_dir(&self, parent_dir_id: i64, folder_name: &str) -> AppResult<i64> {
+        if self.state.lock().unwrap().fail_mkdir_dir {
+            return Err(AppError::Dependency("mkdir dir failed".into()));
+        }
         self.state
             .lock()
             .unwrap()
@@ -168,6 +186,9 @@ impl LibraryGateway for FakeLibraryGateway {
         etag: &str,
         size: u64,
     ) -> AppResult<Option<i64>> {
+        if self.state.lock().unwrap().md5_upload_returns_none {
+            return Ok(None);
+        }
         self.state.lock().unwrap().fast_uploads.push((
             parent_dir_id,
             file_name.to_string(),
@@ -283,6 +304,62 @@ impl MetadataCatalog for FakeMetadataCatalog {
                 season_number: 1,
             }],
         }))
+    }
+}
+
+impl FakeLocalStore {
+    fn new(local_root: PathBuf) -> Self {
+        Self {
+            remote_path: "/remote".into(),
+            local_root,
+            strm_download_url: "http://localhost/d".into(),
+            fail_remove: false,
+        }
+    }
+}
+
+impl ImportLocalStore for FakeLocalStore {
+    fn remote_library_path(&self) -> &str {
+        self.remote_path.as_str()
+    }
+
+    fn local_path_for_remote(&self, remote_path: &str) -> String {
+        let relative = remote_path.trim_start_matches(self.remote_path.as_str()).trim_start_matches('/');
+        self.local_root.join(relative).to_string_lossy().into_owned()
+    }
+
+    fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
+        let local_file_path = self.local_path_for_remote(remote_file_path);
+        if let Some(stripped) = local_file_path.strip_suffix(extension) {
+            format!("{stripped}.strm")
+        } else {
+            format!("{local_file_path}.strm")
+        }
+    }
+
+    async fn write_strm_file(
+        &self,
+        remote_file_path: &str,
+        extension: &str,
+        file_id: i64,
+    ) -> AppResult<()> {
+        let local_file_path = self.local_strm_path(remote_file_path, extension);
+        let content = format!("{}{}?file_id={}", self.strm_download_url, remote_file_path, file_id);
+        tokio::fs::create_dir_all(PathBuf::from(&local_file_path).parent().unwrap()).await?;
+        tokio::fs::write(local_file_path, content).await?;
+        Ok(())
+    }
+
+    async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()> {
+        if self.fail_remove {
+            return Err(AppError::Internal("remove local file failed".into()));
+        }
+        if let Err(err) = tokio::fs::remove_file(path).await
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(AppError::Internal(format!("remove local file failed, {err}")));
+        }
+        Ok(())
     }
 }
 
@@ -1037,6 +1114,129 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
 
     assert!(!old_local_dir.join("Breaking Bad.2008.S01E01.720p.strm").exists());
     assert!(old_local_dir.join("Breaking Bad.2008.S01E01.1080p.strm").exists());
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_json_returns_error_when_library_dir_creation_fails() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    gateway.state.lock().unwrap().fail_mkdir_path = true;
+    let service = ImportMediaService::new(
+        gateway,
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let json = serde_json::to_vec(&serde_json::json!({
+        "files": [{
+            "path": "Inception.2010.1080p.mkv",
+            "etag": "0123456789abcdef0123456789abcdef",
+            "size": 1234u64
+        }]
+    }))
+    .unwrap();
+
+    let error = service.import_from_json(json).await.unwrap_err();
+
+    assert_eq!(error.kind(), crate::error::AppErrorKind::Dependency);
+    assert!(error.to_string().contains("mkdir path failed"));
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_json_marks_movie_failed_when_upload_returns_none() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    gateway.state.lock().unwrap().md5_upload_returns_none = true;
+    let service = ImportMediaService::new(
+        gateway.clone(),
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let json = serde_json::to_vec(&serde_json::json!({
+        "files": [{
+            "path": "Inception.2010.1080p.mkv",
+            "etag": "0123456789abcdef0123456789abcdef",
+            "size": 1234u64
+        }]
+    }))
+    .unwrap();
+
+    let imported = service.import_from_json(json).await.unwrap();
+
+    assert!(matches!(
+        imported.as_slice(),
+        [ImportedMedia::Movie {
+            title,
+            year,
+            size,
+            has_failed,
+            ..
+        }] if title == "Inception" && year == "2010" && *size == 1234 && *has_failed
+    ));
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(state.fast_uploads.len(), 0);
+    drop(state);
+
+    let strm_path =
+        local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.strm");
+    assert!(!strm_path.exists());
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
+    {
+        let mut state = gateway.state.lock().unwrap();
+        state.dir_ids_by_path.insert(movie_path, 77);
+        state.files_by_dir_id.insert(
+            77,
+            vec![existing_library_file(
+                601,
+                "Inception.2010.720p.mkv",
+                900,
+                "etag-existing-small",
+            )],
+        );
+    }
+
+    let old_local_dir = local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}");
+    fs::create_dir_all(&old_local_dir).unwrap();
+    fs::write(old_local_dir.join("Inception.2010.720p.strm"), "old").unwrap();
+
+    let mut local_store = FakeLocalStore::new(local_dir.clone());
+    local_store.fail_remove = true;
+    let service = ImportMediaService::new(
+        gateway,
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        local_store,
+    );
+
+    let json = serde_json::to_vec(&serde_json::json!({
+        "files": [{
+            "path": "Inception.2010.1080p.mkv",
+            "etag": "0123456789abcdef0123456789abcdef",
+            "size": 1234u64
+        }]
+    }))
+    .unwrap();
+
+    let error = service.import_from_json(json).await.unwrap_err();
+
+    assert_eq!(error.kind(), crate::error::AppErrorKind::Internal);
+    assert!(error.to_string().contains("remove local file failed"));
 
     let _ = fs::remove_dir_all(local_dir);
 }
