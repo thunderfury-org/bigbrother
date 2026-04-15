@@ -133,6 +133,23 @@ mod tests {
         assert_eq!(payloads[0].message, "hi");
     }
 
+    #[tokio::test]
+    async fn deliver_propagates_sender_error() {
+        let sender = FakeSender {
+            payloads: Arc::new(Mutex::new(Vec::new())),
+            fail: true,
+        };
+        let service = DeliverTelegramMessageService::new(sender);
+        let payload = SendTelegramMessage {
+            message: "hi".to_string(),
+            reply_to: None,
+        };
+
+        let error = service.deliver(&payload).await.unwrap_err();
+
+        assert!(matches!(error, AppError::Internal(message) if message.contains("send failed")));
+    }
+
     #[test]
     fn send_telegram_message_serializes_stably() {
         let payload = SendTelegramMessage {

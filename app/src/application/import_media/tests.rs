@@ -103,6 +103,9 @@ struct FakeLibraryState {
 struct FakeShareSource {
     calls: Arc<Mutex<Vec<String>>>,
     pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
+    pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
+    pan189_files: Arc<Mutex<HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>>>,
+    pan115_files: Arc<Mutex<HashMap<String, Vec<Pan115FileEntry>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -199,12 +202,18 @@ impl LibraryGateway for FakeLibraryGateway {
     }
     async fn fast_upload_sha1(
         &self,
-        _parent_dir_id: i64,
-        _file_name: &str,
-        _sha1: &str,
-        _size: u64,
+        parent_dir_id: i64,
+        file_name: &str,
+        sha1: &str,
+        size: u64,
     ) -> AppResult<Option<i64>> {
-        Ok(None)
+        self.state.lock().unwrap().fast_uploads.push((
+            parent_dir_id,
+            file_name.to_string(),
+            sha1.to_string(),
+            size,
+        ));
+        Ok(Some(42))
     }
     async fn download_library_file(&self, _file_id: i64, _local_path: &str) -> AppResult<()> {
         Ok(())
@@ -229,25 +238,42 @@ impl ShareSource for FakeShareSource {
     }
     async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
         self.calls.lock().unwrap().push("share".to_string());
-        Ok(Default::default())
+        Ok(self
+            .pan189_share_info
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_default())
     }
     async fn list_pan189_share_files(
         &self,
         _share_id: i64,
         _share_mode: i32,
-        _parent_id: &str,
+        parent_id: &str,
     ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
         self.calls.lock().unwrap().push("share".to_string());
-        Ok((Vec::new(), Vec::new()))
+        Ok(self
+            .pan189_files
+            .lock()
+            .unwrap()
+            .get(parent_id)
+            .cloned()
+            .unwrap_or((Vec::new(), Vec::new())))
     }
     async fn list_pan115_share_files(
         &self,
         _share_code: &str,
         _receive_code: &str,
-        _cid: &str,
+        cid: &str,
     ) -> AppResult<Vec<Pan115FileEntry>> {
         self.calls.lock().unwrap().push("share".to_string());
-        Ok(Vec::new())
+        Ok(self
+            .pan115_files
+            .lock()
+            .unwrap()
+            .get(cid)
+            .cloned()
+            .unwrap_or_default())
     }
 }
 
@@ -382,6 +408,167 @@ async fn service_delegates_to_gateway() {
     service.import_from_share_url(&share).await.unwrap();
 
     assert_eq!(share_source.calls.lock().unwrap().as_slice(), ["share"]);
+}
+
+#[tokio::test]
+async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let share_source = FakeShareSource {
+        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
+            file_id: "root".into(),
+            file_name: "Breaking Bad (2008) {tmdb-1396}".into(),
+            share_id: 1,
+            share_mode: 2,
+        }))),
+        pan189_files: Arc::new(Mutex::new(HashMap::from([
+            (
+                "root".to_string(),
+                (
+                    vec![Pan189Folder {
+                        id: "season-1".into(),
+                        name: "Season 01".into(),
+                    }],
+                    Vec::new(),
+                ),
+            ),
+            (
+                "season-1".to_string(),
+                (
+                    Vec::new(),
+                    vec![Pan189File {
+                        name: "Breaking.Bad.S01E01.1080p.mkv".into(),
+                        size: 1001,
+                        md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                    }],
+                ),
+            ),
+        ]))),
+        ..Default::default()
+    };
+    let service = ImportMediaService::new(
+        gateway.clone(),
+        share_source.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let imported = service.import_from_share_url(&share).await.unwrap();
+
+    assert_eq!(share_source.calls.lock().unwrap().len(), 3);
+    assert!(matches!(
+        imported.as_slice(),
+        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
+            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
+    ));
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(
+        state.mkdir_paths,
+        vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
+    );
+    assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let share_source = FakeShareSource {
+        pan115_files: Arc::new(Mutex::new(HashMap::from([
+            (
+                "0".to_string(),
+                vec![Pan115FileEntry {
+                    fid: None,
+                    cid: Some("show-1".into()),
+                    name: "Breaking Bad (2008) {tmdb-1396}".into(),
+                    size: 0,
+                    sha: None,
+                }],
+            ),
+            (
+                "show-1".to_string(),
+                vec![Pan115FileEntry {
+                    fid: None,
+                    cid: Some("season-1".into()),
+                    name: "Season 01".into(),
+                    size: 0,
+                    sha: None,
+                }],
+            ),
+            (
+                "season-1".to_string(),
+                vec![Pan115FileEntry {
+                    fid: Some("file-1".into()),
+                    cid: None,
+                    name: "Breaking.Bad.S01E01.1080p.mkv".into(),
+                    size: 1001,
+                    sha: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into()),
+                }],
+            ),
+        ]))),
+        ..Default::default()
+    };
+    let service = ImportMediaService::new(
+        gateway.clone(),
+        share_source.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let url = Url::parse("https://115.com/s/share115?password=recv").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let imported = service.import_from_share_url(&share).await.unwrap();
+
+    assert_eq!(share_source.calls.lock().unwrap().len(), 3);
+    assert!(matches!(
+        imported.as_slice(),
+        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
+            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
+    ));
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(
+        state.mkdir_paths,
+        vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
+    );
+    assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_share_url_returns_error_when_pan189_share_code_is_missing() {
+    let service = ImportMediaService::new(
+        FakeLibraryGateway::default(),
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        FakeLocalStore::new(unique_temp_dir()),
+    );
+    let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let error = service.import_from_share_url(&share).await.unwrap_err();
+
+    assert!(error.to_string().contains("Can not extract share code"));
+}
+
+#[tokio::test]
+async fn import_from_share_url_returns_error_when_pan115_share_code_is_missing() {
+    let service = ImportMediaService::new(
+        FakeLibraryGateway::default(),
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        FakeLocalStore::new(unique_temp_dir()),
+    );
+    let url = Url::parse("https://115.com/s/").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let error = service.import_from_share_url(&share).await.unwrap_err();
+
+    assert!(error.to_string().contains("Can not extract share code"));
 }
 
 static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);

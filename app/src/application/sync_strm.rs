@@ -237,6 +237,7 @@ mod tests {
         root_ids: Arc<Mutex<HashMap<String, i64>>>,
         dirs: Arc<Mutex<HashMap<i64, Vec<RemoteEntry>>>>,
         downloads: Arc<Mutex<Vec<(i64, String)>>>,
+        fail_download: Arc<Mutex<bool>>,
     }
 
     impl LibraryRemote for FakeRemote {
@@ -255,6 +256,9 @@ mod tests {
         }
 
         async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
+            if *self.fail_download.lock().unwrap() {
+                return Err(AppError::Dependency("download failed".to_string()));
+            }
             self.downloads
                 .lock()
                 .unwrap()
@@ -272,6 +276,8 @@ mod tests {
         writes: Arc<Mutex<Vec<(String, String)>>>,
         removed_files: Arc<Mutex<Vec<String>>>,
         removed_dirs: Arc<Mutex<Vec<String>>>,
+        fail_write: Arc<Mutex<bool>>,
+        fail_remove_dir: Arc<Mutex<bool>>,
     }
 
     impl FileStore for FakeFileStore {
@@ -289,6 +295,9 @@ mod tests {
         }
 
         async fn write(&self, path: &str, content: &[u8]) -> AppResult<()> {
+            if *self.fail_write.lock().unwrap() {
+                return Err(AppError::Internal("write failed".to_string()));
+            }
             let text = String::from_utf8(content.to_vec()).unwrap();
             self.writes
                 .lock()
@@ -314,6 +323,9 @@ mod tests {
         }
 
         async fn remove_dir_all(&self, path: &str) -> AppResult<()> {
+            if *self.fail_remove_dir.lock().unwrap() {
+                return Err(AppError::Internal("remove dir failed".to_string()));
+            }
             self.removed_dirs.lock().unwrap().push(path.to_string());
             Ok(())
         }
@@ -427,5 +439,181 @@ mod tests {
                         && content == "https://host/d/remote/Movie.2024.1080p.WEB-DL.mkv?file_id=3"
                 )
         );
+    }
+
+    #[tokio::test]
+    async fn execute_returns_not_found_when_remote_root_is_missing() {
+        let service = SyncStrmService::new(
+            FakeRemote::default(),
+            FakeFileStore::default(),
+            SyncStrmConfig {
+                remote_path: "/missing".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+        );
+
+        let error = service.execute().await.unwrap_err();
+
+        assert!(matches!(error, AppError::NotFound(message) if message.contains("/missing")));
+    }
+
+    #[tokio::test]
+    async fn execute_skips_when_existing_strm_and_subtitle_are_current() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![
+                RemoteEntry {
+                    file_id: 3,
+                    file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
+                    is_dir: false,
+                    size: 100,
+                },
+                RemoteEntry {
+                    file_id: 4,
+                    file_name: "Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
+                    is_dir: false,
+                    size: 8,
+                },
+            ],
+        );
+
+        let file_store = FakeFileStore::default();
+        file_store.strings.lock().unwrap().insert(
+            "/local/Movie.2024.1080p.WEB-DL.strm".to_string(),
+            "https://host/d/remote/Movie.2024.1080p.WEB-DL.mkv?file_id=3".to_string(),
+        );
+        file_store
+            .sizes
+            .lock()
+            .unwrap()
+            .insert("/local/Movie.2024.1080p.WEB-DL.zh.srt".to_string(), 8);
+
+        let service = SyncStrmService::new(
+            remote.clone(),
+            file_store.clone(),
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+        );
+
+        service.execute().await.unwrap();
+
+        assert!(file_store.writes.lock().unwrap().is_empty());
+        assert!(file_store.ensured.lock().unwrap().is_empty());
+        assert!(remote.downloads.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_propagates_download_failure() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![RemoteEntry {
+                file_id: 4,
+                file_name: "Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
+                is_dir: false,
+                size: 8,
+            }],
+        );
+        *remote.fail_download.lock().unwrap() = true;
+
+        let service = SyncStrmService::new(
+            remote,
+            FakeFileStore::default(),
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+        );
+
+        let error = service.execute().await.unwrap_err();
+
+        assert!(matches!(error, AppError::Dependency(message) if message.contains("download failed")));
+    }
+
+    #[tokio::test]
+    async fn execute_propagates_write_failure() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![RemoteEntry {
+                file_id: 3,
+                file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
+                is_dir: false,
+                size: 100,
+            }],
+        );
+
+        let file_store = FakeFileStore::default();
+        *file_store.fail_write.lock().unwrap() = true;
+
+        let service = SyncStrmService::new(
+            remote,
+            file_store,
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+        );
+
+        let error = service.execute().await.unwrap_err();
+
+        assert!(matches!(error, AppError::Internal(message) if message.contains("write failed")));
+    }
+
+    #[tokio::test]
+    async fn execute_propagates_stale_directory_removal_failure() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(1, Vec::new());
+
+        let file_store = FakeFileStore::default();
+        file_store.dirs.lock().unwrap().insert(
+            "/local".to_string(),
+            vec![LocalEntry {
+                path: "/local/obsolete".to_string(),
+                is_dir: true,
+            }],
+        );
+        *file_store.fail_remove_dir.lock().unwrap() = true;
+
+        let service = SyncStrmService::new(
+            remote,
+            file_store,
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+        );
+
+        let error = service.execute().await.unwrap_err();
+
+        assert!(matches!(error, AppError::Internal(message) if message.contains("remove dir failed")));
     }
 }
