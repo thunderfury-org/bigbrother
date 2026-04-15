@@ -216,7 +216,10 @@ pub(crate) fn select_largest_media_file<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{domain::import::inner::{Etag, RawFile}, domain::media::Metadata};
+    use crate::{
+        domain::import::inner::{Etag, RawFile},
+        domain::media::Metadata,
+    };
 
     use super::*;
 
@@ -546,5 +549,4 @@ mod tests {
                 .contains("no video file found when transfer movie test")
         );
     }
-
 }

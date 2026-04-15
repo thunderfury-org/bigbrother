@@ -543,7 +543,9 @@ mod tests {
 
         let error = service.execute().await.unwrap_err();
 
-        assert!(matches!(error, AppError::Dependency(message) if message.contains("download failed")));
+        assert!(
+            matches!(error, AppError::Dependency(message) if message.contains("download failed"))
+        );
     }
 
     #[tokio::test]
@@ -614,6 +616,8 @@ mod tests {
 
         let error = service.execute().await.unwrap_err();
 
-        assert!(matches!(error, AppError::Internal(message) if message.contains("remove dir failed")));
+        assert!(
+            matches!(error, AppError::Internal(message) if message.contains("remove dir failed"))
+        );
     }
 }

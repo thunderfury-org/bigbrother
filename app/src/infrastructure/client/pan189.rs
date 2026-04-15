@@ -274,7 +274,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let (folders, files) = client(&server).list_share_files(42, 1, "root").await.unwrap();
+        let (folders, files) = client(&server)
+            .list_share_files(42, 1, "root")
+            .await
+            .unwrap();
 
         assert_eq!(folders.len(), 2);
         assert_eq!(folders[0].id, "folder-1");

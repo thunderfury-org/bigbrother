@@ -102,7 +102,8 @@ mod tests {
     }
 
     async fn remote(server: &MockServer) -> Pan123LibraryRemote {
-        let client = pan123::Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
+        let client =
+            pan123::Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
         client
             .set_token_for_test(
                 "test-token",
@@ -186,6 +187,8 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, DownloadUrlError::NotFound(message) if message.contains("file 99 not found")));
+        assert!(
+            matches!(error, DownloadUrlError::NotFound(message) if message.contains("file 99 not found"))
+        );
     }
 }

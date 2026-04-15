@@ -181,7 +181,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client(&server).search_movie("Inception", "2010").await.unwrap();
+        let result = client(&server)
+            .search_movie("Inception", "2010")
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 27205);
@@ -223,7 +226,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client(&server).get_movie_detail(27205).await.unwrap().unwrap();
+        let result = client(&server)
+            .get_movie_detail(27205)
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(result.id, 27205);
         assert_eq!(result.title, "Inception");
@@ -250,7 +257,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client(&server).search_tv("Breaking Bad", "2008").await.unwrap();
+        let result = client(&server)
+            .search_tv("Breaking Bad", "2008")
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1396);

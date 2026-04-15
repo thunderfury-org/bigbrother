@@ -34,10 +34,7 @@ where
         Ok(medias)
     }
 
-    async fn execute_import_plan(
-        &mut self,
-        medias: &[Media<'_>],
-    ) -> AppResult<Vec<ImportedMedia>> {
+    async fn execute_import_plan(&mut self, medias: &[Media<'_>]) -> AppResult<Vec<ImportedMedia>> {
         let mut results = Vec::with_capacity(medias.len());
         for media in medias {
             match media {

@@ -1,27 +1,26 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a Rust workspace. The main application lives in `app/`, and database migrations live in `migration/`. Application code is organized by responsibility under `app/src/`, including `bot/`, `client/`, `library/`, `media/`, `server/`, and `entity/`. Configuration defaults live in `config/config.yaml`; helper scripts are in `tools/`; request notes and other reference material are in `doc/`. Tests are mostly inline unit tests within each Rust module, with fixture data under `app/src/media/testdata/`.
+`bigbrother` is a Rust workspace with two crates: `app/` for the runtime and `migration/` for SeaORM migrations. Inside `app/src/`, code follows a layered layout: `domain/` for pure rules, `application/` for use cases, `infrastructure/` for adapters, `interface/` for CLI/HTTP/Telegram entrypoints, and `bootstrap/` for wiring. Use `config/config.yaml` as the config template, `data/` for local runtime state, `doc/` for architecture notes, and `tools/` for database/entity helper scripts.
 
 ## Build, Test, and Development Commands
-Use the `Makefile` for common tasks:
+Run repository commands through `rtk` per local agent instructions.
 
-- `make build`: build the default workspace member (`app`).
-- `make build-release`: compile the optimized release binary.
-- `make test`: run all workspace tests with `cargo test`.
-- `make fmt`: format all Rust code with `cargo fmt --all`.
-- `make lint`: enforce formatting and fail on Clippy warnings.
-
-For local execution, run `cargo run -- server --data-dir ./data`. For container builds, the repo includes a multi-stage `Dockerfile`.
+- `rtk make build`: build the default `app` crate.
+- `rtk make build-release`: produce an optimized release build.
+- `rtk make test`: run the full workspace test suite.
+- `rtk make fmt`: format all Rust code.
+- `rtk make lint`: enforce `rustfmt` and `clippy -D warnings`.
+- `rtk cargo run -- server --data-dir ./data`: start the HTTP server, Telegram bot, migrations, and background tasks locally.
 
 ## Coding Style & Naming Conventions
-Rust uses edition 2024. Follow `.editorconfig`: 4-space indentation for `*.rs`, LF line endings, UTF-8, and a final newline. Keep modules and files in `snake_case`; use `CamelCase` for types and `SCREAMING_SNAKE_CASE` for constants. Prefer small, focused modules and derive-based Clap/Serde patterns consistent with the existing codebase. Run `make fmt` and `make lint` before opening a PR.
+Follow `.editorconfig`: UTF-8, LF endings, trim trailing whitespace, 4-space indentation in Rust, tabs in `Makefile`. Keep modules focused and aligned with the existing architecture boundaries. Prefer `snake_case` for files, modules, and functions; `PascalCase` for types and traits; and descriptive service names such as `SyncStrmService`. Run `rtk make fmt` before submitting changes.
 
 ## Testing Guidelines
-Add unit tests next to the code they validate using `#[cfg(test)]`. Use `#[tokio::test]` for async flows and `wiremock` when covering HTTP clients. Keep test names descriptive, such as `parses_episode_filename` or `returns_cached_entry`. When parser behavior depends on fixtures, place sample data in `app/src/media/testdata/`.
+Tests are standard Rust unit/integration-style module tests, usually colocated with the implementation or in sibling `tests.rs` files. Async cases use `#[tokio::test]`; HTTP/client boundaries often use `wiremock`. Name tests by behavior, for example `sync_strm_skips_non_video_entries`. At minimum, run `rtk make test` and `rtk make lint` before opening a PR.
 
 ## Commit & Pull Request Guidelines
-Recent history uses short, imperative commit subjects such as `sync strm` and `fix download url`, often followed by a PR number in parentheses. Keep subjects concise and lowercase when possible; separate unrelated changes into distinct commits. Pull requests should summarize behavior changes, mention config or migration impacts, link the relevant issue, and include logs or screenshots when bot/server output changes user-visible behavior.
+Recent history favors short, imperative commit subjects such as `add client coverage tests` and `stabilize import test contract`. Keep commits focused and written in the imperative mood. PRs should include a concise summary, linked issue if applicable, test evidence, and config or behavior notes when touching bot, HTTP, or migration flows. If user-visible Telegram or HTTP behavior changes, include example commands, payloads, or screenshots.
 
-## Configuration & Data
-Do not commit secrets or local data directories. Keep API keys and service credentials in local config only, and use `--data-dir` to isolate test data from real state.
+## Security & Configuration Tips
+Do not commit real credentials. Populate `<data-dir>/config/config.yaml` from `config/config.yaml`, and keep secrets such as Telegram tokens, TMDB API keys, and Pan123 credentials in local-only files or secret stores.

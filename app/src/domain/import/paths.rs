@@ -1,5 +1,5 @@
 use crate::{
-    domain::import::{Genre, MovieDetail, TvDetail},
+    domain::import::{MovieDetail, TvDetail},
     domain::library::import_paths,
 };
 

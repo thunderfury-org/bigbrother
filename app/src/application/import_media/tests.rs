@@ -16,7 +16,9 @@ use crate::application::import::{
     LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     SearchMovieResult, SearchTvResult, TvDetail,
 };
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+};
 use crate::error::AppError;
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 
@@ -350,8 +352,13 @@ impl ImportLocalStore for FakeLocalStore {
     }
 
     fn local_path_for_remote(&self, remote_path: &str) -> String {
-        let relative = remote_path.trim_start_matches(self.remote_path.as_str()).trim_start_matches('/');
-        self.local_root.join(relative).to_string_lossy().into_owned()
+        let relative = remote_path
+            .trim_start_matches(self.remote_path.as_str())
+            .trim_start_matches('/');
+        self.local_root
+            .join(relative)
+            .to_string_lossy()
+            .into_owned()
     }
 
     fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
@@ -370,7 +377,10 @@ impl ImportLocalStore for FakeLocalStore {
         file_id: i64,
     ) -> AppResult<()> {
         let local_file_path = self.local_strm_path(remote_file_path, extension);
-        let content = format!("{}{}?file_id={}", self.strm_download_url, remote_file_path, file_id);
+        let content = format!(
+            "{}{}?file_id={}",
+            self.strm_download_url, remote_file_path, file_id
+        );
         tokio::fs::create_dir_all(PathBuf::from(&local_file_path).parent().unwrap()).await?;
         tokio::fs::write(local_file_path, content).await?;
         Ok(())
@@ -383,7 +393,9 @@ impl ImportLocalStore for FakeLocalStore {
         if let Err(err) = tokio::fs::remove_file(path).await
             && err.kind() != std::io::ErrorKind::NotFound
         {
-            return Err(AppError::Internal(format!("remove local file failed, {err}")));
+            return Err(AppError::Internal(format!(
+                "remove local file failed, {err}"
+            )));
         }
         Ok(())
     }
@@ -1226,7 +1238,11 @@ async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller
     drop(state);
 
     let season_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
-    assert!(!season_dir.join("Breaking Bad.2008.S01E01.1080p.strm").exists());
+    assert!(
+        !season_dir
+            .join("Breaking Bad.2008.S01E01.1080p.strm")
+            .exists()
+    );
 
     let _ = fs::remove_dir_all(local_dir);
 }
@@ -1253,7 +1269,11 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
 
     let old_local_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
     fs::create_dir_all(&old_local_dir).unwrap();
-    fs::write(old_local_dir.join("Breaking Bad.2008.S01E01.720p.strm"), "old").unwrap();
+    fs::write(
+        old_local_dir.join("Breaking Bad.2008.S01E01.720p.strm"),
+        "old",
+    )
+    .unwrap();
 
     let service = ImportMediaService::new(
         gateway.clone(),
@@ -1299,8 +1319,16 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
     assert_eq!(state.trashed_file_ids, vec![vec![801]]);
     drop(state);
 
-    assert!(!old_local_dir.join("Breaking Bad.2008.S01E01.720p.strm").exists());
-    assert!(old_local_dir.join("Breaking Bad.2008.S01E01.1080p.strm").exists());
+    assert!(
+        !old_local_dir
+            .join("Breaking Bad.2008.S01E01.720p.strm")
+            .exists()
+    );
+    assert!(
+        old_local_dir
+            .join("Breaking Bad.2008.S01E01.1080p.strm")
+            .exists()
+    );
 
     let _ = fs::remove_dir_all(local_dir);
 }

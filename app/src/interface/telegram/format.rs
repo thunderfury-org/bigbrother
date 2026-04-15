@@ -65,7 +65,7 @@ pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             total_size,
             number_of_episodes,
             cost,
-            ..
+            has_failed,
         } => {
             if episodes.is_empty() {
                 return None;
@@ -77,9 +77,14 @@ pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             } else {
                 format!("🎬️ 缺失集: {}\n", format_episodes(missing_episodes))
             };
+            let failure_notice = if *has_failed {
+                "⚠️ 部分文件入库失败\n"
+            } else {
+                ""
+            };
 
             Some(format!(
-                "📺 剧集 {} ({}) S{:02} {} 已入库\n{}\
+                "📺 剧集 {} ({}) S{:02} {} 已入库\n{}{}\
                      📦 平均大小: {:.2} GB\n\
                      📊 总大小: {:.2} GB\n\
                      ⏱️ 耗时: {:.2} 秒\n\
@@ -89,6 +94,7 @@ pub(super) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
                 season,
                 format_episodes(episodes),
                 missing_str,
+                failure_notice,
                 total_size_gb / (episodes.len() as f64),
                 total_size_gb,
                 cost.as_secs_f64(),

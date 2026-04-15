@@ -1,10 +1,7 @@
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
     inner::{Media, MediaFile},
-    policy::{
-        group_video_and_subtitle_files, insert_movie_media, insert_tv_media,
-        resolve_tv_episode_slot,
-    },
+    policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot},
 };
 use std::collections::HashMap;
 

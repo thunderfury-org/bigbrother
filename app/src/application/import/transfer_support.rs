@@ -6,16 +6,12 @@ use std::time::Duration;
 
 use tracing::info;
 
-use crate::domain::import::{
-    inner::MediaFile,
-    paths::get_year_from_date,
-};
+use crate::domain::import::{inner::MediaFile, paths::get_year_from_date};
 
 use super::{ImportedMedia, TvDetail};
 pub(super) use cleanup::{collect_library_file_ids, existing_season_dir_id, files_pending_cleanup};
 pub(super) use paths::{
     build_local_cleanup_paths, build_subtitle_transfer_plan, remote_child_path,
-    renamed_subtitle_file_name,
 };
 
 #[derive(Debug, Default, PartialEq, Eq)]

@@ -734,7 +734,12 @@ mod tests {
         client
     }
 
-    fn file_json(file_id: i64, file_name: &str, file_type: i32, abs_path: &str) -> serde_json::Value {
+    fn file_json(
+        file_id: i64,
+        file_name: &str,
+        file_type: i32,
+        abs_path: &str,
+    ) -> serde_json::Value {
         serde_json::json!({
             "FileId": file_id,
             "FileName": file_name,
