@@ -13,10 +13,14 @@ BigBrother is a Rust workspace for importing media from cloud shares into a loca
 ## Project layout
 
 - `app/`: main application crate
+- `app/src/domain/`: pure business rules and models
+- `app/src/application/`: use-case services and ports
+- `app/src/infrastructure/`: external adapters for storage, remote APIs, and delivery
+- `app/src/interface/`: Telegram and HTTP entrypoints plus runtime-facing handlers
 - `migration/`: SeaORM migrations
 - `config/config.yaml`: sample configuration
 - `tools/`: helper scripts for entity generation and database migration
-- `doc/`: request notes and reference material
+- `doc/`: architecture notes and reference material
 
 ## Requirements
 
@@ -30,7 +34,7 @@ BigBrother is a Rust workspace for importing media from cloud shares into a loca
 
 The application reads configuration from `<data-dir>/config/config.yaml`. If the file does not exist, the app starts with empty defaults, but the bot and sync features will not work until required values are set.
 
-Start from [`config/config.yaml`](/Users/wzy/dev/bigbrother/config/config.yaml) and place a populated copy at `./data/config/config.yaml` or another `--data-dir` location:
+Start from [`config/config.yaml`](config/config.yaml) and place a populated copy at `./data/config/config.yaml` or another `--data-dir` location:
 
 ```yaml
 media_server:
@@ -110,6 +114,24 @@ http://<advertise-base-url>/<strm-path-prefix>/<remote/path>?file_id=<id>
 
 When a player opens that URL, BigBrother resolves the current Pan123 download URL, caches it for 30 minutes, and redirects the client.
 
+## Architecture snapshot
+
+The current runtime is split into a small bootstrap layer plus use-case services:
+
+- `app/src/main.rs` parses CLI input, starts the server command, and owns long-running background tasks.
+- `app/src/bootstrap/app.rs` builds the bootstrap-only `AppContext`, while `app/src/bootstrap/mod.rs` converts it into an `AppRuntime` made of dedicated bot, server, cache, and event-bus contexts.
+- `app/src/domain/` holds extracted pure logic such as media parsing and library path/sync rules.
+- `app/src/application/` contains use-case services such as `SyncStrmService`, `ManageKeywordsService`, `ImportMediaService`, and `ResolveDownloadUrlService`.
+- `app/src/interface/telegram/` and `app/src/interface/http/` consume focused runtime/context objects; `app/src/bot/` and `app/src/server/` are now thin compatibility shims that re-export those entrypoints for `main.rs`.
+- `app/src/library/import/` still uses an `ImportContext` bundle, so the import flow is the main remaining wide-dependency area called out in the refactor blueprint.
+- `doc/architecture-refactor-blueprint.md` records the refactor plan, current status, review findings, and remaining cleanup opportunities.
+
+## Current refactor hotspots
+
+- `app/src/bootstrap/mod.rs`: composition root still wires concrete infrastructure adapters directly into application services.
+- `app/src/library/import/`: import flow still depends on the bundled `ImportContext`, so it is the broadest remaining dependency surface.
+- `app/src/bot/mod.rs` and `app/src/server/mod.rs`: compatibility shims remain in place so `main.rs` can keep a stable entrypoint while the directory migration settles.
+
 ## Development
 
 Common commands:
@@ -124,8 +146,8 @@ make lint
 
 Helper scripts:
 
-- [`tools/generate_entity.sh`](/Users/wzy/dev/bigbrother/tools/generate_entity.sh): regenerate SeaORM entities
-- [`tools/migrate_db.sh`](/Users/wzy/dev/bigbrother/tools/migrate_db.sh): run migration helpers
+- [`tools/generate_entity.sh`](tools/generate_entity.sh): regenerate SeaORM entities
+- [`tools/migrate_db.sh`](tools/migrate_db.sh): run migration helpers
 
 ## License
 

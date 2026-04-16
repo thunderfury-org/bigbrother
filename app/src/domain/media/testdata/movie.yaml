@@ -1,0 +1,254 @@
+- input: "银翼杀手2048：无处可逃.2017.2160p.WEB-DL.DV.AAC.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "银翼杀手2048：无处可逃"
+        language: "zh"
+    year: 2017
+    resolution: "2160p"
+    quality: "WEB-DL"
+    hdr: "DV"
+    audio_codec: "AAC"
+
+- input: "The.Forbidden.Legend.Sex.And.Chopsticks.1.2008.BluRay.1080P.DTS-HD.MA.DD.5.1-YSY.m2ts"
+  expected:
+    file_type: "video"
+    extension: ".m2ts"
+    titles:
+      - title: "The Forbidden Legend Sex And Chopsticks 1"
+        language: "en"
+    year: 2008
+    resolution: "1080p"
+    quality: "BluRay"
+    audio_codec: "DTS-HD.MA.DD.5.1"
+    release_group: "YSY"
+
+- input: "戏台.2025.2160p.WEB-DL.60fps.DV HQ.H265.DTS 5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "戏台"
+        language: "zh"
+    year: 2025
+    quality: "WEB-DL"
+    resolution: "2160p"
+    frame_rate: "60fps"
+    hdr: "DV"
+    video_codec: "H265"
+    audio_codec: "DTS.5.1"
+
+- input: "Johnny.Keep.Walking.2023.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    year: 2023
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "DTS.5.1.DDP"
+    release_group: "yiiha"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.10bit.DTS.5.1.DDP-yiiha.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "DTS.5.1.DDP"
+    release_group: "yiiha"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.10-bit.DTS.5.1.DDP-yiiha.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "DTS.5.1.DDP"
+    release_group: "yiiha"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.Dolby-Vision.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    hdr: "DV"
+
+- input: "Johnny.Keep.Walking.2160p.WEB-DL.H265.HDR10.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Johnny Keep Walking"
+        language: "en"
+    quality: "WEB-DL"
+    resolution: "2160p"
+    video_codec: "H265"
+    hdr: "HDR10"
+
+- input: "Detective.Conan.The.Time.Bombed.Skyscraper.1997.1080p.Bluray.Remux.AVC.TrueHD.5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Detective Conan The Time Bombed Skyscraper"
+        language: "en"
+    year: 1997
+    quality: "Remux"
+    resolution: "1080p"
+    video_codec: "H264"
+    audio_codec: "TrueHD.5.1"
+
+- input: "Doraemon.Nobitas.Art.World.Tales.2025.1080p.BluRay.Remux.AVC.TrueHD.7.1.Atmos-Nest@ADE.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Doraemon Nobitas Art World Tales"
+        language: "en"
+    year: 2025
+    quality: "Remux"
+    resolution: "1080p"
+    video_codec: "H264"
+    audio_codec: "TrueHD.7.1.Atmos"
+    release_group: "Nest@ADE"
+
+- input: "惊涛飓浪 1080p remux (2018).mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "惊涛飓浪"
+        language: "zh"
+    year: 2018
+    quality: "Remux"
+    resolution: "1080p"
+
+- input: "Journey.to.the.Center.of.the.Earth.2008.1080p.BluRay.Remux.DTS-HD.5.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Journey to the Center of the Earth"
+        language: "en"
+    year: 2008
+    quality: "Remux"
+    resolution: "1080p"
+    audio_codec: "DTS-HD.5.1"
+
+- input: "The Super Mario Bros. Movie 2023 2160p REMUX HEVC HDR10 TrueHD 7.1-samhyde@torrentgalaxy.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Super Mario Bros Movie"
+        language: "en"
+    year: 2023
+    quality: "Remux"
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "TrueHD.7.1"
+    hdr: "HDR10"
+    release_group: "samhyde@torrentgalaxy"
+
+- input: "沙丘.2021.2160p.UHD.DV.HDR.HEVC.TrueHD.Atmos.7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "沙丘"
+        language: "zh"
+    year: 2021
+    resolution: "2160p"
+    video_codec: "H265"
+    audio_codec: "TrueHD.Atmos.7.1"
+    hdr: "DV"
+
+- input: "坏蛋联盟.2022.2160p.SDR.H.265.10-bit.24fps.DDP.5.1 Atmos.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "坏蛋联盟"
+        language: "zh"
+    year: 2022
+    resolution: "2160p"
+    frame_rate: "24fps"
+    video_codec: "H265"
+    audio_codec: "DDP.5.1.Atmos"
+
+- input: "The.Hobbit.An.Unexpected.Journey.2012.EXTENDED.2160p.BluRay.REMUX.HDR.DV.HEVC.DTS-HD.MA.TrueHD.7.1.Atmos.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Hobbit An Unexpected Journey"
+        language: "en"
+    year: 2012
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    audio_codec: "TrueHD.7.1.Atmos"
+
+- input: "The Lord of the Rings： The Two Towers.2002.2160p.Ultra HD BluRay Remux.DoVi.HDR10.DoVi P7.Extended.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Two Towers"
+        language: "en"
+    year: 2002
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
+
+- input: "The Lord of the Rings： The Return of the King.2003.2160p.Ultra HD BluRay Remux.HDR10.DoVi.DoVi P7.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Return of the King"
+        language: "en"
+    year: 2003
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
+
+- input: "The Lord of the Rings： The Fellowship of the Ring.2001.2160p.Ultra HD BluRay Remux.HDR10.DoVi.DoVi P7.Extended.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Fellowship of the Ring"
+        language: "en"
+    year: 2001
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
