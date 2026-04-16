@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     application::import::{Genre, Season, TvDetail},
     domain::import::inner::{Etag, RawFile},
+    domain::import::policy::group_video_and_subtitle_files,
     domain::media::{FileType, Metadata},
 };
 

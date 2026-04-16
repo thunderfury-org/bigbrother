@@ -40,6 +40,7 @@ pub(crate) fn get_year_from_date(date: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::import::Genre;
 
     #[test]
     fn test_get_year_from_date() {
