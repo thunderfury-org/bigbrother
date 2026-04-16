@@ -63,7 +63,9 @@ where
                 .metadata_catalog
                 .search_movie(&title.title, &meta.year)
                 .await?;
-            match resolve_movie_candidate(&title.title, movies, &self.metadata_catalog).await? {
+            match resolve_movie_candidate(&title.title, &meta.year, movies, &self.metadata_catalog)
+                .await?
+            {
                 Some(movie) => {
                     self.movie_info_cache.insert(cache_key, Some(movie.clone()));
                     return Ok(Some(movie));
@@ -104,7 +106,9 @@ where
                 .metadata_catalog
                 .search_tv(&title.title, &meta.year)
                 .await?;
-            match resolve_tv_candidate(&title.title, tvs, &self.metadata_catalog).await? {
+            match resolve_tv_candidate(&title.title, &meta.year, tvs, &self.metadata_catalog)
+                .await?
+            {
                 Some(tv) => {
                     self.tv_info_cache.insert(cache_key, Some(tv.clone()));
                     return Ok(Some(tv));

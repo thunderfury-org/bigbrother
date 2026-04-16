@@ -207,3 +207,48 @@
     hdr: "DV"
     video_codec: "H265"
     audio_codec: "TrueHD.7.1.Atmos"
+
+- input: "The Lord of the Rings： The Two Towers.2002.2160p.Ultra HD BluRay Remux.DoVi.HDR10.DoVi P7.Extended.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Two Towers"
+        language: "en"
+    year: 2002
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
+
+- input: "The Lord of the Rings： The Return of the King.2003.2160p.Ultra HD BluRay Remux.HDR10.DoVi.DoVi P7.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Return of the King"
+        language: "en"
+    year: 2003
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
+
+- input: "The Lord of the Rings： The Fellowship of the Ring.2001.2160p.Ultra HD BluRay Remux.HDR10.DoVi.DoVi P7.Extended.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Lord of the Rings： The Fellowship of the Ring"
+        language: "en"
+    year: 2001
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    frame_rate: "24fps"
+    audio_codec: "TrueHD.7.1"
