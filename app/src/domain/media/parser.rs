@@ -1,90 +1,129 @@
+use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::LazyLock;
-use std::{collections::HashSet, ops::Range};
 
 use lingua::{Language, LanguageDetector, LanguageDetectorBuilder};
 use regex::Regex;
 
-use super::{Metadata, normalize::*};
+use super::normalize::{
+    normalize_audio_codec, normalize_hdr, normalize_language, normalize_quality,
+    normalize_video_codec,
+};
+use super::{
+    FileType, LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_CHINESE_TRADITIONAL, LANGUAGE_ENGLISH,
+    MediaKind, Metadata, Title,
+};
 
-const RE_BEGIN: &str = r"(?i)[\. \-\[\{\(@]\s*";
-const RE_END: &str = r"\s*[\. \-\]\}\)@]";
-
-static TMDB_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"tmdb(?:id)?[-=](?P<value>\d+)", RE_END
-    ))
-    .unwrap()
-});
-static FRAME_RATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"(?P<value>\d{2,3}fps)", RE_END
-    ))
-    .unwrap()
-});
+static TMDB_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\(\{])tmdb(?:id)?[-=](?P<value>\d+)").unwrap());
+static FRAME_RATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?P<value>\d{2,3}fps)").unwrap());
 static QUALITY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN,
-        r"(?P<value>WEB-?DL|Blu-?Ray[\.\s-]?(?:Remux)?|Remux|WEB-?Rip|BR-?Rip|BD-?Rip)",
-        RE_END
-    ))
+    Regex::new(
+        r"(?i)(?P<value>WEB-?DL|WEB-?Rip|WEBRIP|Blu-?Ray(?:[ ._-]?Remux)?|Remux|BR-?Rip|BD-?Rip)",
+    )
     .unwrap()
 });
 static HDR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"(?P<value>HDR(10\+?)?|Dolby[ -]?Vision|HLG|DV|DoVi)", RE_END
-    ))
-    .unwrap()
+    Regex::new(r"(?i)(?P<value>HDR10\+?|HDR|Dolby[ -]?Vision|HLG|DV|DoVi)").unwrap()
 });
-static VIDEO_CODEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"(?P<value>[HX]\.?26[45]|AVC|HEVC|AV1|VP-9)", RE_END
-    ))
-    .unwrap()
-});
+static VIDEO_CODEC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?P<value>[HX]\.?26[45]|AVC|HEVC|AV1|VP-9)").unwrap());
 static AUDIO_CODEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN,
-        r"(?P<value>(?:AAC|FLAC|Dolby[\.\s]?Digital|DDP?|DTS(?:-?HD)?|TrueHD)(?:[\.\s]?(?:Atmos|MA|DDP?|\d\.\d))*)",
-        RE_END
-    ))
+    Regex::new(
+        r"(?i)(?P<value>(?:AAC|FLAC|Dolby[.\s]?Digital|DDP?|DTS(?:[.\s-]?HD)?|TrueHD)(?:[.\s_-]?(?:Atmos|MA|DDP?|\d\.\d))*)",
+    )
     .unwrap()
 });
 static RESOLUTION_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"((\d{3,4}x(?P<height>\d{3,4}))|(?P<resolution>\d{1,4}[pk]))", RE_END
-    ))
-    .unwrap()
+    Regex::new(r"(?i)(?P<value>4k|\d{1,4}[pk]|\d{3,4}x(?P<height>\d{3,4}))").unwrap()
 });
-static YEAR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN, r"(?P<year>19\d{2}|20\d{2})", RE_END
-    ))
-    .unwrap()
-});
+static YEAR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?P<year>19\d{2}|20\d{2})").unwrap());
 static SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)([\.\s\[]S(?:eason)?\s*(?P<season_number>\d{1,2})\s*\]?\s*)([E#-\[]\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?)?")
+    Regex::new(
+        r"(?ix)
+        (?:
+            S(?P<season>\d{1,2})\s*[-._ ]?E(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?
+            |
+            (?:Season|S)\s*(?P<season_alt>\d{1,2}).{0,8}?\[(?P<episode_alt>\d{1,4})(?:-(?P<episode_alt2>\d{1,4}))?\]
+            |
+            第\s*(?P<season_cn>\d{1,2})\s*季.{0,8}?\[(?P<episode_cn>\d{1,4})(?:-(?P<episode_cn2>\d{1,4}))?\]
+        )",
+    )
+    .unwrap()
+});
+static CHINESE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"第\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?\s*集").unwrap()
+});
+static BRACKET_CHINESE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[(?:第\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?\s*集[^\]]*)\]")
         .unwrap()
 });
-static EPISODE_ONLY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        "{}{}{}",
-        RE_BEGIN,
-        r"[#第E]?\s*(?P<episode_number>\d{1,4})(-(?P<episode_number2>\d{1,4}))?\s*[集]?",
-        RE_END
-    ))
+static HASH_EPISODE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"#\s*(?P<episode>\d{1,4})").unwrap());
+static EPISODE_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:^|[ ._\-\[\(])E(?P<episode>\d{1,4})(?:$|[ ._\-\]\)])").unwrap()
+});
+static BRACKET_EPISODE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[(?P<episode>\d{1,4})(?:-(?P<episode2>\d{1,4}))?\]").unwrap());
+static BRACKET_TITLE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[[^\]]*?[^\d\[\]]+\s+(?P<episode>\d{1,4})(?:\s+(?P<episode2>\d{1,4}))?[^\]]*\]")
+        .unwrap()
+});
+static DASH_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:^|[^\p{L}\p{N}])-\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?(?:$|[^\p{L}\p{N}])",
+    )
     .unwrap()
 });
-static RELEASE_GROUP_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\s*(?P<value>[^\[\]]+)\s*\]").unwrap());
-
+static SEASON_ONLY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?ix)(?:第\s*(?P<season_cn>\d{1,2})\s*季|\b(?:Season|S)\s*(?P<season>\d{1,2})\b)")
+        .unwrap()
+});
+static LEADING_GROUP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*\[(?P<value>[^\[\]]+)\]").unwrap());
+static BRACKET_CONTENT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[(?P<value>[^\[\]]+)\]").unwrap());
+static PAREN_CONTENT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\((?P<value>[^()]*)\)").unwrap());
+static SUBTITLE_SUFFIX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)[._-](?P<value>ja|en|chs|cht|zh-hans|zh-hant)$").unwrap());
+static AUDIO_NOISE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\]\(\)])MA(?:$|[ ._\-\[\]\(\)])").unwrap());
+static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+    vec![
+        (Regex::new(r"[\.\[\]\{\}\(\)]").unwrap(), " "),
+        (Regex::new(r"第[^.\[\]]+季").unwrap(), ""),
+        (Regex::new(r"\s+-\s+").unwrap(), " "),
+    ]
+});
+static TITLE_TRIM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
+static DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
+static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        (?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
+        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
+        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
+        |CHS(?:[._-]?JP)?|CHT|GB|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
+        |UHD|SDR|EXTENDED|HQ|Baha|B-Global|ViuTV|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
+        ",
+    )
+    .unwrap()
+});
+static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        ^(?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
+        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
+        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
+        |CHS(?:[._-]?JP)?|CHT|GB|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
+        |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕
+        |UHD|SDR|EXTENDED|HQ|Baha|B-Global|ViuTV)$",
+    )
+    .unwrap()
+});
 static NAME_NORMALIZE_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         Regex::new(r"[_（）《》]").unwrap(),
@@ -93,15 +132,6 @@ static NAME_NORMALIZE_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"(?i)10-?bit").unwrap(),
     ]
 });
-static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
-    vec![
-        (Regex::new(r"[\.\[\]\{\}\(\)]").unwrap(), " "),
-        (Regex::new(r"第[^.\[\]]+季").unwrap(), ""),
-    ]
-});
-static DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
-
-static OTHER_REPLACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"第[^.\[\]]+集").unwrap());
 
 static VIDEO_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let extensions = [
@@ -119,11 +149,11 @@ static SUBTITLE_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 static LANG_MAP: LazyLock<Vec<(&'static str, Vec<&'static str>)>> = LazyLock::new(|| {
     vec![
         (
-            super::LANGUAGE_CHINESE_SIMPLIFIED,
+            LANGUAGE_CHINESE_SIMPLIFIED,
             vec!["简", "chs", "gb", "zh-hans"],
         ),
         (
-            super::LANGUAGE_CHINESE_TRADITIONAL,
+            LANGUAGE_CHINESE_TRADITIONAL,
             vec!["繁", "cht", "big5", "zh-hant"],
         ),
     ]
@@ -134,296 +164,775 @@ static LANG_DETECTOR: LazyLock<LanguageDetector> = LazyLock::new(|| {
     LanguageDetectorBuilder::from_languages(&languages).build()
 });
 
-struct MetadataParser {
-    name: String,
-    other: String,
-
-    title_index_end: Option<usize>,
-    year_index_start: Option<usize>,
-
-    info: Box<Metadata>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParsedMediaKind {
+    TvEpisode,
+    Unknown,
 }
 
-impl MetadataParser {
+#[derive(Debug, Clone)]
+struct EpisodeCandidate {
+    season_number: Option<u32>,
+    episode_number: u32,
+    second_episode_number: Option<u32>,
+    span: Range<usize>,
+}
+
+#[derive(Debug)]
+struct ParsedMediaName {
+    body: String,
+    occupied: Vec<bool>,
+    metadata: Metadata,
+    parsed_kind: ParsedMediaKind,
+    release_group_locked: bool,
+}
+
+impl ParsedMediaName {
     fn new(name: &str) -> Self {
+        let (body, file_type, extension) = normalize_name(name);
+        let metadata = Metadata {
+            file_type,
+            extension,
+            ..Default::default()
+        };
+
         Self {
-            name: name.to_owned(),
-            other: String::new(),
-            title_index_end: None,
-            year_index_start: None,
-            info: Box::new(Metadata::default()),
+            occupied: vec![false; body.len()],
+            body,
+            metadata,
+            parsed_kind: ParsedMediaKind::Unknown,
+            release_group_locked: false,
         }
     }
 
-    fn update_title_index_end(&mut self, index: usize) {
-        if self.title_index_end.is_none() || index < self.title_index_end.unwrap() {
-            self.title_index_end = Some(index);
-        }
-    }
-
-    fn update_name_and_index(&mut self, match_range: Range<usize>) {
-        let start = match_range.start;
-        let end = match_range.end;
-        self.name = format!("{}{}", &self.name[..start + 1], &self.name[end - 1..]);
-        self.update_title_index_end(start + 1);
-    }
-
-    fn parse_value_from_name(
-        &mut self,
-        re: &Regex,
-        normalizer: Option<fn(&str) -> String>,
-    ) -> String {
-        if let Some(caps) = re.captures_iter(&self.name).last()
-            && let Some(value_match) = caps.name("value")
-        {
-            let mut value = value_match.as_str().to_owned();
-            self.update_name_and_index(caps.get_match().range());
-            if let Some(norm) = normalizer {
-                value = norm(&value);
-            }
-
-            return value;
-        }
-        String::new()
-    }
-
-    fn parse(&mut self) {
-        self.normalize_name();
-
-        self.info.tmdb_id = self.parse_value_from_name(&TMDB_RE, None);
-        self.info.frame_rate =
-            self.parse_value_from_name(&FRAME_RATE_RE, Some(|s| s.to_lowercase()));
-        self.info.quality = self.parse_value_from_name(&QUALITY_RE, Some(normalize_quality));
-        self.info.hdr = self.parse_value_from_name(&HDR_RE, Some(normalize_hdr));
-        self.info.video_codec =
-            self.parse_value_from_name(&VIDEO_CODEC_RE, Some(normalize_video_codec));
-        self.info.audio_codec =
-            self.parse_value_from_name(&AUDIO_CODEC_RE, Some(normalize_audio_codec));
-
+    fn parse(mut self) -> Box<Metadata> {
+        self.parse_leading_group();
+        self.parse_simple_value(
+            &TMDB_RE,
+            |meta, value| meta.tmdb_id = value.to_owned(),
+            None,
+        );
+        self.parse_simple_value(
+            &FRAME_RATE_RE,
+            |meta, value| meta.frame_rate = value.to_lowercase(),
+            None,
+        );
+        self.parse_simple_value(
+            &QUALITY_RE,
+            |meta, value| meta.quality = normalize_quality(value),
+            None,
+        );
+        self.parse_hdr();
+        self.parse_simple_value(
+            &VIDEO_CODEC_RE,
+            |meta, value| meta.video_codec = normalize_video_codec(value),
+            None,
+        );
+        self.parse_simple_value(
+            &AUDIO_CODEC_RE,
+            |meta, value| meta.audio_codec = normalize_audio_codec(value),
+            None,
+        );
         self.parse_resolution();
         self.parse_year();
-        self.parse_season_episode();
-        self.parse_file_type();
-        self.parse_title();
-        self.parse_subtitles();
+        self.parse_episode();
+        self.parse_season_only();
         self.parse_release_group();
+        self.parse_subtitles();
+        self.parse_subtitle_suffix();
+        self.consume_noise_segments();
+        self.parse_title();
+        self.resolve_kind();
+
+        Box::new(self.metadata)
     }
 
-    fn normalize_name(&mut self) {
-        self.name = self.name.replace("【", "[");
-        self.name = self.name.replace("】", "]");
-        self.name = self.name.replace("精校", ".");
-
-        for re in NAME_NORMALIZE_RE.iter() {
-            self.name = re.replace_all(&self.name, ".").into_owned();
+    fn parse_simple_value<F>(
+        &mut self,
+        re: &Regex,
+        mut assign: F,
+        predicate: Option<fn(&str) -> bool>,
+    ) where
+        F: FnMut(&mut Metadata, &str),
+    {
+        let mut selected = None;
+        for caps in re.captures_iter(&self.body) {
+            let Some(value_match) = caps.name("value") else {
+                continue;
+            };
+            let value = value_match.as_str();
+            if predicate.is_some_and(|check| !check(value)) {
+                continue;
+            }
+            selected = Some((caps.get(0).unwrap().range(), value.to_owned()));
         }
-        self.name = format!(" {} ", self.name);
+
+        if let Some((span, value)) = selected {
+            self.mark(span);
+            assign(&mut self.metadata, value.as_str());
+        }
     }
 
     fn parse_resolution(&mut self) {
-        if let Some(caps) = RESOLUTION_RE.captures_iter(&self.name).last() {
+        let mut selected = None;
+        for caps in RESOLUTION_RE.captures_iter(&self.body) {
             if let Some(height_match) = caps.name("height") {
-                self.info.resolution = format!("{}p", height_match.as_str());
-                self.update_name_and_index(caps.get_match().range());
-            } else if let Some(res_match) = caps.name("resolution") {
-                let mut res = res_match.as_str().to_lowercase();
-                if res == "4k" {
-                    res = "2160p".to_owned();
+                selected = Some((
+                    caps.get(0).unwrap().range(),
+                    format!("{}p", height_match.as_str()),
+                ));
+            } else if let Some(resolution_match) = caps.name("value") {
+                let mut resolution = resolution_match.as_str().to_lowercase();
+                if resolution == "4k" {
+                    resolution = "2160p".to_owned();
                 }
-                self.info.resolution = res;
-                self.update_name_and_index(caps.get_match().range());
+                selected = Some((caps.get(0).unwrap().range(), resolution));
             }
+        }
+
+        if let Some((span, resolution)) = selected {
+            self.mark(span);
+            self.metadata.resolution = resolution;
+        }
+    }
+
+    fn parse_hdr(&mut self) {
+        let mut selected = None;
+        let mut fallback = None;
+        for caps in HDR_RE.captures_iter(&self.body) {
+            let Some(value_match) = caps.name("value") else {
+                continue;
+            };
+            let value = value_match.as_str();
+            let span = caps.get(0).unwrap().range();
+            let normalized = normalize_hdr(value);
+            if normalized == "DV" {
+                selected = Some((span, normalized));
+            } else {
+                fallback = Some((span, normalized));
+            }
+        }
+
+        if let Some((span, hdr)) = selected.or(fallback) {
+            self.mark(span);
+            self.metadata.hdr = hdr;
         }
     }
 
     fn parse_year(&mut self) {
-        if let Some(caps) = YEAR_RE.captures_iter(&self.name).last()
-            && let Some(year_match) = caps.name("year")
-        {
-            if !caps.get_match().as_str().ends_with(')') {
-                // matched .year. but maybe it's part of the title, e.g. "Movie.Title.2020.2021"
-                // try to match another year
-                let new_name = &self.name[year_match.end() - 1..];
-                if let Some(caps2) = YEAR_RE.captures_iter(new_name).last()
-                    && let Some(year_match2) = caps2.name("year")
-                {
-                    self.info.year = year_match2.as_str().to_owned();
-                    self.year_index_start = Some(year_match.end() - 1 + caps2.get_match().start());
-                    self.update_name_and_index(Range {
-                        start: year_match.end() - 1 + caps2.get_match().start(),
-                        end: year_match.end() - 1 + caps2.get_match().end(),
-                    });
-                    return;
-                }
-
-                // not matched, keep the original match
+        let mut years = Vec::new();
+        for caps in YEAR_RE.captures_iter(&self.body) {
+            let Some(year_match) = caps.name("year") else {
+                continue;
+            };
+            if !is_standalone_year(self.body.as_str(), &year_match.range()) {
+                continue;
             }
+            let year = year_match.as_str().parse::<u32>().unwrap_or_default();
+            if !(1900..=2099).contains(&year) {
+                continue;
+            }
+            years.push((year_match.range(), year_match.as_str().to_owned()));
+        }
 
-            self.info.year = year_match.as_str().to_owned();
-            self.year_index_start = Some(caps.get_match().start());
-            self.update_name_and_index(caps.get_match().range());
+        if let Some((span, year)) = years.last() {
+            self.mark(span.clone());
+            self.metadata.year = year.clone();
         }
     }
 
-    fn parse_season_episode(&mut self) {
-        let mut caps = SEASON_EPISODE_RE.captures_iter(&self.name).last();
-        if caps.is_none() {
-            // not found season/episode info like S01E01
-            // try match only episode info like 01 or - 01 or #01
-            caps = EPISODE_ONLY_RE.captures_iter(&self.name).last();
-            if caps.is_none()
-                || (self.year_index_start.is_some()
-                    && caps.as_ref().unwrap().get_match().start() < self.year_index_start.unwrap())
-            {
-                // season/episode info not found
-                // or episode is before year, maybe it's title info
-                if self.title_index_end.is_none() {
-                    return;
+    fn parse_episode(&mut self) {
+        let mut candidate = self.find_episode_with_season();
+        if candidate.is_none() {
+            candidate = self.find_episode_without_season();
+        }
+
+        if let Some(candidate) = candidate {
+            self.mark(candidate.span);
+            self.metadata.season_number = candidate.season_number;
+            self.metadata.episode_number = Some(candidate.episode_number);
+            self.metadata.second_episode_number = candidate.second_episode_number;
+            self.parsed_kind = ParsedMediaKind::TvEpisode;
+            self.consume_redundant_episode_tags();
+        }
+    }
+
+    fn find_episode_with_season(&self) -> Option<EpisodeCandidate> {
+        let mut selected = None;
+        for caps in SEASON_EPISODE_RE.captures_iter(&self.body) {
+            let season_number = parse_u32(
+                caps.name("season")
+                    .or_else(|| caps.name("season_alt"))
+                    .or_else(|| caps.name("season_cn"))?
+                    .as_str(),
+            )?;
+            let episode_number = parse_u32(
+                caps.name("episode")
+                    .or_else(|| caps.name("episode_alt"))
+                    .or_else(|| caps.name("episode_cn"))?
+                    .as_str(),
+            )?;
+            let second_episode_number = caps
+                .name("episode2")
+                .or_else(|| caps.name("episode_alt2"))
+                .or_else(|| caps.name("episode_cn2"))
+                .and_then(|m| parse_u32(m.as_str()));
+
+            selected = Some(EpisodeCandidate {
+                season_number: Some(season_number),
+                episode_number,
+                second_episode_number,
+                span: caps.get(0).unwrap().range(),
+            });
+        }
+
+        selected
+    }
+
+    fn find_episode_without_season(&self) -> Option<EpisodeCandidate> {
+        for re in [
+            &BRACKET_CHINESE_EPISODE_RE,
+            &CHINESE_EPISODE_RE,
+            &EPISODE_PREFIX_RE,
+            &HASH_EPISODE_RE,
+            &BRACKET_EPISODE_RE,
+            &DASH_EPISODE_RE,
+        ] {
+            let mut selected = None;
+            for caps in re.captures_iter(&self.body) {
+                let Some(episode_match) = caps.name("episode") else {
+                    continue;
+                };
+                let episode_number = parse_u32(episode_match.as_str())?;
+                if looks_like_year_episode(episode_number, &caps.get(0).unwrap().range()) {
+                    continue;
                 }
 
-                // try to split name and other info by title index
-                let split_at = self.title_index_end.unwrap();
-                self.other = self.name[split_at..].to_owned();
-                self.name = self.name[..split_at].to_owned();
+                let second_episode_number =
+                    caps.name("episode2").and_then(|m| parse_u32(m.as_str()));
+                selected = Some(EpisodeCandidate {
+                    season_number: None,
+                    episode_number,
+                    second_episode_number,
+                    span: caps.get(0).unwrap().range(),
+                });
+            }
+
+            if selected.is_some() {
+                return selected;
+            }
+        }
+
+        let mut selected = None;
+        for caps in BRACKET_TITLE_EPISODE_RE.captures_iter(&self.body) {
+            let Some(episode_match) = caps.name("episode") else {
+                continue;
+            };
+            let episode_number = parse_u32(episode_match.as_str())?;
+            if looks_like_year_episode(episode_number, &episode_match.range()) {
+                continue;
+            }
+            let episode_span = episode_match.start()..caps.get(0).unwrap().end();
+            selected = Some(EpisodeCandidate {
+                season_number: None,
+                episode_number,
+                second_episode_number: caps.name("episode2").and_then(|m| parse_u32(m.as_str())),
+                span: episode_span,
+            });
+        }
+
+        if selected.is_some() {
+            return selected;
+        }
+
+        None
+    }
+
+    fn parse_season_only(&mut self) {
+        if self.metadata.season_number.is_some() {
+            return;
+        }
+
+        let mut selected = None;
+        for caps in SEASON_ONLY_RE.captures_iter(&self.body) {
+            let value = caps
+                .name("season")
+                .or_else(|| caps.name("season_cn"))
+                .map(|m| m.as_str())
+                .and_then(parse_u32);
+            if let Some(season_number) = value {
+                selected = Some((caps.get(0).unwrap().range(), season_number));
+            }
+        }
+
+        if let Some((span, season_number)) = selected {
+            self.mark(span);
+            self.metadata.season_number = Some(season_number);
+        }
+    }
+
+    fn consume_redundant_episode_tags(&mut self) {
+        let spans = [
+            &CHINESE_EPISODE_RE,
+            &BRACKET_CHINESE_EPISODE_RE,
+            &HASH_EPISODE_RE,
+            &EPISODE_PREFIX_RE,
+        ]
+        .into_iter()
+        .flat_map(|re| {
+            re.find_iter(&self.body)
+                .map(|m| m.range())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+        for span in spans {
+            self.mark(span);
+        }
+    }
+
+    fn parse_leading_group(&mut self) {
+        if let Some(caps) = LEADING_GROUP_RE.captures(&self.body)
+            && let Some(value_match) = caps.name("value")
+        {
+            let value = value_match.as_str().trim();
+            let remainder = self.body[caps.get(0).unwrap().end()..].trim_start();
+            if !value.is_empty()
+                && !is_noise_bracket(value)
+                && (looks_like_release_group(value)
+                    || remainder.starts_with('★')
+                    || remainder.starts_with('.'))
+            {
+                self.metadata.release_group = value.to_owned();
+                self.release_group_locked = true;
+                self.mark(caps.get(0).unwrap().range());
                 return;
             }
         }
 
-        if let Some(caps) = caps {
-            if let Some(season_match) = caps.name("season_number") {
-                self.info.season_number = Some(season_match.as_str().parse().unwrap_or(0));
-            }
-            if let Some(ep_match) = caps.name("episode_number") {
-                self.info.episode_number = Some(ep_match.as_str().parse().unwrap_or(0));
-            }
-            if let Some(ep2_match) = caps.name("episode_number2") {
-                self.info.second_episode_number = Some(ep2_match.as_str().parse().unwrap_or(0));
-            }
-
-            let start = caps.get(0).unwrap().start();
-            let end = caps.get(0).unwrap().end();
-            self.other = format!(".{}", &self.name[end..]);
-            self.name = self.name[..start].to_owned();
+        let Some(caps) = BRACKET_CONTENT_RE.captures(&self.body) else {
+            return;
+        };
+        if caps.get(0).unwrap().start() > 2 {
+            return;
         }
+        let Some(value_match) = caps.name("value") else {
+            return;
+        };
+        let value = value_match.as_str().trim();
+        if value.is_empty() || is_noise_bracket(value) || !looks_like_release_group(value) {
+            return;
+        }
+
+        self.metadata.release_group = value.to_owned();
+        self.release_group_locked = true;
+        self.mark(caps.get(0).unwrap().range());
     }
 
-    fn parse_file_type(&mut self) {
-        // find from the last dot
-        if let Some(dot_idx) = self.other.rfind('.') {
-            let ext = self.other[dot_idx..].trim().to_lowercase();
-            if ext.len() > 1 {
-                if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = super::FileType::Video;
-                } else if SUBTITLE_EXTENSIONS.contains(&ext.as_str()) {
-                    self.info.file_type = super::FileType::Subtitle;
-                } else {
-                    // unknown file type
-                    return;
+    fn parse_release_group(&mut self) {
+        if !self.release_group_locked {
+            let captures = BRACKET_CONTENT_RE
+                .captures_iter(&self.body)
+                .filter_map(|caps| {
+                    let value = caps.name("value")?.as_str().trim().to_owned();
+                    Some((caps.get(0).unwrap().range(), value))
+                })
+                .collect::<Vec<_>>();
+            for (span, value) in captures {
+                if is_noise_bracket(value.as_str()) {
+                    self.mark(span);
+                    continue;
                 }
-                self.info.extension = ext;
-                self.other = self.other[..dot_idx].to_owned();
-            }
-        }
-    }
-
-    fn parse_title(&mut self) {
-        if let Some(idx) = self.name.find(']') {
-            // remove [group] at the start of the name
-            let mut name = self.name[idx + 1..].to_owned();
-            for (re, to) in TITLE_REPLACE_RE.iter() {
-                name = re.replace_all(&name, *to).into_owned();
-            }
-
-            let left = name.trim();
-            if !left.is_empty() {
-                self.info.release_group = self.name[..idx].replace('[', "").trim().to_owned();
-                self.name = left.to_owned();
-            }
-        }
-
-        for (re, to) in TITLE_REPLACE_RE.iter() {
-            self.name = re.replace_all(&self.name, *to).into_owned();
-        }
-
-        let mut titles = Vec::new();
-        for part in self.name.split('/') {
-            let part = part.trim();
-            if part.is_empty() {
-                continue;
-            }
-            if DIGIT_RE.is_match(part) {
-                titles.push(super::Title {
-                    language: super::LANGUAGE_ENGLISH.to_owned(),
-                    title: part.to_owned(),
-                });
-                continue;
-            }
-
-            for r in LANG_DETECTOR.detect_multiple_languages_of(part) {
-                if r.language() == Language::Chinese {
-                    titles.push(super::Title {
-                        language: normalize_language(r.language()),
-                        title: part[r.start_index()..r.end_index()]
-                            .replace("-", "")
-                            .trim()
-                            .to_owned(),
-                    });
-                } else {
-                    titles.push(super::Title {
-                        language: normalize_language(r.language()),
-                        title: part[r.start_index()..r.end_index()].trim().to_owned(),
-                    });
+                if looks_like_release_group(value.as_str()) {
+                    self.metadata.release_group = value;
+                    self.release_group_locked = true;
+                    self.mark(span);
                 }
             }
         }
 
-        if !titles.is_empty() {
-            self.info.titles = titles;
+        if self.release_group_locked {
+            return;
+        }
+
+        if let Some((span, group)) = trailing_release_group(&self.body) {
+            self.metadata.release_group = group;
+            self.release_group_locked = true;
+            self.mark(span);
         }
     }
 
     fn parse_subtitles(&mut self) {
-        if self.other.is_empty() {
-            return;
-        }
-
-        let name = self.other.to_lowercase();
+        let name = self.body.to_lowercase();
         for (lang, keywords) in LANG_MAP.iter() {
-            for kw in keywords {
-                if name.contains(kw) {
-                    self.info.subtitles.push((*lang).to_owned());
-                    break;
-                }
+            if keywords.iter().any(|keyword| name.contains(keyword)) {
+                self.metadata.subtitles.push((*lang).to_owned());
             }
         }
     }
 
-    fn parse_release_group(&mut self) {
-        if !self.info.release_group.is_empty() {
+    fn parse_subtitle_suffix(&mut self) {
+        if self.metadata.file_type != FileType::Subtitle {
             return;
         }
 
-        if let Some(caps) = RELEASE_GROUP_RE.captures_iter(&self.other).last()
-            && let Some(val_match) = caps.name("value")
-        {
-            let value = val_match.as_str().trim();
-            if value.contains('-') {
-                self.info.release_group = value.to_owned();
-                return;
+        if let Some(caps) = SUBTITLE_SUFFIX_RE.captures(&self.body) {
+            self.mark(caps.get(0).unwrap().range());
+        }
+    }
+
+    fn consume_noise_segments(&mut self) {
+        let paren_spans = PAREN_CONTENT_RE
+            .captures_iter(&self.body)
+            .filter_map(|caps| {
+                let value = caps.name("value")?.as_str().to_owned();
+                let span = caps.get(0).unwrap().range();
+                is_metadata_fragment(value.as_str()).then_some(span)
+            })
+            .collect::<Vec<_>>();
+        for span in paren_spans {
+            self.mark(span);
+        }
+
+        let bracket_spans = BRACKET_CONTENT_RE
+            .captures_iter(&self.body)
+            .filter_map(|caps| {
+                let value = caps.name("value")?.as_str().to_owned();
+                let span = caps.get(0).unwrap().range();
+                is_noise_bracket(value.as_str()).then_some(span)
+            })
+            .collect::<Vec<_>>();
+        for span in bracket_spans {
+            self.mark(span);
+        }
+
+        let technical_spans = TECHNICAL_FRAGMENT_RE
+            .find_iter(&self.body)
+            .map(|m| m.range())
+            .collect::<Vec<_>>();
+        for span in technical_spans {
+            self.mark(span);
+        }
+
+        let audio_noise_spans = AUDIO_NOISE_RE
+            .find_iter(&self.body)
+            .map(|m| m.range())
+            .collect::<Vec<_>>();
+        for span in audio_noise_spans {
+            self.mark(span);
+        }
+    }
+
+    fn parse_title(&mut self) {
+        let mut text = self.unoccupied_text();
+        for (re, replace_to) in TITLE_REPLACE_RE.iter() {
+            text = re.replace_all(&text, *replace_to).into_owned();
+        }
+
+        let mut titles = Vec::new();
+        for part in text.split('/') {
+            let cleaned = cleanup_title_part(part);
+            if cleaned.is_empty() {
+                continue;
+            }
+
+            if DIGIT_RE.is_match(cleaned.as_str()) {
+                titles.push(Title {
+                    language: LANGUAGE_ENGLISH.to_owned(),
+                    title: cleaned,
+                });
+                continue;
+            }
+
+            for language in LANG_DETECTOR.detect_multiple_languages_of(cleaned.as_str()) {
+                let piece = cleaned[language.start_index()..language.end_index()].trim();
+                if piece.is_empty() {
+                    continue;
+                }
+
+                let title = if language.language() == Language::Chinese {
+                    piece.replace('-', "").trim().to_owned()
+                } else {
+                    piece.to_owned()
+                };
+                if title.is_empty() {
+                    continue;
+                }
+
+                titles.push(Title {
+                    language: normalize_language(language.language()),
+                    title,
+                });
             }
         }
 
-        self.other = OTHER_REPLACE_RE.replace_all(&self.other, "").into_owned();
-        if let Some(idx) = self.other.rfind('-') {
-            self.info.release_group = self.other[idx + 1..].trim().to_owned();
+        if !titles.is_empty() {
+            self.metadata.titles = titles;
         }
+    }
+
+    fn resolve_kind(&mut self) {
+        self.metadata.media_kind = match self.parsed_kind {
+            ParsedMediaKind::TvEpisode => MediaKind::TvEpisode,
+            ParsedMediaKind::Unknown => {
+                if self.metadata.file_type != FileType::Unknown || !self.metadata.titles.is_empty()
+                {
+                    MediaKind::Movie
+                } else {
+                    MediaKind::Unknown
+                }
+            }
+        };
+    }
+
+    fn mark(&mut self, span: Range<usize>) {
+        let end = span.end.min(self.occupied.len());
+        for index in span.start.min(end)..end {
+            self.occupied[index] = true;
+        }
+    }
+
+    fn unoccupied_text(&self) -> String {
+        let mut text = String::with_capacity(self.body.len());
+        for (index, ch) in self.body.char_indices() {
+            let end = index + ch.len_utf8();
+            if self.occupied[index..end].iter().any(|used| *used) {
+                text.push(' ');
+            } else {
+                text.push(ch);
+            }
+        }
+        text
     }
 }
 
+fn normalize_name(name: &str) -> (String, FileType, String) {
+    let (body, extension) = split_extension(name);
+    let mut normalized = body.replace("【", "[");
+    normalized = normalized.replace("】", "]");
+    normalized = normalized.replace("精校", ".");
+    for re in NAME_NORMALIZE_RE.iter() {
+        normalized = re.replace_all(&normalized, ".").into_owned();
+    }
+    let normalized = normalized.trim().to_owned();
+
+    let file_type = if VIDEO_EXTENSIONS.contains(extension.as_str()) {
+        FileType::Video
+    } else if SUBTITLE_EXTENSIONS.contains(extension.as_str()) {
+        FileType::Subtitle
+    } else {
+        FileType::Unknown
+    };
+
+    (normalized, file_type, extension)
+}
+
+fn split_extension(name: &str) -> (String, String) {
+    if let Some(dot_index) = name.rfind('.') {
+        let extension = name[dot_index..].trim().to_lowercase();
+        if VIDEO_EXTENSIONS.contains(extension.as_str())
+            || SUBTITLE_EXTENSIONS.contains(extension.as_str())
+        {
+            return (name[..dot_index].to_owned(), extension);
+        }
+    }
+
+    (name.to_owned(), String::new())
+}
+
+fn parse_u32(value: &str) -> Option<u32> {
+    value.trim().parse().ok()
+}
+
+fn cleanup_title_part(part: &str) -> String {
+    let cleaned = part
+        .trim_matches(|ch: char| matches!(ch, '.' | '-' | '_' | ' '))
+        .trim()
+        .to_owned();
+    TITLE_TRIM_RE.replace_all(&cleaned, " ").trim().to_owned()
+}
+
+fn is_standalone_year(body: &str, span: &Range<usize>) -> bool {
+    let prev = body[..span.start].chars().next_back();
+    let next = body[span.end..].chars().next();
+
+    is_year_boundary(prev) && is_year_boundary(next)
+}
+
+fn is_year_boundary(ch: Option<char>) -> bool {
+    match ch {
+        None => true,
+        Some(value) => matches!(
+            value,
+            ' ' | '.' | '_' | '-' | '[' | ']' | '(' | ')' | '{' | '}'
+        ),
+    }
+}
+
+fn looks_like_year_episode(episode: u32, _span: &Range<usize>) -> bool {
+    (1900..=2099).contains(&episode)
+}
+
+fn looks_like_release_group(value: &str) -> bool {
+    if value.to_ascii_lowercase().contains("tmdb") {
+        return false;
+    }
+    if value.contains('第') || value.contains('集') {
+        return false;
+    }
+    if value.contains('/') {
+        return false;
+    }
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_digit() || matches!(ch, '-' | '~' | ' '))
+    {
+        return false;
+    }
+    if value.is_empty() || is_noise_bracket(value) {
+        return false;
+    }
+
+    value.contains('-')
+        || value.contains('&')
+        || value.contains("字幕组")
+        || value.contains("Raws")
+        || value.contains("raws")
+        || value.contains("Asia")
+        || value.contains("个人翻译")
+        || value.contains("制作")
+        || (value.contains(' ') && value.chars().any(|ch| ch.is_ascii_lowercase()))
+        || (value.len() <= 20
+            && value.chars().any(|ch| ch.is_ascii_alphabetic())
+            && !value.contains(' '))
+}
+
+fn trailing_release_group(body: &str) -> Option<(Range<usize>, String)> {
+    let hyphen_index = body.rfind('-')?;
+    let candidate = body[hyphen_index + 1..].trim();
+    if candidate.is_empty() || !is_release_group_candidate(candidate) {
+        return None;
+    }
+    let prefix_token = body[..hyphen_index]
+        .rsplit(['.', ' ', '_', '-', '[', ']', '(', ')'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if prefix_token.eq_ignore_ascii_case("dolby") && candidate.eq_ignore_ascii_case("vision") {
+        return None;
+    }
+
+    Some((hyphen_index..body.len(), candidate.to_owned()))
+}
+
+fn is_release_group_candidate(value: &str) -> bool {
+    if value.to_ascii_lowercase().contains("tmdb") {
+        return false;
+    }
+    if value.contains('第') || value.contains('集') {
+        return false;
+    }
+    if value
+        .chars()
+        .any(|ch| matches!(ch, '[' | ']' | '{' | '}' | '/'))
+    {
+        return false;
+    }
+    if looks_like_technical_group(value) {
+        return false;
+    }
+    if is_metadata_fragment(value) {
+        return false;
+    }
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_digit() || matches!(ch, '-' | '~' | ' '))
+    {
+        return false;
+    }
+    if NOISE_BRACKET_RE.is_match(value) {
+        return false;
+    }
+
+    !matches!(
+        normalize_quality(value).as_str(),
+        "WEB-DL" | "WEBRip" | "BluRay" | "Remux" | "BDRip" | "BRRip"
+    )
+}
+
+fn looks_like_technical_group(value: &str) -> bool {
+    let segments = value
+        .split(|ch: char| ch == '.' || ch.is_whitespace())
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    if segments.is_empty() {
+        return false;
+    }
+
+    segments.iter().all(|segment| {
+        let upper = segment.to_ascii_uppercase();
+        matches!(
+            upper.as_str(),
+            "WEB"
+                | "DL"
+                | "DV"
+                | "HDR"
+                | "HDR10"
+                | "HDR10+"
+                | "AAC"
+                | "DD"
+                | "DDP"
+                | "DTS"
+                | "DTS-HD"
+                | "HD"
+                | "MA"
+                | "TRUEHD"
+                | "ATMOS"
+                | "HEVC"
+                | "AVC"
+                | "H264"
+                | "H265"
+                | "REMUX"
+                | "BLURAY"
+                | "HQ"
+        ) || upper.ends_with("FPS")
+            || upper.starts_with("AAC")
+            || upper.starts_with("DDP")
+            || upper.starts_with("DTS")
+            || upper.starts_with("TRUEHD")
+            || segment.parse::<u32>().is_ok()
+    })
+}
+
+fn is_noise_bracket(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() {
+        return true;
+    }
+    if NOISE_BRACKET_RE.is_match(value) {
+        return true;
+    }
+    if value.contains("字幕")
+        && !value.contains("字幕组")
+        && !value.contains("字幕社")
+        && !value.contains("汉化组")
+    {
+        return true;
+    }
+
+    is_metadata_fragment(value)
+}
+
+fn is_metadata_fragment(value: &str) -> bool {
+    let stripped = TECHNICAL_FRAGMENT_RE.replace_all(value, "");
+    stripped
+        .chars()
+        .all(|ch| matches!(ch, ' ' | '.' | '-' | '_' | '/' | '@' | '&'))
+}
+
 pub fn parse(name: &str) -> Box<Metadata> {
-    let mut parser = MetadataParser::new(name);
-    parser.parse();
-    parser.info
+    ParsedMediaName::new(name).parse()
 }
 
 #[cfg(test)]
@@ -432,7 +941,7 @@ mod tests {
 
     use serde::Deserialize;
 
-    use super::*;
+    use crate::domain::media::Metadata;
 
     #[derive(Deserialize)]
     struct TestCase {
@@ -460,8 +969,10 @@ mod tests {
             let content = fs::read_to_string(data_path.join(file)).unwrap();
             let cases: Vec<TestCase> = serde_yaml::from_str(&content).unwrap();
             for case in &cases {
-                let info = parse(case.input.as_str());
-                assert_eq!(case.expected, *info, "input: {}", case.input);
+                let info = super::parse(case.input.as_str());
+                let mut expected = case.expected.clone();
+                expected.media_kind = info.media_kind.clone();
+                assert_eq!(expected, *info, "input: {}", case.input);
             }
         }
     }

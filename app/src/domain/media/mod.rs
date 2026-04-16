@@ -10,6 +10,16 @@ pub const LANGUAGE_ENGLISH: &str = "en";
 pub const LANGUAGE_CHINESE_SIMPLIFIED: &str = "zh-CN";
 pub const LANGUAGE_CHINESE_TRADITIONAL: &str = "zh-TW";
 
+/// Represents the parsed semantic kind of a media name.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaKind {
+    Movie,
+    TvEpisode,
+    #[default]
+    Unknown,
+}
+
 /// Represents the type of media file (video or subtitle)
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +46,9 @@ pub struct Title {
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(default, rename_all = "lowercase")]
 pub struct Metadata {
+    /// Semantic kind inferred from the media name
+    pub media_kind: MediaKind,
+
     /// File type based on file extension
     pub file_type: FileType,
 
@@ -142,6 +155,17 @@ impl Metadata {
         self.file_type == FileType::Video
     }
 
+    pub fn is_tv_episode(&self) -> bool {
+        self.media_kind == MediaKind::TvEpisode
+    }
+
+    pub fn clear_tv_context(&mut self) {
+        self.media_kind = MediaKind::Unknown;
+        self.season_number = None;
+        self.episode_number = None;
+        self.second_episode_number = None;
+    }
+
     pub fn unknown_type(&self) -> bool {
         self.file_type == FileType::Unknown
     }
@@ -149,7 +173,9 @@ impl Metadata {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::domain::media::{
+        FileType, LANGUAGE_CHINESE, LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_ENGLISH, Metadata, Title,
+    };
 
     #[test]
     fn parse_uses_domain_media_entrypoint() {

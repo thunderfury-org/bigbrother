@@ -22,6 +22,9 @@ impl MetadataLookup {
 
         let mut meta = Metadata::parse(parts[parts.len() - 1]);
         if !is_tv || parts.len() < 2 {
+            if !is_tv {
+                meta.clear_tv_context();
+            }
             self.cache.insert(parent_path.to_string(), meta.clone());
             return meta;
         }

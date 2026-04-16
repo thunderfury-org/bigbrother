@@ -158,7 +158,7 @@
     file_type: "video"
     extension: ".mkv"
     titles:
-      - title: "The Super Mario Bros  Movie"
+      - title: "The Super Mario Bros Movie"
         language: "en"
     year: 2023
     quality: "Remux"
@@ -193,3 +193,17 @@
     frame_rate: "24fps"
     video_codec: "H265"
     audio_codec: "DDP.5.1.Atmos"
+
+- input: "The.Hobbit.An.Unexpected.Journey.2012.EXTENDED.2160p.BluRay.REMUX.HDR.DV.HEVC.DTS-HD.MA.TrueHD.7.1.Atmos.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The Hobbit An Unexpected Journey"
+        language: "en"
+    year: 2012
+    resolution: "2160p"
+    quality: "Remux"
+    hdr: "DV"
+    video_codec: "H265"
+    audio_codec: "TrueHD.7.1.Atmos"

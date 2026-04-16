@@ -23,7 +23,7 @@ impl MetadataLookup {
             return meta;
         }
 
-        let path_meta = self.parse_metadata_from_path(parent_path, meta.episode_number.is_some());
+        let path_meta = self.parse_metadata_from_path(parent_path, meta.is_tv_episode());
         meta.merge_metadata(&path_meta);
         meta
     }

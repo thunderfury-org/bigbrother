@@ -22,7 +22,7 @@ where
         // group files by tmdb_id
         let mut grouped_files = HashMap::new();
         for file in files {
-            if file.metadata.episode_number.is_some() {
+            if file.metadata.is_tv_episode() {
                 // tv
                 self.group_tv_file(file, &mut grouped_files).await?;
             } else {
