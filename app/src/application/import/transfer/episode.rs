@@ -5,6 +5,7 @@ use crate::domain::import::{
     policy::{select_largest_media_file, should_skip_existing_media},
 };
 use crate::error::AppResult;
+use tracing::info;
 
 use super::TransferImportUseCase;
 
@@ -32,6 +33,10 @@ where
             .get(&args.episode_number)
             .is_some_and(|existing_files| should_skip_existing_media(existing_files, media_file))
         {
+            info!(
+                "Skipping {} S{:02}E{:02} because an equal or larger file already exists in library",
+                args.detail.name, args.season_number, args.episode_number
+            );
             return Ok(None);
         }
 

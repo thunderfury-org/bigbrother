@@ -7,7 +7,6 @@ use crate::bootstrap::services::{ImportService, KeywordService, NotifyService, S
 
 mod cmd;
 pub(crate) mod delivery;
-mod format;
 mod msg;
 
 struct BotServices {

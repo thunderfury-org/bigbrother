@@ -74,6 +74,15 @@ pub fn init(log_dir: &str) {
     log_panic();
 }
 
+pub fn init_console() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new("info"))
+        .with_ansi(true)
+        .init();
+
+    log_panic();
+}
+
 fn log_panic() {
     // catch panic and log them using tracing instead of default output to StdErr
     panic::set_hook(Box::new(|info| {

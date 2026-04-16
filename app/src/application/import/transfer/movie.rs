@@ -3,6 +3,7 @@ use crate::domain::import::{
     paths::{get_movie_base_name, get_movie_path_in_library, get_year_from_date},
     policy::{select_largest_media_file, should_skip_existing_media},
 };
+use tracing::info;
 
 use super::{ImportedMedia, TransferImportUseCase};
 use crate::application::import::MovieDetail;
@@ -37,6 +38,10 @@ where
             select_largest_media_file(media_files, format!("movie {}", detail.title).as_str())?;
 
         if should_skip_existing_media(&existing_files, media_file) {
+            info!(
+                "Skipping movie {} because an equal or larger file already exists in library",
+                media_file.video.name
+            );
             return Ok(None);
         }
 

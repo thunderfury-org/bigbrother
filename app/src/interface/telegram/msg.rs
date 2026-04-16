@@ -8,11 +8,11 @@ use teloxide::{
 };
 use tracing::{error, info};
 
-use super::format::format_imported_media;
 use crate::bootstrap::services::{ImportService, NotifyService};
 use crate::{
     application::import::{ImportedMedia, ShareUrl, is_fslink},
     error::{AppError, AppErrorKind},
+    interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
     log_time,
 };
 
@@ -184,7 +184,7 @@ impl MsgProcessor<'_> {
         }
 
         if !self.from_monitor && !msg_sent {
-            self.send_message("没有新入库的媒体").await;
+            self.send_message(NO_NEW_MEDIA_MESSAGE).await;
         }
         Ok(())
     }
