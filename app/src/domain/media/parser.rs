@@ -78,8 +78,15 @@ static DASH_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 static SEASON_ONLY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?ix)(?:第\s*(?P<season_cn>\d{1,2})\s*季|\b(?:Season|S)\s*(?P<season>\d{1,2})\b)")
-        .unwrap()
+    Regex::new(
+        r"(?ix)
+        (?:
+            第\s*(?P<season_cn>[\d一二三四五六七八九十两兩零〇]{1,3})\s*季
+            |
+            \b(?:Season|S)\s*(?P<season>\d{1,2})\b
+        )",
+    )
+    .unwrap()
 });
 static LEADING_GROUP_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\[(?P<value>[^\[\]]+)\]").unwrap());
@@ -135,7 +142,7 @@ static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
         |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
         |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
         |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
-        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
+        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV|OVA|OAD|NCOP|NCED|Fin|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
         ",
     )
     .unwrap()
@@ -147,7 +154,7 @@ static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
         |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
         |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
         |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
-        |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕
+        |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|OVA|OAD|NCOP|NCED|Fin
         |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV)$",
     )
     .unwrap()
@@ -474,7 +481,7 @@ impl ParsedMediaName {
                 .name("season")
                 .or_else(|| caps.name("season_cn"))
                 .map(|m| m.as_str())
-                .and_then(parse_u32);
+                .and_then(parse_season_number);
             if let Some(season_number) = value {
                 selected = Some((caps.get(0).unwrap().range(), season_number));
             }
@@ -792,6 +799,42 @@ fn split_extension(name: &str) -> (String, String) {
 
 fn parse_u32(value: &str) -> Option<u32> {
     value.trim().parse().ok()
+}
+
+fn parse_season_number(value: &str) -> Option<u32> {
+    parse_u32(value).or_else(|| parse_chinese_number(value))
+}
+
+fn parse_chinese_number(value: &str) -> Option<u32> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut total = 0;
+    let mut current = 0;
+    for ch in value.chars() {
+        match ch {
+            '零' | '〇' => {}
+            '一' => current += 1,
+            '二' | '两' | '兩' => current += 2,
+            '三' => current += 3,
+            '四' => current += 4,
+            '五' => current += 5,
+            '六' => current += 6,
+            '七' => current += 7,
+            '八' => current += 8,
+            '九' => current += 9,
+            '十' => {
+                total += if current == 0 { 10 } else { current * 10 };
+                current = 0;
+            }
+            _ => return None,
+        }
+    }
+
+    let value = total + current;
+    (value > 0).then_some(value)
 }
 
 fn cleanup_title_part(part: &str) -> String {

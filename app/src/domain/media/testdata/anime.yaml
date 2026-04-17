@@ -302,3 +302,84 @@
     resolution: "1080p"
     quality: "BDRip"
     release_group: "APTX4869"
+
+- input: "[ANi] Tune In to the Midnight Heart / 午夜的倾心旋律 - 08 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
+  expected:
+    titles:
+      - title: "Tune In to the Midnight Heart"
+        language: "en"
+      - title: "午夜的倾心旋律"
+        language: "zh"
+    episode_number: 8
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "ANi"
+    subtitles: ["zh-TW"]
+
+- input: "[ANi] 金肉人 完美超人始祖篇 Season 2 - 14 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
+  expected:
+    titles:
+      - title: "金肉人 完美超人始祖篇"
+        language: "zh"
+    season_number: 2
+    episode_number: 14
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "ANi"
+    subtitles: ["zh-TW"]
+
+- input: "[ANi] 这是妳与我的最后战场，或是开创世界的圣战 第二季 - 12 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
+  expected:
+    titles:
+      - title: "这是妳与我的最后战场，或是开创世界的圣战"
+        language: "zh"
+    season_number: 2
+    episode_number: 12
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "ANi"
+    subtitles: ["zh-TW"]
+
+- input: "[绿茶字幕组] 午夜的倾心旋律 / Mayonaka Heart Tune [04][WebRip][1080p][简繁日内封]"
+  expected:
+    titles:
+      - title: "午夜的倾心旋律"
+        language: "zh"
+      - title: "Mayonaka Heart Tune"
+        language: "en"
+    episode_number: 4
+    resolution: "1080p"
+    quality: "WEBRip"
+    release_group: "绿茶字幕组"
+    subtitles: ["zh-CN", "zh-TW"]
+
+- input: "[ANi] 葬送的芙莉莲 - 00 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
+  expected:
+    titles:
+      - title: "葬送的芙莉莲"
+        language: "zh"
+    episode_number: 0
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "ANi"
+    subtitles: ["zh-TW"]
+
+- input: "[Lilith-Raws] 吹响吧！上低音号 OVA Fin [Baha][WEB-DL][1080p][AVC AAC][CHT][MP4]"
+  expected:
+    titles:
+      - title: "吹响吧！上低音号"
+        language: "zh"
+    quality: "WEB-DL"
+    resolution: "1080p"
+    video_codec: "H264"
+    audio_codec: "AAC"
+    release_group: "Lilith-Raws"
+    subtitles: ["zh-TW"]
