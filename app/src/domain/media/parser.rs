@@ -89,6 +89,34 @@ static PAREN_CONTENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\((?P<value>[^()]*)\)").unwrap());
 static SUBTITLE_SUFFIX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)[._-](?P<value>ja|en|chs|cht|zh-hans|zh-hant)$").unwrap());
+static SUBTITLE_TOKEN_RE: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            LANGUAGE_CHINESE_SIMPLIFIED,
+            Regex::new(
+                r"(?ix)
+                (?:
+                    (^|[^a-z0-9])(?:chs|gb|zh-hans)([^a-z0-9]|$)
+                    |简中|简体|簡中|簡體
+                )
+                ",
+            )
+            .unwrap(),
+        ),
+        (
+            LANGUAGE_CHINESE_TRADITIONAL,
+            Regex::new(
+                r"(?ix)
+                (?:
+                    (^|[^a-z0-9])(?:cht|big5|zh-hant)([^a-z0-9]|$)
+                    |繁中|繁体|繁體
+                )
+                ",
+            )
+            .unwrap(),
+        ),
+    ]
+});
 static AUDIO_NOISE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\]\(\)])MA(?:$|[ ._\-\[\]\(\)])").unwrap());
 static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
@@ -106,7 +134,7 @@ static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
         (?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
         |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
         |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|GB|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
+        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
         |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
         ",
     )
@@ -118,7 +146,7 @@ static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
         ^(?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
         |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
         |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|GB|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
+        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
         |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕
         |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV)$",
     )
@@ -144,19 +172,6 @@ static VIDEO_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 static SUBTITLE_EXTENSIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let extensions = [".srt", ".sub", ".idx", ".ass", ".ssa"];
     HashSet::from(extensions)
-});
-
-static LANG_MAP: LazyLock<Vec<(&'static str, Vec<&'static str>)>> = LazyLock::new(|| {
-    vec![
-        (
-            LANGUAGE_CHINESE_SIMPLIFIED,
-            vec!["简", "chs", "gb", "zh-hans"],
-        ),
-        (
-            LANGUAGE_CHINESE_TRADITIONAL,
-            vec!["繁", "cht", "big5", "zh-hant"],
-        ),
-    ]
 });
 
 static LANG_DETECTOR: LazyLock<LanguageDetector> = LazyLock::new(|| {
@@ -496,12 +511,14 @@ impl ParsedMediaName {
             && let Some(value_match) = caps.name("value")
         {
             let value = value_match.as_str().trim();
-            let remainder = self.body[caps.get(0).unwrap().end()..].trim_start();
+            let raw_remainder = &self.body[caps.get(0).unwrap().end()..];
+            let remainder = raw_remainder.trim();
             if !value.is_empty()
                 && !is_noise_bracket(value)
                 && (looks_like_release_group(value)
-                    || remainder.starts_with('★')
-                    || remainder.starts_with('.'))
+                    || raw_remainder.trim_start().starts_with('★')
+                    || has_promotional_prefix(raw_remainder))
+                && prefix_contains_title(remainder)
             {
                 self.metadata.release_group = value.to_owned();
                 self.release_group_locked = true;
@@ -530,6 +547,7 @@ impl ParsedMediaName {
     }
 
     fn parse_release_group(&mut self) {
+        let title_boundary = self.first_occupied_index().unwrap_or(self.body.len());
         if !self.release_group_locked {
             let captures = BRACKET_CONTENT_RE
                 .captures_iter(&self.body)
@@ -543,7 +561,10 @@ impl ParsedMediaName {
                     self.mark(span);
                     continue;
                 }
-                if looks_like_release_group(value.as_str()) {
+                if looks_like_release_group(value.as_str())
+                    && (span.start < title_boundary
+                        || has_recent_occupied_before(&self.occupied, span.start, 32))
+                {
                     self.metadata.release_group = value;
                     self.release_group_locked = true;
                     self.mark(span);
@@ -555,7 +576,7 @@ impl ParsedMediaName {
             return;
         }
 
-        if let Some((span, group)) = trailing_release_group(&self.body) {
+        if let Some((span, group)) = trailing_release_group(&self.body, &self.occupied) {
             self.metadata.release_group = group;
             self.release_group_locked = true;
             self.mark(span);
@@ -563,12 +584,37 @@ impl ParsedMediaName {
     }
 
     fn parse_subtitles(&mut self) {
-        let name = self.body.to_lowercase();
-        for (lang, keywords) in LANG_MAP.iter() {
-            if keywords.iter().any(|keyword| name.contains(keyword)) {
-                self.metadata.subtitles.push((*lang).to_owned());
+        let mut languages = Vec::new();
+        let mut spans = Vec::new();
+
+        for caps in BRACKET_CONTENT_RE.captures_iter(&self.body) {
+            if let Some(value) = caps.name("value")
+                && collect_subtitle_languages(value.as_str(), &mut languages)
+            {
+                spans.push(caps.get(0).unwrap().range());
             }
         }
+
+        for caps in PAREN_CONTENT_RE.captures_iter(&self.body) {
+            if let Some(value) = caps.name("value")
+                && collect_subtitle_languages(value.as_str(), &mut languages)
+            {
+                spans.push(caps.get(0).unwrap().range());
+            }
+        }
+
+        if let Some(caps) = SUBTITLE_SUFFIX_RE.captures(&self.body)
+            && let Some(value) = caps.name("value")
+            && collect_subtitle_languages(value.as_str(), &mut languages)
+        {
+            spans.push(caps.get(0).unwrap().range());
+        }
+
+        for span in spans {
+            self.mark(span);
+        }
+
+        self.metadata.subtitles = languages;
     }
 
     fn parse_subtitle_suffix(&mut self) {
@@ -704,6 +750,10 @@ impl ParsedMediaName {
         }
         text
     }
+
+    fn first_occupied_index(&self) -> Option<usize> {
+        self.occupied.iter().position(|used| *used)
+    }
 }
 
 fn normalize_name(name: &str) -> (String, FileType, String) {
@@ -793,6 +843,7 @@ fn looks_like_release_group(value: &str) -> bool {
         return false;
     }
 
+    let lower = value.to_ascii_lowercase();
     value.contains('-')
         || value.contains('&')
         || value.contains("字幕组")
@@ -801,16 +852,24 @@ fn looks_like_release_group(value: &str) -> bool {
         || value.contains("Asia")
         || value.contains("个人翻译")
         || value.contains("制作")
-        || (value.contains(' ') && value.chars().any(|ch| ch.is_ascii_lowercase()))
+        || (value.contains(' ')
+            && (lower == value
+                || lower.contains("raws")
+                || lower.contains("sub")
+                || lower.contains("team")
+                || lower.contains("group")))
         || (value.len() <= 20
             && value.chars().any(|ch| ch.is_ascii_alphabetic())
             && !value.contains(' '))
 }
 
-fn trailing_release_group(body: &str) -> Option<(Range<usize>, String)> {
+fn trailing_release_group(body: &str, occupied: &[bool]) -> Option<(Range<usize>, String)> {
     let hyphen_index = body.rfind('-')?;
     let candidate = body[hyphen_index + 1..].trim();
     if candidate.is_empty() || !is_release_group_candidate(candidate) {
+        return None;
+    }
+    if !has_trailing_technical_context(occupied, hyphen_index) {
         return None;
     }
     let prefix_token = body[..hyphen_index]
@@ -823,6 +882,17 @@ fn trailing_release_group(body: &str) -> Option<(Range<usize>, String)> {
     }
 
     Some((hyphen_index..body.len(), candidate.to_owned()))
+}
+
+fn has_trailing_technical_context(occupied: &[bool], hyphen_index: usize) -> bool {
+    has_recent_occupied_before(occupied, hyphen_index, 32)
+}
+
+fn has_recent_occupied_before(occupied: &[bool], index: usize, window: usize) -> bool {
+    let window_start = index.saturating_sub(window);
+    occupied
+        .get(window_start..index)
+        .is_some_and(|slice| slice.iter().any(|used| *used))
 }
 
 fn is_release_group_candidate(value: &str) -> bool {
@@ -929,6 +999,48 @@ fn is_metadata_fragment(value: &str) -> bool {
     stripped
         .chars()
         .all(|ch| matches!(ch, ' ' | '.' | '-' | '_' | '/' | '@' | '&'))
+}
+
+fn prefix_contains_title(value: &str) -> bool {
+    value
+        .chars()
+        .any(|ch| ch.is_alphabetic() || ('\u{4e00}'..='\u{9fff}').contains(&ch))
+}
+
+fn has_promotional_prefix(value: &str) -> bool {
+    let trimmed = value.trim_start();
+    let Some(rest) = trimmed.strip_prefix('.') else {
+        return false;
+    };
+
+    matches!(rest.trim_start().chars().next(), Some('[' | '('))
+}
+
+fn collect_subtitle_languages(fragment: &str, output: &mut Vec<String>) -> bool {
+    let fragment = fragment.trim();
+    if fragment.is_empty() {
+        return false;
+    }
+
+    let initial_len = output.len();
+    if fragment.contains("简繁") || fragment.contains("簡繁") || fragment.contains("繁简") {
+        push_language(output, LANGUAGE_CHINESE_SIMPLIFIED);
+        push_language(output, LANGUAGE_CHINESE_TRADITIONAL);
+    }
+
+    for (language, pattern) in SUBTITLE_TOKEN_RE.iter() {
+        if pattern.is_match(fragment) {
+            push_language(output, language);
+        }
+    }
+
+    output.len() != initial_len
+}
+
+fn push_language(output: &mut Vec<String>, language: &str) {
+    if !output.iter().any(|existing| existing == language) {
+        output.push(language.to_owned());
+    }
 }
 
 pub fn parse(name: &str) -> Box<Metadata> {

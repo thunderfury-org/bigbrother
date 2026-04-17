@@ -223,6 +223,42 @@
     frame_rate: "24fps"
     audio_codec: "TrueHD.7.1"
 
+- input: "Spider-Man.No.Way.Home.2021.1080p.WEB-DL.H265.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "Spider-Man No Way Home"
+        language: "en"
+    year: 2021
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H265"
+
+- input: "[One Piece].2024.1080p.WEB-DL.H265.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "One Piece"
+        language: "en"
+    year: 2024
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H265"
+
+- input: "The.GB.Story.2024.1080p.WEB-DL.H265.mkv"
+  expected:
+    file_type: "video"
+    extension: ".mkv"
+    titles:
+      - title: "The GB Story"
+        language: "en"
+    year: 2024
+    resolution: "1080p"
+    quality: "WEB-DL"
+    video_codec: "H265"
+
 - input: "The Lord of the Rings： The Return of the King.2003.2160p.Ultra HD BluRay Remux.HDR10.DoVi.DoVi P7.HEVC.10-bit.24fps.TrueHD 7.1.mkv"
   expected:
     file_type: "video"
