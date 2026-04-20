@@ -1,8 +1,8 @@
 use crate::{
     application::{
-        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, resolve_download_url::ResolveDownloadUrlService,
-        sync_strm::SyncStrmService,
+        delete_media::DeleteMediaService, import_media::ImportMediaService,
+        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
+        resolve_download_url::ResolveDownloadUrlService, sync_strm::SyncStrmService,
     },
     bootstrap::app::Client,
     config,
@@ -12,7 +12,10 @@ use crate::{
         event::publisher::EventBusPublisher,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+            gateway::{
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
+                TmdbMetadataGateway,
+            },
             local_store::FilesystemImportLocalStore,
         },
         repo::keyword::SeaOrmKeywordRepository,
@@ -30,6 +33,8 @@ pub(crate) type NotifyService = PublishTelegramMessageService<EventBusPublisher>
 pub(crate) type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 pub(crate) type MediaDownloadUrlService =
     ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;
+pub(crate) type DeleteMediaServiceRuntime =
+    DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 
 pub(crate) fn build_import_service(config: &config::Manager) -> ImportService {
     let clients = Client::new(config);

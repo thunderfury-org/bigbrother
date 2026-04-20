@@ -8,10 +8,21 @@ pub struct KeywordRecord {
     pub value: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaDirectoryRecord {
+    pub dir_id: i64,
+    pub display_name: String,
+    pub remote_path: String,
+}
+
 pub trait KeywordRepository {
     async fn list_all_keywords(&self) -> AppResult<Vec<KeywordRecord>>;
     async fn add_keyword(&self, value: &str) -> AppResult<()>;
     async fn delete_keyword(&self, id: i64) -> AppResult<()>;
+}
+
+pub trait MediaSearchSource {
+    async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>>;
 }
 
 pub trait DownloadUrlCache {

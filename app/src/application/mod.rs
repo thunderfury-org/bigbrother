@@ -1,3 +1,4 @@
+pub mod delete_media;
 pub mod import;
 pub mod import_media;
 pub mod import_ports;
