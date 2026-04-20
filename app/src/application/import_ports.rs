@@ -72,4 +72,5 @@ pub trait ImportLocalStore: Clone {
         file_id: i64,
     ) -> AppResult<()>;
     async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()>;
+    async fn remove_local_dir_if_exists(&self, path: &str) -> AppResult<()>;
 }

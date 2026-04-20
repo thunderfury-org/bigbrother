@@ -399,6 +399,20 @@ impl ImportLocalStore for FakeLocalStore {
         }
         Ok(())
     }
+
+    async fn remove_local_dir_if_exists(&self, path: &str) -> AppResult<()> {
+        if self.fail_remove {
+            return Err(AppError::Internal("remove local dir failed".into()));
+        }
+        if let Err(err) = tokio::fs::remove_dir_all(path).await
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(AppError::Internal(format!(
+                "remove local dir failed, {err}"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[tokio::test]

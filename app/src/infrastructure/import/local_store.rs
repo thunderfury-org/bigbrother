@@ -69,6 +69,18 @@ impl ImportLocalStore for FilesystemImportLocalStore {
         }
         Ok(())
     }
+
+    async fn remove_local_dir_if_exists(&self, path: &str) -> AppResult<()> {
+        if let Err(err) = tokio::fs::remove_dir_all(path).await
+            && err.kind() != io::ErrorKind::NotFound
+        {
+            return Err(AppError::Internal(format!(
+                "Failed to delete local directory, error: {}",
+                err
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -95,5 +107,13 @@ mod tests {
         let url = local_store().build_strm_url("/remote/show/ep01.mkv", 42);
 
         assert_eq!(url, "http://localhost/d/remote/show/ep01.mkv?file_id=42");
+    }
+
+    #[tokio::test]
+    async fn remove_local_dir_if_exists_ignores_missing_dir() {
+        local_store()
+            .remove_local_dir_if_exists("/tmp/bigbrother-missing-dir")
+            .await
+            .unwrap();
     }
 }

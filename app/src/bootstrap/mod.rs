@@ -9,8 +9,9 @@ pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
+        delete_media::DeleteMediaService, import_media::ImportMediaService,
+        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
+        sync_strm::SyncStrmService,
     },
     bootstrap::services::MediaDownloadUrlService,
     error::{AppError, AppResult},
@@ -21,7 +22,10 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+            gateway::{
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
+                TmdbMetadataGateway,
+            },
             local_store::FilesystemImportLocalStore,
         },
         repo::keyword::SeaOrmKeywordRepository,
@@ -101,6 +105,16 @@ impl AppRuntime {
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
                         TokioFileStore,
                         inputs.sync_config.clone(),
+                    ),
+                    DeleteMediaService::new(
+                        Pan123MediaSearchGateway::new(inputs.clients.pan123.clone()),
+                        PanLibraryGateway::new(inputs.clients.pan123.clone()),
+                        FilesystemImportLocalStore::new(
+                            inputs.import_remote_path.clone(),
+                            inputs.import_local_path.clone(),
+                            inputs.import_strm_download_url.clone(),
+                        ),
+                        inputs.import_remote_path.clone(),
                     ),
                 ),
                 media_server_addr: inputs.media_server_addr.clone(),

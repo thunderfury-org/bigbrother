@@ -51,6 +51,14 @@ impl File {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchPathFile {
+    pub file_id: i64,
+    pub file_name: String,
+    pub is_dir: bool,
+    pub path: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct FileListResponse {
     #[serde(rename = "Next")]
@@ -263,6 +271,25 @@ impl Client {
         )
         .await
         .map(|r| r.info_list)
+    }
+
+    pub async fn search_with_paths(&self, file_name: &str) -> RequestResult<Vec<SearchPathFile>> {
+        let mut files = Vec::new();
+
+        for file in self.search(file_name).await? {
+            let is_dir = file.is_dir();
+            let Some(path) = self.resolve_path(file.abs_path.as_str()).await? else {
+                continue;
+            };
+            files.push(SearchPathFile {
+                file_id: file.file_id,
+                file_name: file.file_name,
+                is_dir,
+                path,
+            });
+        }
+
+        Ok(files)
     }
 
     pub async fn fast_upload(
@@ -497,6 +524,31 @@ impl Client {
         )
         .await
         .map(|r| r.file_list.into_iter().map(|f| (f.file_id, f)).collect())
+    }
+
+    async fn resolve_path(&self, abs_path: &str) -> RequestResult<Option<String>> {
+        let file_ids = abs_path
+            .split('/')
+            .filter_map(|s| s.parse::<i64>().ok())
+            .collect::<Vec<_>>();
+        if file_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let files = self.mutli_get(&file_ids).await?;
+        if files.len() != file_ids.len() {
+            return Ok(None);
+        }
+
+        let mut parts = Vec::with_capacity(file_ids.len());
+        for file_id in file_ids {
+            let Some(file) = files.get(&file_id) else {
+                return Ok(None);
+            };
+            parts.push(file.file_name.clone());
+        }
+
+        Ok(Some(format!("/{}", parts.join("/"))))
     }
 
     async fn get<T: DeserializeOwned>(
@@ -1015,5 +1067,64 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, Some(30));
+    }
+
+    #[tokio::test]
+    async fn search_with_paths_returns_resolved_human_paths() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/file/list/new"))
+            .and(query_param("SearchData", "breaking"))
+            .and(query_param("operateType", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "Next": "0",
+                    "Len": 1,
+                    "IsFirst": true,
+                    "InfoList": [
+                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, "/10/20/30")
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .and(body_json(serde_json::json!({
+                "fileIdList": [
+                    {"FileId": 10},
+                    {"FileId": 20},
+                    {"FileId": 30}
+                ]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": [
+                        {"FileId": 10, "FileName": "remote", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
+                        {"FileId": 20, "FileName": "电视剧", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
+                        {"FileId": 30, "FileName": "Breaking Bad (2008) {tmdb-1396}", "Size": 0, "Etag": "e30", "S3KeyFlag": "s30"}
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client.search_with_paths("breaking").await.unwrap();
+
+        assert_eq!(
+            result,
+            vec![SearchPathFile {
+                file_id: 30,
+                file_name: "Breaking Bad (2008) {tmdb-1396}".to_string(),
+                is_dir: true,
+                path: "/remote/电视剧/Breaking Bad (2008) {tmdb-1396}".to_string(),
+            }]
+        );
     }
 }

@@ -5,7 +5,10 @@ use crate::{
         Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
         Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
-    application::import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
+    application::{
+        import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
+        ports::{MediaDirectoryRecord, MediaSearchSource},
+    },
     error::AppResult,
     infrastructure::client::{pan115, pan123, pan189, tmdb},
 };
@@ -27,6 +30,11 @@ pub struct TmdbMetadataGateway {
     tmdb: tmdb::Client,
 }
 
+#[derive(Clone)]
+pub struct Pan123MediaSearchGateway {
+    pan123: pan123::Client,
+}
+
 impl PanLibraryGateway {
     pub fn new(pan123: pan123::Client) -> Self {
         Self { pan123 }
@@ -46,6 +54,12 @@ impl ShareImportGateway {
 impl TmdbMetadataGateway {
     pub fn new(tmdb: tmdb::Client) -> Self {
         Self { tmdb }
+    }
+}
+
+impl Pan123MediaSearchGateway {
+    pub fn new(pan123: pan123::Client) -> Self {
+        Self { pan123 }
     }
 }
 
@@ -287,6 +301,23 @@ impl ShareSource for ShareImportGateway {
             .await?
             .into_iter()
             .map(Into::into)
+            .collect())
+    }
+}
+
+impl MediaSearchSource for Pan123MediaSearchGateway {
+    async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
+        Ok(self
+            .pan123
+            .search_with_paths(keyword)
+            .await?
+            .into_iter()
+            .filter(|record| record.is_dir)
+            .map(|record| MediaDirectoryRecord {
+                dir_id: record.file_id,
+                display_name: record.file_name,
+                remote_path: record.path,
+            })
             .collect())
     }
 }
