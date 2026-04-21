@@ -81,11 +81,7 @@ where
 
 fn to_candidate(record: MediaDirectoryRecord, root_path: &str) -> Option<MediaDeleteCandidate> {
     let normalized_remote_path = normalize_root_path(record.remote_path.as_str());
-    let relative_path = normalized_remote_path
-        .strip_prefix(root_path)
-        .map(|path| path.trim_start_matches('/'))
-        .filter(|path| !path.is_empty())?
-        .to_owned();
+    let relative_path = strip_root_prefix(normalized_remote_path.as_str(), root_path)?.to_owned();
 
     Some(MediaDeleteCandidate {
         dir_id: record.dir_id,
@@ -93,6 +89,17 @@ fn to_candidate(record: MediaDirectoryRecord, root_path: &str) -> Option<MediaDe
         relative_path,
         display_name: record.display_name,
     })
+}
+
+fn strip_root_prefix<'a>(path: &'a str, root_path: &str) -> Option<&'a str> {
+    if root_path == "/" {
+        let relative = path.trim_start_matches('/');
+        return (!relative.is_empty()).then_some(relative);
+    }
+
+    let remainder = path.strip_prefix(root_path)?;
+    let relative = remainder.strip_prefix('/')?;
+    (!relative.is_empty()).then_some(relative)
 }
 
 fn normalize_root_path(path: &str) -> String {
@@ -266,6 +273,27 @@ mod tests {
             candidates[0].relative_path,
             "电视剧/欧美/Breaking Bad (2008) {tmdb-1396}"
         );
+    }
+
+    #[tokio::test]
+    async fn search_candidates_rejects_paths_outside_root_with_same_text_prefix() {
+        let service = DeleteMediaService::new(
+            FakeSearchSource {
+                records: Arc::new(vec![MediaDirectoryRecord {
+                    dir_id: 1,
+                    display_name: "Breaking Bad (2008) {tmdb-1396}".to_string(),
+                    remote_path: "/remote_backup/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}"
+                        .to_string(),
+                }]),
+            },
+            FakeLibraryGateway::default(),
+            FakeLocalStore::default(),
+            "/remote".to_string(),
+        );
+
+        let candidates = service.search_candidates("bad").await.unwrap();
+
+        assert!(candidates.is_empty());
     }
 
     #[tokio::test]
