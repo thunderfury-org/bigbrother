@@ -273,18 +273,39 @@ impl Client {
         .map(|r| r.info_list)
     }
 
-    pub async fn search_with_paths(&self, file_name: &str) -> RequestResult<Vec<SearchPathFile>> {
-        let mut files = Vec::new();
+    pub async fn search_dirs_with_paths(
+        &self,
+        file_name: &str,
+    ) -> RequestResult<Vec<SearchPathFile>> {
+        let search_results = self
+            .search(file_name)
+            .await?
+            .into_iter()
+            .filter(|file| file.is_dir())
+            .collect::<Vec<_>>();
+        let file_ids = search_results
+            .iter()
+            .flat_map(|file| file.abs_path.split('/'))
+            .filter_map(|segment| segment.parse::<i64>().ok())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let file_details = if file_ids.is_empty() {
+            HashMap::new()
+        } else {
+            self.mutli_get(file_ids.as_slice()).await?
+        };
+        let mut files = Vec::with_capacity(search_results.len());
 
-        for file in self.search(file_name).await? {
-            let is_dir = file.is_dir();
-            let Some(path) = self.resolve_path(file.abs_path.as_str()).await? else {
+        for file in search_results {
+            let Some(path) = resolve_path_from_details(file.abs_path.as_str(), &file_details)
+            else {
                 continue;
             };
             files.push(SearchPathFile {
                 file_id: file.file_id,
                 file_name: file.file_name,
-                is_dir,
+                is_dir: true,
                 path,
             });
         }
@@ -526,31 +547,6 @@ impl Client {
         .map(|r| r.file_list.into_iter().map(|f| (f.file_id, f)).collect())
     }
 
-    async fn resolve_path(&self, abs_path: &str) -> RequestResult<Option<String>> {
-        let file_ids = abs_path
-            .split('/')
-            .filter_map(|s| s.parse::<i64>().ok())
-            .collect::<Vec<_>>();
-        if file_ids.is_empty() {
-            return Ok(None);
-        }
-
-        let files = self.mutli_get(&file_ids).await?;
-        if files.len() != file_ids.len() {
-            return Ok(None);
-        }
-
-        let mut parts = Vec::with_capacity(file_ids.len());
-        for file_id in file_ids {
-            let Some(file) = files.get(&file_id) else {
-                return Ok(None);
-            };
-            parts.push(file.file_name.clone());
-        }
-
-        Ok(Some(format!("/{}", parts.join("/"))))
-    }
-
     async fn get<T: DeserializeOwned>(
         &self,
         url: String,
@@ -752,6 +748,24 @@ impl Client {
             ))),
         }
     }
+}
+
+fn resolve_path_from_details(abs_path: &str, files: &HashMap<i64, FileDetail>) -> Option<String> {
+    let file_ids = abs_path
+        .split('/')
+        .filter_map(|s| s.parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    if file_ids.is_empty() {
+        return None;
+    }
+
+    let mut parts = Vec::with_capacity(file_ids.len());
+    for file_id in file_ids {
+        let file = files.get(&file_id)?;
+        parts.push(file.file_name.clone());
+    }
+
+    Some(format!("/{}", parts.join("/")))
 }
 
 #[cfg(test)]
@@ -1070,7 +1084,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_with_paths_returns_resolved_human_paths() {
+    async fn search_dirs_with_paths_returns_resolved_human_paths() {
         let server = MockServer::start().await;
         let client = client(&server).await;
 
@@ -1115,7 +1129,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = client.search_with_paths("breaking").await.unwrap();
+        let result = client.search_dirs_with_paths("breaking").await.unwrap();
 
         assert_eq!(
             result,
@@ -1126,5 +1140,60 @@ mod tests {
                 path: "/remote/电视剧/Breaking Bad (2008) {tmdb-1396}".to_string(),
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn search_dirs_with_paths_skips_non_dirs_before_resolving_paths() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/file/list/new"))
+            .and(query_param("SearchData", "breaking"))
+            .and(query_param("operateType", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "Next": "0",
+                    "Len": 2,
+                    "IsFirst": true,
+                    "InfoList": [
+                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, "/10/20/30"),
+                        file_json(31, "Breaking Bad (2008) {tmdb-1396}.mkv", 0, "/10/20/31")
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/file/info"))
+            .and(body_json(serde_json::json!({
+                "fileIdList": [
+                    {"FileId": 10},
+                    {"FileId": 20},
+                    {"FileId": 30}
+                ]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "infoList": [
+                        {"FileId": 10, "FileName": "remote", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
+                        {"FileId": 20, "FileName": "电视剧", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
+                        {"FileId": 30, "FileName": "Breaking Bad (2008) {tmdb-1396}", "Size": 0, "Etag": "e30", "S3KeyFlag": "s30"}
+                    ]
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.search_dirs_with_paths("breaking").await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_dir);
+        assert_eq!(result[0].file_id, 30);
     }
 }

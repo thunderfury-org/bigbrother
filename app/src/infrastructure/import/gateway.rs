@@ -309,10 +309,9 @@ impl MediaSearchSource for Pan123MediaSearchGateway {
     async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
         Ok(self
             .pan123
-            .search_with_paths(keyword)
+            .search_dirs_with_paths(keyword)
             .await?
             .into_iter()
-            .filter(|record| record.is_dir)
             .map(|record| MediaDirectoryRecord {
                 dir_id: record.file_id,
                 display_name: record.file_name,
