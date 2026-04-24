@@ -1,9 +1,8 @@
-use std::{collections::HashSet, path::Path};
+use std::path::Path;
 
 use crate::domain::import::{
     Pan189File,
-    inner::{Etag, Media, MediaFile, RawFile},
-    paths::{get_movie_path_in_library, get_tv_path_in_library},
+    inner::MediaFile,
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
         collect_pan189_directory_entries,
@@ -11,7 +10,6 @@ use crate::domain::import::{
     share_walk::ShareTraversal,
     source::{ResourceJson, parse_files_from_json},
 };
-use tracing::info;
 
 use super::ShareImportUseCase;
 use crate::application::import_ports::{
@@ -70,10 +68,7 @@ where
                     .iter()
                     .filter(|file| is_cas_file(&file.name))
                     .cloned()
-                    .map(|file| CasFileCandidate {
-                        file,
-                        parent_path: parent_path.to_owned(),
-                    }),
+                    .map(|file| CasFileCandidate { file }),
             );
 
             traversal.extend(collect_pan189_directory_entries(
@@ -89,7 +84,6 @@ where
 
         let media_files = if only_contains_cas_files {
             let mut cas_raw_files = Vec::new();
-            let cas_files = self.filter_existing_pan189_cas_files(cas_files).await?;
             for candidate in &cas_files {
                 let json = self
                     .share_source()
@@ -109,117 +103,6 @@ where
         };
 
         Ok(media_files)
-    }
-
-    async fn filter_existing_pan189_cas_files(
-        &mut self,
-        cas_files: Vec<CasFileCandidate>,
-    ) -> AppResult<Vec<CasFileCandidate>> {
-        let preview_raw_files = cas_files
-            .iter()
-            .filter_map(|candidate| candidate.preview_raw_file())
-            .collect::<Vec<_>>();
-        let preview_files = self
-            .metadata_lookup_mut()
-            .build_media_files(preview_raw_files);
-        if preview_files.is_empty() {
-            return Ok(cas_files);
-        }
-
-        let media_groups = self
-            .transfer_mut()
-            .workflow_mut()
-            .group_media_files(&preview_files)
-            .await?;
-        let mut skipped = HashSet::new();
-        for media in media_groups {
-            match media {
-                Media::Movie { detail, files } => {
-                    let remote_path = self.transfer_mut().workflow().local().remote_library_path();
-                    let movie_path = get_movie_path_in_library(remote_path, &detail);
-                    let Some(movie_dir_id) = self
-                        .transfer_mut()
-                        .workflow()
-                        .library_gateway()
-                        .get_library_dir_id_by_path(&movie_path)
-                        .await?
-                    else {
-                        continue;
-                    };
-                    let existing_files = self
-                        .transfer_mut()
-                        .workflow_mut()
-                        .list_movie_files_in_library(movie_dir_id)
-                        .await?;
-                    if existing_files.is_empty() {
-                        continue;
-                    }
-                    skipped.extend(
-                        files
-                            .iter()
-                            .map(|file| CasPreviewKey::from_media_file(file)),
-                    );
-                }
-                Media::Tv { detail, files } => {
-                    let remote_path = self.transfer_mut().workflow().local().remote_library_path();
-                    let tv_path = get_tv_path_in_library(remote_path, &detail);
-                    let Some(tv_dir_id) = self
-                        .transfer_mut()
-                        .workflow()
-                        .library_gateway()
-                        .get_library_dir_id_by_path(&tv_path)
-                        .await?
-                    else {
-                        continue;
-                    };
-                    let season_dir_ids = self
-                        .transfer_mut()
-                        .workflow()
-                        .library_gateway()
-                        .list_library_dir_ids(tv_dir_id)
-                        .await?;
-                    for (season_number, season_files) in files {
-                        let season_dir = format!("Season {:02}", season_number);
-                        let Some(season_dir_id) = season_dir_ids.get(&season_dir).copied() else {
-                            continue;
-                        };
-                        let existing_episode_files = self
-                            .transfer_mut()
-                            .workflow_mut()
-                            .list_episode_files_in_library(season_dir_id)
-                            .await?;
-                        for (episode_number, episode_files) in season_files {
-                            if existing_episode_files.contains_key(&episode_number) {
-                                skipped.extend(
-                                    episode_files
-                                        .iter()
-                                        .map(|file| CasPreviewKey::from_media_file(file)),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if skipped.is_empty() {
-            return Ok(cas_files);
-        }
-
-        let original_len = cas_files.len();
-        let filtered = cas_files
-            .into_iter()
-            .filter(|candidate| {
-                candidate
-                    .preview_key()
-                    .is_none_or(|key| !skipped.contains(&key))
-            })
-            .collect::<Vec<_>>();
-        info!(
-            "Skipped {} pan189 CAS files because matching media already exists in library",
-            original_len - filtered.len()
-        );
-        Ok(filtered)
     }
 
     pub(super) async fn list_files_from_pan115_share(
@@ -247,45 +130,6 @@ where
 #[derive(Clone)]
 struct CasFileCandidate {
     file: Pan189File,
-    parent_path: String,
-}
-
-impl CasFileCandidate {
-    fn preview_name(&self) -> Option<String> {
-        self.file.name.strip_suffix(".cas").map(ToOwned::to_owned)
-    }
-
-    fn preview_key(&self) -> Option<CasPreviewKey> {
-        self.preview_name().map(|name| CasPreviewKey {
-            path: self.parent_path.to_owned(),
-            name,
-        })
-    }
-
-    fn preview_raw_file(&self) -> Option<RawFile> {
-        self.preview_name().map(|name| RawFile {
-            id: None,
-            name,
-            etag: Etag::Md5(String::new()),
-            size: 0,
-            path: self.parent_path.to_owned(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct CasPreviewKey {
-    path: String,
-    name: String,
-}
-
-impl CasPreviewKey {
-    fn from_media_file(file: &MediaFile) -> Self {
-        Self {
-            path: file.video.path.to_owned(),
-            name: file.video.name.to_owned(),
-        }
-    }
 }
 
 fn is_cas_file(name: &str) -> bool {
