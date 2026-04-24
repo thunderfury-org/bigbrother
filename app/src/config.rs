@@ -7,6 +7,7 @@ use super::error::AppError;
 struct AppConfig {
     pub media_server: MediaServerConfig,
     pub pan123: Pan123Config,
+    pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
     pub telegram: TelegramConfig,
     pub library: LibraryConfig,
@@ -25,6 +26,12 @@ pub struct MediaServerConfig {
 pub struct Pan123Config {
     pub passport: String,
     pub password: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct Pan189Config {
+    pub cookie: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -72,6 +79,10 @@ impl Manager {
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
         &self.app_config.pan123
+    }
+
+    pub fn get_pan189_config(&self) -> &Pan189Config {
+        &self.app_config.pan189
     }
 
     pub fn get_tmdb_config(&self) -> &TmdbConfig {

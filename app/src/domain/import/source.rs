@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose};
 use reqwest::Url;
 use serde::Deserialize;
 use tracing::info;
@@ -132,8 +133,19 @@ pub(crate) fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFil
 }
 
 pub(crate) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
-    if let Ok(resource) = serde_json::from_slice::<ResourceJson>(&json) {
+    let json = decode_base64_json_if_needed(json);
+
+    if let Ok(resource) = serde_json::from_slice::<ResourceJson>(&json)
+        && (!resource.files.is_empty() || !resource.common_path.is_empty())
+    {
         return Ok(resource);
+    }
+
+    if let Ok(file) = serde_json::from_slice::<SingleResourceFile>(&json) {
+        return Ok(ResourceJson {
+            common_path: String::new(),
+            files: vec![file.into_resource_file()?],
+        });
     }
 
     info!("Failed to parse JSON as object format, trying array-of-arrays format");
@@ -166,6 +178,76 @@ pub(crate) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
         common_path: String::new(),
         files,
     })
+}
+
+fn decode_base64_json_if_needed(json: Vec<u8>) -> Vec<u8> {
+    let trimmed = json
+        .iter()
+        .copied()
+        .skip_while(|byte| byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    if trimmed
+        .first()
+        .is_some_and(|byte| *byte == b'{' || *byte == b'[')
+    {
+        return json;
+    }
+
+    let Ok(text) = std::str::from_utf8(&json) else {
+        return json;
+    };
+    match general_purpose::STANDARD.decode(text.trim()) {
+        Ok(decoded) => decoded,
+        Err(_) => json,
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct SingleResourceFile {
+    path: String,
+    name: String,
+    file_name: String,
+    etag: String,
+    md5: String,
+    sha1: String,
+    size: u64,
+}
+
+impl SingleResourceFile {
+    fn into_resource_file(self) -> AppResult<ResourceFile> {
+        let path = first_non_empty([self.path, self.name, self.file_name]);
+        let etag = first_non_empty([self.etag, self.md5, self.sha1]);
+
+        if path.is_empty() {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: path is empty".into(),
+            ));
+        }
+        if etag.is_empty() {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: etag is empty".into(),
+            ));
+        }
+        if self.size == 0 {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: size is empty".into(),
+            ));
+        }
+
+        Ok(ResourceFile {
+            path,
+            etag,
+            size: self.size,
+        })
+    }
+}
+
+fn first_non_empty<const N: usize>(values: [String; N]) -> String {
+    values
+        .into_iter()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -280,5 +362,53 @@ mod tests {
         assert_eq!(object_resource.files.len(), 2);
         assert_eq!(array_resource.common_path, "");
         assert_eq!(array_resource.files[0].path, "3 h.264.mkv");
+    }
+
+    #[test]
+    fn parses_single_file_cas_resource() {
+        let cas = serde_json::json!({
+            "fileName": "Movie.2026.2160p.WEB-DL.mkv",
+            "md5": "ffd9a9bc7616540fcd741afee223a12b",
+            "size": 1766233377
+        });
+
+        let resource = parse_files_from_json(cas.to_string().into_bytes()).unwrap();
+
+        assert_eq!(resource.common_path, "");
+        assert_eq!(resource.files.len(), 1);
+        assert_eq!(resource.files[0].path, "Movie.2026.2160p.WEB-DL.mkv");
+        assert_eq!(resource.files[0].etag, "ffd9a9bc7616540fcd741afee223a12b");
+        assert_eq!(resource.files[0].size, 1766233377);
+    }
+
+    #[test]
+    fn parses_base64_encoded_single_file_cas_resource() {
+        let cas = general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "name": "Movie.2026.2160p.WEB-DL.mkv",
+                "md5": "ffd9a9bc7616540fcd741afee223a12b",
+                "size": 1766233377
+            })
+            .to_string(),
+        );
+
+        let resource = parse_files_from_json(cas.into_bytes()).unwrap();
+
+        assert_eq!(resource.files.len(), 1);
+        assert_eq!(resource.files[0].path, "Movie.2026.2160p.WEB-DL.mkv");
+        assert_eq!(resource.files[0].etag, "ffd9a9bc7616540fcd741afee223a12b");
+        assert_eq!(resource.files[0].size, 1766233377);
+    }
+
+    #[test]
+    fn rejects_single_file_cas_without_identity_fields() {
+        let cas = serde_json::json!({
+            "fileName": "Movie.2026.2160p.WEB-DL.mkv",
+            "size": 1766233377
+        });
+
+        let error = parse_files_from_json(cas.to_string().into_bytes()).unwrap_err();
+
+        assert!(error.to_string().contains("etag is empty"));
     }
 }

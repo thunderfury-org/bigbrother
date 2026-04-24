@@ -107,6 +107,7 @@ struct FakeShareSource {
     pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
     pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
     pan189_files: Arc<Mutex<HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>>>,
+    pan189_downloads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     pan115_files: Arc<Mutex<HashMap<String, Vec<Pan115FileEntry>>>>,
 }
 
@@ -261,6 +262,22 @@ impl ShareSource for FakeShareSource {
             .get(parent_id)
             .cloned()
             .unwrap_or((Vec::new(), Vec::new())))
+    }
+    async fn download_pan189_share_file(
+        &self,
+        _share_id: i64,
+        file: &Pan189File,
+    ) -> AppResult<Vec<u8>> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push("share-download".to_string());
+        self.pan189_downloads
+            .lock()
+            .unwrap()
+            .get(&file.id)
+            .cloned()
+            .ok_or_else(|| AppError::InvalidParameter("missing fake pan189 download".into()))
     }
     async fn list_pan115_share_files(
         &self,
@@ -463,6 +480,7 @@ async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
                 (
                     Vec::new(),
                     vec![Pan189File {
+                        id: "episode-1".into(),
                         name: "Breaking.Bad.S01E01.1080p.mkv".into(),
                         size: 1001,
                         md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
@@ -496,6 +514,98 @@ async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
         vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
     );
     assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_pan189_share_reports_cas_only_entries() {
+    let local_dir = unique_temp_dir();
+    let share_source = FakeShareSource {
+        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
+            file_id: "root".into(),
+            file_name: "Veil of Shadows".into(),
+            share_id: 1,
+            share_mode: 3,
+        }))),
+        pan189_files: Arc::new(Mutex::new(HashMap::from([(
+            "root".to_string(),
+            (
+                Vec::new(),
+                vec![Pan189File {
+                    id: "cas-1".into(),
+                    name: "Veil.of.Shadows.S01E01.2160p.mp4.cas".into(),
+                    size: 288,
+                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
+                }],
+            ),
+        )]))),
+        ..Default::default()
+    };
+    let service = ImportMediaService::new(
+        FakeLibraryGateway::default(),
+        share_source,
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let error = service.import_from_share_url(&share).await.unwrap_err();
+
+    assert!(error.to_string().contains("天翼 CAS 秒传分享"));
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_pan189_share_imports_downloaded_cas_entries() {
+    let local_dir = unique_temp_dir();
+    let share_source = FakeShareSource {
+        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
+            file_id: "root".into(),
+            file_name: "Breaking Bad (2008) {tmdb-1396}".into(),
+            share_id: 1,
+            share_mode: 3,
+        }))),
+        pan189_files: Arc::new(Mutex::new(HashMap::from([(
+            "root".to_string(),
+            (
+                Vec::new(),
+                vec![Pan189File {
+                    id: "cas-1".into(),
+                    name: "Breaking.Bad.S01E01.1080p.mkv.cas".into(),
+                    size: 288,
+                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
+                }],
+            ),
+        )]))),
+        pan189_downloads: Arc::new(Mutex::new(HashMap::from([(
+            "cas-1".to_string(),
+            serde_json::json!({
+                "fileName": "Breaking Bad (2008) {tmdb-1396}/Breaking.Bad.S01E01.1080p.mkv",
+                "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 1001
+            })
+            .to_string()
+            .into_bytes(),
+        )]))),
+        ..Default::default()
+    };
+    let service = ImportMediaService::new(
+        FakeLibraryGateway::default(),
+        share_source,
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let imported = service.import_from_share_url(&share).await.unwrap();
+
+    assert!(matches!(
+        imported.as_slice(),
+        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
+            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
+    ));
     let _ = fs::remove_dir_all(local_dir);
 }
 

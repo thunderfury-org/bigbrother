@@ -7,7 +7,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::{RequestError, RequestResult};
 
-const UA_VALUE: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+pub const UA_VALUE: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 pub const AUTH_KEY: &str = "Authorization";
 
 static HTTP_CLIENT: LazyLock<ClientWithMiddleware> = LazyLock::new(|| {

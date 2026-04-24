@@ -77,6 +77,7 @@ pub(crate) struct Pan189Folder {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Pan189File {
+    pub id: String,
     pub name: String,
     pub size: u64,
     pub md5: String,

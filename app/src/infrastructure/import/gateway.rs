@@ -171,6 +171,7 @@ impl From<pan189::Folder> for Pan189Folder {
 impl From<pan189::File> for Pan189File {
     fn from(value: pan189::File) -> Self {
         Self {
+            id: value.id,
             name: value.name,
             size: value.size,
             md5: value.md5,
@@ -287,6 +288,14 @@ impl ShareSource for ShareImportGateway {
             folders.into_iter().map(Into::into).collect(),
             files.into_iter().map(Into::into).collect(),
         ))
+    }
+
+    async fn download_pan189_share_file(
+        &self,
+        share_id: i64,
+        file: &Pan189File,
+    ) -> AppResult<Vec<u8>> {
+        Ok(self.pan189.download_share_file(share_id, &file.id).await?)
     }
 
     async fn list_pan115_share_files(
