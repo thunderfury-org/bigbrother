@@ -610,6 +610,73 @@ async fn import_from_pan189_share_imports_downloaded_cas_entries() {
 }
 
 #[tokio::test]
+async fn import_from_pan189_share_skips_existing_cas_by_preview_name() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    {
+        let mut state = gateway.state.lock().unwrap();
+        state.dir_ids_by_path.insert(
+            "/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".into(),
+            100,
+        );
+        state
+            .dir_ids_by_parent
+            .insert(100, HashMap::from([("Season 01".into(), 101)]));
+        state.files_by_dir_id.insert(
+            101,
+            vec![LibraryFile {
+                file_id: 1,
+                file_name: "Breaking.Bad.S01E01.1080p.mkv".into(),
+                is_dir: false,
+                size: 1001,
+                etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            }],
+        );
+    }
+    let share_source = FakeShareSource {
+        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
+            file_id: "root".into(),
+            file_name: "Breaking Bad (2008) {tmdb-1396}".into(),
+            share_id: 1,
+            share_mode: 3,
+        }))),
+        pan189_files: Arc::new(Mutex::new(HashMap::from([(
+            "root".to_string(),
+            (
+                Vec::new(),
+                vec![Pan189File {
+                    id: "cas-1".into(),
+                    name: "Breaking.Bad.S01E01.1080p.mkv.cas".into(),
+                    size: 288,
+                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
+                }],
+            ),
+        )]))),
+        ..Default::default()
+    };
+    let service = ImportMediaService::new(
+        gateway,
+        share_source.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
+    let share = ShareUrl::from(&url).unwrap();
+
+    let imported = service.import_from_share_url(&share).await.unwrap();
+
+    assert!(imported.is_empty());
+    assert!(
+        !share_source
+            .calls
+            .lock()
+            .unwrap()
+            .contains(&"share-download".to_string())
+    );
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
 async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
