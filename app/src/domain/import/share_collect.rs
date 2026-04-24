@@ -120,6 +120,7 @@ mod tests {
             name: "folder".into(),
         }];
         let files = vec![Pan189File {
+            id: "file".into(),
             name: "episode.mkv".into(),
             size: 200,
             md5: "md5".into(),

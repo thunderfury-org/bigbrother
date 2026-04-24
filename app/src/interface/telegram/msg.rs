@@ -56,13 +56,18 @@ impl MsgProcessor<'_> {
     }
 
     async fn handle_document(&self, doc: &Document) -> ResponseResult<()> {
-        if !doc.file_name.as_ref().is_some_and(|n| n.ends_with(".json")) && !self.from_monitor {
-            self.send_message("不是 JSON 文件，忽略").await;
+        if !doc
+            .file_name
+            .as_ref()
+            .is_some_and(|n| n.ends_with(".json") || n.ends_with(".cas"))
+            && !self.from_monitor
+        {
+            self.send_message("不是 JSON/CAS 文件，忽略").await;
             return Ok(());
         }
 
         if !self.from_monitor {
-            self.send_message("开始处理 JSON 文件").await;
+            self.send_message("开始处理 JSON/CAS 文件").await;
         }
 
         let file = self.bot.get_file(doc.file.id.to_owned()).await?;
@@ -80,7 +85,7 @@ impl MsgProcessor<'_> {
             }
             Err(e) => {
                 error!("import from json failed: {}", e);
-                self.send_message(format_import_error("JSON 文件处理失败", &e))
+                self.send_message(format_import_error("JSON/CAS 文件处理失败", &e))
                     .await;
             }
         }

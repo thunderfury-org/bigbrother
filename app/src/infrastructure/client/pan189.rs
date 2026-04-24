@@ -1,3 +1,4 @@
+use reqwest::{Client as HttpClient, header};
 use serde::Deserialize;
 
 use super::{RequestError, RequestResult, http};
@@ -23,6 +24,8 @@ pub struct ShareInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct File {
+    #[serde(rename = "id")]
+    pub id: String,
     #[serde(rename = "name")]
     pub name: String,
     #[serde(rename = "size")]
@@ -60,15 +63,33 @@ struct ListShareFileResponse {
     file_list: FileListResponse,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Deserialize)]
+struct DownloadUrlResponse {
+    #[serde(rename = "res_code")]
+    res_code: i32,
+    #[serde(alias = "res_message", alias = "res_msg", default)]
+    res_message: String,
+    #[serde(rename = "fileDownloadUrl", default)]
+    file_download_url: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Client {
     host: String,
+    cookie: String,
+    http_client: HttpClient,
 }
 
 impl Client {
-    pub fn new() -> Self {
+    pub fn new(cookie: &str) -> Self {
         Self {
             host: API_URL.to_owned(),
+            cookie: cookie.trim().to_owned(),
+            http_client: HttpClient::builder()
+                .redirect(reqwest::redirect::Policy::limited(10))
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .expect("failed to create pan189 http client"),
         }
     }
 
@@ -76,6 +97,8 @@ impl Client {
     fn with_host(host: &str) -> Self {
         Self {
             host: host.to_owned(),
+            cookie: String::new(),
+            http_client: HttpClient::new(),
         }
     }
 
@@ -145,10 +168,110 @@ impl Client {
         Ok((folder_list, file_list))
     }
 
+    pub async fn download_share_file(
+        &self,
+        share_id: i64,
+        file_id: &str,
+    ) -> RequestResult<Vec<u8>> {
+        if self.cookie.is_empty() {
+            return Err(RequestError::Error(
+                "pan189.cookie is required to download shared CAS files".into(),
+            ));
+        }
+
+        let download_url = self.get_shared_file_download_url(share_id, file_id).await?;
+        self.download_bytes(&download_url).await
+    }
+
+    async fn get_shared_file_download_url(
+        &self,
+        share_id: i64,
+        file_id: &str,
+    ) -> RequestResult<String> {
+        let response = self
+            .http_client
+            .get(self.build_api_url("/api/open/file/getFileDownloadUrl.action"))
+            .query(&[
+                ("noCache", "0.25105336592640093".to_owned()),
+                ("fileId", file_id.to_owned()),
+                ("dt", "1".to_owned()),
+                ("shareId", share_id.to_string()),
+            ])
+            .headers(self.cookie_headers())
+            .send()
+            .await?;
+        let response: DownloadUrlResponse = process_json_response(response).await?;
+        if response.res_code != 0 || response.file_download_url.is_empty() {
+            return Err(RequestError::Error(format!(
+                "get pan189 shared file download url failed, res_code: {}, res_message: {}",
+                response.res_code, response.res_message
+            )));
+        }
+        Ok(response.file_download_url)
+    }
+
+    async fn download_bytes(&self, url: &str) -> RequestResult<Vec<u8>> {
+        let response = self
+            .http_client
+            .get(url)
+            .header(header::USER_AGENT, http::UA_VALUE)
+            .send()
+            .await?;
+        let status = response.status();
+        let payload = response.bytes().await?;
+        if status.is_success() {
+            Ok(payload.to_vec())
+        } else {
+            Err(RequestError::Error(format!(
+                "download pan189 file failed, status: {status}, payload: {payload:?}"
+            )))
+        }
+    }
+
+    fn cookie_headers(&self) -> header::HeaderMap {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::USER_AGENT,
+            header::HeaderValue::from_static(http::UA_VALUE),
+        );
+        headers.insert(
+            header::ACCEPT,
+            header::HeaderValue::from_static("application/json;charset=UTF-8"),
+        );
+        headers.insert(
+            header::COOKIE,
+            header::HeaderValue::from_str(&self.cookie)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
+        );
+        headers.insert(
+            header::HeaderName::from_static("sign-type"),
+            header::HeaderValue::from_static("1"),
+        );
+        headers
+    }
+
     #[inline]
     fn build_api_url(&self, path: &str) -> String {
         format!("{}{path}", self.host)
     }
+}
+
+async fn process_json_response<T: for<'de> Deserialize<'de>>(
+    response: reqwest::Response,
+) -> RequestResult<T> {
+    let status = response.status();
+    let url = response.url().to_string();
+    let payload = response.text().await?;
+    if !status.is_success() {
+        return Err(RequestError::Error(format!(
+            "http request to {url} failed, status: {status}, payload: {payload}"
+        )));
+    }
+    serde_json::from_str(&payload).map_err(|e| {
+        RequestError::Error(format!(
+            "http request to {url} failed, decode payload failed, {e}, payload: {payload}"
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -161,6 +284,12 @@ mod tests {
 
     fn client(server: &MockServer) -> Client {
         Client::with_host(server.uri().as_str())
+    }
+
+    fn cookie_client(server: &MockServer) -> Client {
+        let mut client = Client::new("COOKIE_LOGIN_USER=token; JSESSIONID=session");
+        client.host = server.uri();
+        client
     }
 
     #[tokio::test]
@@ -234,6 +363,7 @@ mod tests {
                 "fileListAO": {
                     "count": 100,
                     "fileList": [{
+                        "id": "file-1",
                         "name": "episode-01.mkv",
                         "size": 1000,
                         "md5": "md5-1"
@@ -261,6 +391,7 @@ mod tests {
                 "fileListAO": {
                     "count": 1,
                     "fileList": [{
+                        "id": "file-2",
                         "name": "episode-02.mkv",
                         "size": 2000,
                         "md5": "md5-2"
@@ -313,6 +444,57 @@ mod tests {
             RequestError::Error(message) => {
                 assert!(message.contains("list share files failed"));
                 assert!(message.contains("denied"));
+            }
+            other => panic!("expected business error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn download_share_file_uses_account_cookie_and_share_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/file/getFileDownloadUrl.action"))
+            .and(query_param("fileId", "file-1"))
+            .and(query_param("shareId", "42"))
+            .and(query_param("dt", "1"))
+            .and(header(
+                "cookie",
+                "COOKIE_LOGIN_USER=token; JSESSIONID=session",
+            ))
+            .and(header("sign-type", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "res_code": 0,
+                "res_message": "ok",
+                "fileDownloadUrl": format!("{}/download/cas", server.uri())
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/download/cas"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes("cas-content"))
+            .mount(&server)
+            .await;
+
+        let content = cookie_client(&server)
+            .download_share_file(42, "file-1")
+            .await
+            .unwrap();
+
+        assert_eq!(content, b"cas-content");
+    }
+
+    #[tokio::test]
+    async fn download_share_file_requires_account_cookie() {
+        let server = MockServer::start().await;
+
+        let error = client(&server)
+            .download_share_file(42, "file-1")
+            .await
+            .unwrap_err();
+
+        match error {
+            RequestError::Error(message) => {
+                assert!(message.contains("pan189.cookie is required"));
             }
             other => panic!("expected business error, got {other:?}"),
         }

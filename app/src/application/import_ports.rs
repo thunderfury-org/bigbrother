@@ -46,6 +46,11 @@ pub trait ShareSource: Clone {
         share_mode: i32,
         parent_id: &str,
     ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)>;
+    async fn download_pan189_share_file(
+        &self,
+        share_id: i64,
+        file: &Pan189File,
+    ) -> AppResult<Vec<u8>>;
     async fn list_pan115_share_files(
         &self,
         share_code: &str,

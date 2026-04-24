@@ -29,6 +29,7 @@ teloxide = { workspace = true }
 futures = { workspace = true }
 sea-orm = { workspace = true }
 chrono = { workspace = true }
+base64 = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }
