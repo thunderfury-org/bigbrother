@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -106,10 +106,12 @@ struct FakeShareSource {
     calls: Arc<Mutex<Vec<String>>>,
     pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
     pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
-    pan189_files: Arc<Mutex<HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>>>,
+    pan189_files: Arc<Mutex<Pan189FilesByParent>>,
     pan189_downloads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     pan115_files: Arc<Mutex<HashMap<String, Vec<Pan115FileEntry>>>>,
 }
+
+type Pan189FilesByParent = HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>;
 
 #[derive(Clone, Default)]
 struct FakeMetadataCatalog;
@@ -774,7 +776,7 @@ fn unique_temp_dir() -> PathBuf {
     ))
 }
 
-fn local_store_for(local_dir: &PathBuf) -> FilesystemImportLocalStore {
+fn local_store_for(local_dir: &Path) -> FilesystemImportLocalStore {
     FilesystemImportLocalStore::new(
         "/remote".into(),
         local_dir.to_string_lossy().into_owned(),

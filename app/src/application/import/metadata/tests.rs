@@ -74,8 +74,10 @@ fn parse_media_metadata_extracts_title_from_cas_context_path() {
 
     assert!(metadata.is_tv_episode());
     assert_eq!(metadata.year, "2026");
-    assert!(metadata
-        .titles
-        .iter()
-        .any(|title| title.title == "The Epoch of Miyu"));
+    assert!(
+        metadata
+            .titles
+            .iter()
+            .any(|title| title.title == "The Epoch of Miyu")
+    );
 }
