@@ -91,7 +91,7 @@ where
                     .await
                     .map_err(|e| {
                         AppError::InvalidParameter(format!(
-                            "检测到天翼 CAS 秒传分享，但需要配置自己的天翼云盘网页登录 Cookie 才能读取 CAS 内容；请配置 pan189.cookie 后重试: {e}"
+                            "检测到天翼 CAS 秒传分享，需要使用自己的天翼云盘账号登录后读取 CAS 内容；请确认 pan189.username / pan189.password 可正常登录且账号未触发设备校验后重试: {e}"
                         ))
                     })?;
                 let resource = parse_files_from_json(json)?;

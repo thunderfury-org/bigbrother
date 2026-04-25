@@ -25,7 +25,11 @@ impl Client {
                 &config.get_pan123_config().password,
                 &format!("{}/pan123", config.get_cache_dir()),
             ),
-            pan189: client::pan189::Client::new(&config.get_pan189_config().cookie),
+            pan189: client::pan189::Client::new(client::pan189::AuthConfig {
+                username: config.get_pan189_config().username.clone(),
+                password: config.get_pan189_config().password.clone(),
+                cache_dir: format!("{}/pan189", config.get_cache_dir()),
+            }),
             tmdb: client::tmdb::Client::new(&config.get_tmdb_config().api_key),
         }
     }
