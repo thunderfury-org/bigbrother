@@ -91,11 +91,14 @@ where
                     .await
                     .map_err(|e| {
                         AppError::InvalidParameter(format!(
-                            "检测到天翼 CAS 秒传分享，但需要配置自己的天翼云盘网页登录 Cookie 才能读取 CAS 内容；请配置 pan189.cookie 后重试: {e}"
+                            "检测到天翼 CAS 秒传分享，需要使用自己的天翼云盘账号登录后读取 CAS 内容；请确认 pan189.username / pan189.password 可正常登录且账号未触发设备校验后重试: {e}"
                         ))
                     })?;
                 let resource = parse_files_from_json(json)?;
-                cas_raw_files.extend(resource_to_raw_files(&resource));
+                cas_raw_files.extend(resource_to_raw_files(
+                    &resource,
+                    &cas_context_path(&candidate.file.name),
+                ));
             }
             self.metadata_lookup_mut().build_media_files(cas_raw_files)
         } else {
@@ -136,11 +139,27 @@ fn is_cas_file(name: &str) -> bool {
     name.to_lowercase().ends_with(".cas")
 }
 
-fn resource_to_raw_files(resource: &ResourceJson) -> Vec<crate::domain::import::inner::RawFile> {
+fn cas_context_path(name: &str) -> String {
+    if name.to_lowercase().ends_with(".cas") {
+        name[..name.len() - ".cas".len()].to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+fn resource_to_raw_files(
+    resource: &ResourceJson,
+    fallback_common_path: &str,
+) -> Vec<crate::domain::import::inner::RawFile> {
     let mut raw_files = Vec::new();
+    let common_path = if resource.common_path.trim().is_empty() {
+        fallback_common_path
+    } else {
+        resource.common_path.as_str()
+    };
 
     for file in &resource.files {
-        let full_path = format!("{}/{}", &resource.common_path, &file.path);
+        let full_path = format!("{}/{}", common_path, &file.path);
         let path = Path::new(full_path.as_str());
         let parent_path = path
             .parent()

@@ -907,24 +907,36 @@ fn looks_like_release_group(value: &str) -> bool {
 }
 
 fn trailing_release_group(body: &str, occupied: &[bool]) -> Option<(Range<usize>, String)> {
-    let hyphen_index = body.rfind('-')?;
-    let candidate = body[hyphen_index + 1..].trim();
+    trailing_release_group_with_delimiter(body, occupied, '-')
+        .or_else(|| trailing_release_group_with_delimiter(body, occupied, '@'))
+}
+
+fn trailing_release_group_with_delimiter(
+    body: &str,
+    occupied: &[bool],
+    delimiter: char,
+) -> Option<(Range<usize>, String)> {
+    let delimiter_index = body.rfind(delimiter)?;
+    let candidate = body[delimiter_index + delimiter.len_utf8()..].trim();
     if candidate.is_empty() || !is_release_group_candidate(candidate) {
         return None;
     }
-    if !has_trailing_technical_context(occupied, hyphen_index) {
+    if !has_trailing_technical_context(occupied, delimiter_index) {
         return None;
     }
-    let prefix_token = body[..hyphen_index]
+    let prefix_token = body[..delimiter_index]
         .rsplit(['.', ' ', '_', '-', '[', ']', '(', ')'])
         .next()
         .unwrap_or_default()
         .trim();
-    if prefix_token.eq_ignore_ascii_case("dolby") && candidate.eq_ignore_ascii_case("vision") {
+    if delimiter == '-'
+        && prefix_token.eq_ignore_ascii_case("dolby")
+        && candidate.eq_ignore_ascii_case("vision")
+    {
         return None;
     }
 
-    Some((hyphen_index..body.len(), candidate.to_owned()))
+    Some((delimiter_index..body.len(), candidate.to_owned()))
 }
 
 fn has_trailing_technical_context(occupied: &[bool], hyphen_index: usize) -> bool {

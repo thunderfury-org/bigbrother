@@ -3,8 +3,9 @@ pan123:
   password: ""
 
 pan189:
-  # 天翼云盘网页登录 Cookie；用于直接获取分享内 CAS 文件下载链接
-  cookie: ""
+  # 天翼云盘账号密码；用于自动获取 PC 客户端 session
+  username: ""
+  password: ""
 
 tmdb:
   api_key: ""

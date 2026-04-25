@@ -31,7 +31,8 @@ pub struct Pan123Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 pub struct Pan189Config {
-    pub cookie: String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -295,7 +295,18 @@ impl ShareSource for ShareImportGateway {
         share_id: i64,
         file: &Pan189File,
     ) -> AppResult<Vec<u8>> {
-        Ok(self.pan189.download_share_file(share_id, &file.id).await?)
+        Ok(self
+            .pan189
+            .download_share_file(
+                share_id,
+                &pan189::File {
+                    id: file.id.clone(),
+                    name: file.name.clone(),
+                    size: file.size,
+                    md5: file.md5.clone(),
+                },
+            )
+            .await?)
     }
 
     async fn list_pan115_share_files(

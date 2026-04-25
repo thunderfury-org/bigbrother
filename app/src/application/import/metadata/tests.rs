@@ -62,3 +62,22 @@ fn parse_media_metadata_uses_tv_path_merge_only_for_explicit_tv_episode() {
     assert_eq!(metadata.season_number, Some(1));
     assert_eq!(metadata.episode_number, Some(1));
 }
+
+#[test]
+fn parse_media_metadata_extracts_title_from_cas_context_path() {
+    let mut lookup = MetadataLookup::default();
+
+    let metadata = lookup.parse_media_metadata(
+        "S01E01.mp4",
+        "The Epoch of Miyu.2026.S01E01.2160P.SDR.25fps.AVC.DDP 5.1@HiveWeb.mp4",
+    );
+
+    assert!(metadata.is_tv_episode());
+    assert_eq!(metadata.year, "2026");
+    assert!(
+        metadata
+            .titles
+            .iter()
+            .any(|title| title.title == "The Epoch of Miyu")
+    );
+}
