@@ -590,19 +590,19 @@ impl Client {
             return Ok(None);
         }
 
-        fs::read_to_string(&path)
-            .map_err(|e| {
-                RequestError::Error(format!(
-                    "read pan189 session cache file [{path}] failed, {e}"
-                ))
-            })
-            .and_then(|content| {
-                serde_json::from_str(&content).map(Some).map_err(|e| {
-                    RequestError::Error(format!(
-                        "deserialize pan189 session cache file [{path}] failed, {e}"
-                    ))
-                })
-            })
+        let content = fs::read_to_string(&path).map_err(|e| {
+            RequestError::Error(format!(
+                "read pan189 session cache file [{path}] failed, {e}"
+            ))
+        })?;
+
+        match serde_json::from_str(&content) {
+            Ok(session) => Ok(Some(session)),
+            Err(_) => {
+                let _ = fs::remove_file(&path);
+                Ok(None)
+            }
+        }
     }
 
     fn write_session_to_cache_file(&self, session: &CachedPcSession) -> RequestResult<()> {
@@ -1196,6 +1196,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(content, b"cached-cas-content");
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn read_session_from_cache_file_ignores_corrupt_cache() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+        fs::create_dir_all(&cache_dir).unwrap();
+        fs::write(format!("{cache_dir}/{SESSION_CACHE_FILE}"), "{not-json").unwrap();
+        let client = account_client_with_cache_dir(&server, &cache_dir);
+
+        let loaded = client.read_session_from_cache_file().unwrap();
+
+        assert!(loaded.is_none());
+        assert!(!Path::new(&format!("{cache_dir}/{SESSION_CACHE_FILE}")).exists());
         let _ = fs::remove_dir_all(cache_dir);
     }
 

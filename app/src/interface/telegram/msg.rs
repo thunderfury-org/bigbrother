@@ -1,12 +1,12 @@
 use std::{collections::HashSet, sync::LazyLock};
 
-use reqwest::Url;
 use teloxide::{
     net::Download,
     prelude::*,
     types::{Document, InlineKeyboardButtonKind, MessageEntityKind},
 };
 use tracing::{error, info};
+use url::Url;
 
 use crate::bootstrap::services::{ImportService, NotifyService};
 use crate::{

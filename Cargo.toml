@@ -31,6 +31,7 @@ reqwest = { version = "0.12", features = [
 ], default-features = false }
 reqwest-middleware = "0.4"
 reqwest-retry = "0.8"
+url = "2"
 thiserror = "2"
 regex = "1"
 lingua = { version = "1.7.2", default-features = false, features = [

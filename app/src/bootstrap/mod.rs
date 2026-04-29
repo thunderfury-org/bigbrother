@@ -9,11 +9,10 @@ pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        delete_media::DeleteMediaService, import_media::ImportMediaService,
-        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
-        sync_strm::SyncStrmService,
+        delete_media::DeleteMediaService, manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
     },
-    bootstrap::services::MediaDownloadUrlService,
+    bootstrap::services::{MediaDownloadUrlService, build_import_service_from_clients},
     error::{AppError, AppResult},
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
@@ -22,10 +21,7 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{
-                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
-                TmdbMetadataGateway,
-            },
+            gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
             local_store::FilesystemImportLocalStore,
         },
         repo::keyword::SeaOrmKeywordRepository,
@@ -86,19 +82,11 @@ impl AppRuntime {
                 bot_runtime: telegram::BotRuntime::new(
                     user_id,
                     ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone())),
-                    ImportMediaService::new(
-                        PanLibraryGateway::new(inputs.clients.pan123.clone()),
-                        ShareImportGateway::new(
-                            inputs.clients.pan115.clone(),
-                            inputs.clients.pan123.clone(),
-                            inputs.clients.pan189.clone(),
-                        ),
-                        TmdbMetadataGateway::new(inputs.clients.tmdb.clone()),
-                        FilesystemImportLocalStore::new(
-                            inputs.import_remote_path.clone(),
-                            inputs.import_local_path.clone(),
-                            inputs.import_strm_download_url.clone(),
-                        ),
+                    build_import_service_from_clients(
+                        &inputs.clients,
+                        inputs.import_remote_path.clone(),
+                        inputs.import_local_path.clone(),
+                        inputs.import_strm_download_url.clone(),
                     ),
                     PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
                     SyncStrmService::new(

@@ -38,16 +38,29 @@ pub(crate) type DeleteMediaServiceRuntime =
 
 pub(crate) fn build_import_service(config: &config::Manager) -> ImportService {
     let clients = Client::new(config);
+    build_import_service_from_clients(
+        &clients,
+        config.get_library_config().remote_path.clone(),
+        config.get_library_config().local_path.clone(),
+        config.get_media_server_config().get_strm_download_url(),
+    )
+}
 
+pub(crate) fn build_import_service_from_clients(
+    clients: &Client,
+    remote_path: String,
+    local_path: String,
+    strm_download_url: String,
+) -> ImportService {
     ImportMediaService::new(
         PanLibraryGateway::new(clients.pan123.clone()),
-        ShareImportGateway::new(clients.pan115, clients.pan123, clients.pan189),
-        TmdbMetadataGateway::new(clients.tmdb),
-        FilesystemImportLocalStore::new(
-            config.get_library_config().remote_path.clone(),
-            config.get_library_config().local_path.clone(),
-            config.get_media_server_config().get_strm_download_url(),
+        ShareImportGateway::new(
+            clients.pan115.clone(),
+            clients.pan123.clone(),
+            clients.pan189.clone(),
         ),
+        TmdbMetadataGateway::new(clients.tmdb.clone()),
+        FilesystemImportLocalStore::new(remote_path, local_path, strm_download_url),
     )
 }
 

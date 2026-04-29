@@ -9,7 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::Url;
+use url::Url;
 
 use super::*;
 use crate::application::import::{

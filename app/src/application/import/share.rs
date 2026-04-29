@@ -1,7 +1,7 @@
 mod providers;
 
-use reqwest::Url;
 use tracing::info;
+use url::Url;
 
 use super::{ImportedMedia, ShareImportUseCase};
 use crate::application::import_ports::{

@@ -1,7 +1,7 @@
 use base64::{Engine, engine::general_purpose};
-use reqwest::Url;
 use serde::Deserialize;
 use tracing::info;
+use url::Url;
 
 use crate::error::{AppError, AppResult};
 
@@ -94,7 +94,7 @@ pub(crate) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
         .to_owned();
     let receive_code = url
         .query_pairs()
-        .find(|(key, _)| key == "password")
+        .find(|(key, _)| key == "password" || key == "rc")
         .map(|(_, value)| value.to_string())
         .unwrap_or_default();
     (share_code, receive_code)
@@ -289,6 +289,7 @@ mod tests {
         let pan189_query = Url::parse("https://cloud.189.cn/web/share?code=abc123").unwrap();
         let pan189_path = Url::parse("https://cloud.189.cn/t/pathcode").unwrap();
         let pan115 = Url::parse("https://115.com/s/share115?password=recv").unwrap();
+        let pan115_rc = Url::parse("https://115.com/s/share115?rc=recv").unwrap();
 
         assert_eq!(
             parse_pan123_share_parts(&pan123),
@@ -298,6 +299,10 @@ mod tests {
         assert_eq!(parse_pan189_share_code(&pan189_path), "pathcode");
         assert_eq!(
             parse_pan115_share_parts(&pan115),
+            ("share115".into(), "recv".into())
+        );
+        assert_eq!(
+            parse_pan115_share_parts(&pan115_rc),
             ("share115".into(), "recv".into())
         );
     }

@@ -5,7 +5,7 @@ use interface::{
     cli::{Cli, Commands},
     import::{NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes},
 };
-use reqwest::Url;
+use url::Url;
 
 mod application;
 mod bootstrap;
