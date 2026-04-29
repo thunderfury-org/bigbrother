@@ -22,6 +22,7 @@ time = { workspace = true }
 reqwest = { workspace = true }
 reqwest-middleware = { workspace = true }
 reqwest-retry = { workspace = true }
+url = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
 lingua = { workspace = true }
