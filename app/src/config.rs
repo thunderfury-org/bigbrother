@@ -23,6 +23,7 @@ pub struct MediaServerConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct EmbyProxyConfig {
     pub enable: bool,
     pub host: Option<String>,
@@ -213,37 +214,73 @@ mod tests {
     use super::*;
     use std::{
         fs,
-        time::{SystemTime, UNIX_EPOCH},
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
     };
 
-    fn unique_temp_dir() -> std::path::PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("bigbrother-config-{suffix}"))
+    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempConfigDir {
+        path: PathBuf,
+    }
+
+    impl TempConfigDir {
+        fn new() -> Self {
+            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "bigbrother-config-{}-{counter}",
+                std::process::id()
+            ));
+            fs::create_dir_all(path.join("config")).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+
+        fn write_config(&self, config: &str) {
+            fs::write(self.path.join("config/config.yaml"), config).unwrap();
+        }
+    }
+
+    impl Drop for TempConfigDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 
     #[test]
     fn emby_proxy_defaults_to_disabled() {
-        let data_dir = unique_temp_dir();
-        fs::create_dir_all(data_dir.join("config")).unwrap();
-        fs::write(data_dir.join("config/config.yaml"), "").unwrap();
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
 
-        let config = Manager::try_from(data_dir.to_str().unwrap()).unwrap();
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
 
         assert!(!config.get_emby_proxy_config().is_enabled());
         assert_eq!(config.get_emby_proxy_config().get_addr(), "0.0.0.0:8097");
+    }
 
-        fs::remove_dir_all(data_dir).unwrap();
+    #[test]
+    fn emby_proxy_empty_section_uses_defaults() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+emby_proxy: {}
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let emby_proxy = config.get_emby_proxy_config();
+
+        assert!(!emby_proxy.is_enabled());
+        assert_eq!(emby_proxy.get_addr(), "0.0.0.0:8097");
     }
 
     #[test]
     fn emby_proxy_parses_enabled_config() {
-        let data_dir = unique_temp_dir();
-        fs::create_dir_all(data_dir.join("config")).unwrap();
-        fs::write(
-            data_dir.join("config/config.yaml"),
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
             r#"
 emby_proxy:
   enable: true
@@ -252,10 +289,9 @@ emby_proxy:
   upstream_base_url: http://emby.example:8096/
   api_key: secret
 "#,
-        )
-        .unwrap();
+        );
 
-        let config = Manager::try_from(data_dir.to_str().unwrap()).unwrap();
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
         let emby_proxy = config.get_emby_proxy_config();
 
         assert!(emby_proxy.is_enabled());
@@ -265,7 +301,5 @@ emby_proxy:
             "http://emby.example:8096"
         );
         assert_eq!(emby_proxy.get_api_key(), Some("secret"));
-
-        fs::remove_dir_all(data_dir).unwrap();
     }
 }
