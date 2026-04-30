@@ -1,3 +1,4 @@
+use serde_json::Value;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +80,70 @@ fn parse_url_like(raw: &str, base_url: &str) -> Result<Url, url::ParseError> {
     } else {
         Url::parse(base_url)?.join(raw)
     }
+}
+
+pub fn rewrite_playback_info(
+    body: &mut Value,
+    item_id: &str,
+    matcher: &BigbrotherStrmMatcher,
+) -> bool {
+    let Some(media_sources) = body.get_mut("MediaSources").and_then(Value::as_array_mut) else {
+        return false;
+    };
+
+    let mut changed = false;
+    for source in media_sources {
+        if !media_source_contains_bigbrother_strm(source, matcher) {
+            continue;
+        }
+
+        let media_source_id = source
+            .get("Id")
+            .and_then(Value::as_str)
+            .unwrap_or(item_id)
+            .to_owned();
+        let token = source
+            .get("DirectStreamUrl")
+            .and_then(Value::as_str)
+            .and_then(emby_token_query);
+        let mut direct_stream_url =
+            format!("/Videos/{item_id}/stream?MediaSourceId={media_source_id}&Static=true");
+        if let Some(token) = token {
+            direct_stream_url.push('&');
+            direct_stream_url.push_str(token.as_str());
+        }
+
+        source["SupportsDirectPlay"] = Value::Bool(true);
+        source["SupportsDirectStream"] = Value::Bool(true);
+        source["SupportsTranscoding"] = Value::Bool(false);
+        source["DirectStreamUrl"] = Value::String(direct_stream_url);
+
+        if let Some(object) = source.as_object_mut() {
+            for key in [
+                "TranscodingUrl",
+                "TranscodingContainer",
+                "TranscodingSubProtocol",
+                "TrancodeLiveStartIndex",
+                "TranscodeReasons",
+            ] {
+                object.remove(key);
+            }
+        }
+
+        changed = true;
+    }
+
+    changed
+}
+
+pub fn media_source_contains_bigbrother_strm(
+    source: &Value,
+    matcher: &BigbrotherStrmMatcher,
+) -> bool {
+    ["Path", "DirectStreamUrl", "DirectPlayUrl"]
+        .iter()
+        .filter_map(|key| source.get(*key).and_then(Value::as_str))
+        .any(|value| matcher.parse(value).is_some())
 }
 
 #[cfg(test)]
@@ -171,5 +236,56 @@ mod tests {
         assert!(media_source_ids_match("mediasource_42", "42"));
         assert!(media_source_ids_match("42", "mediasource_42"));
         assert!(!media_source_ids_match("42", "43"));
+    }
+
+    #[test]
+    fn rewrites_bigbrother_strm_playback_info() {
+        let matcher = matcher();
+        let mut body = serde_json::json!({
+            "MediaSources": [{
+                "Id": "mediasource_42",
+                "ItemId": "7",
+                "Path": "http://bb.example:3100/d/movies/Inception.mkv?file_id=42",
+                "DirectStreamUrl": "/Videos/7/stream?MediaSourceId=mediasource_42&api_key=token",
+                "SupportsDirectPlay": false,
+                "SupportsDirectStream": false,
+                "SupportsTranscoding": true,
+                "TranscodingUrl": "/Videos/7/master.m3u8",
+                "TranscodingContainer": "ts",
+                "TranscodingSubProtocol": "hls"
+            }]
+        });
+
+        let changed = rewrite_playback_info(&mut body, "7", &matcher);
+
+        assert!(changed);
+        let source = &body["MediaSources"][0];
+        assert_eq!(source["SupportsDirectPlay"], true);
+        assert_eq!(source["SupportsDirectStream"], true);
+        assert_eq!(source["SupportsTranscoding"], false);
+        assert!(source.get("TranscodingUrl").is_none());
+        assert_eq!(
+            source["DirectStreamUrl"],
+            "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&api_key=token"
+        );
+    }
+
+    #[test]
+    fn leaves_non_bigbrother_playback_info_unchanged() {
+        let matcher = matcher();
+        let mut body = serde_json::json!({
+            "MediaSources": [{
+                "Id": "1",
+                "ItemId": "7",
+                "Path": "https://other.example/movie.mkv",
+                "SupportsDirectPlay": false
+            }]
+        });
+        let original = body.clone();
+
+        let changed = rewrite_playback_info(&mut body, "7", &matcher);
+
+        assert!(!changed);
+        assert_eq!(body, original);
     }
 }
