@@ -124,6 +124,8 @@ pub fn rewrite_playback_info(
                 "TranscodingContainer",
                 "TranscodingSubProtocol",
                 "TrancodeLiveStartIndex",
+                "TranscodeLiveStartIndex",
+                "TranscodingLiveStartIndex",
                 "TranscodeReasons",
             ] {
                 object.remove(key);
@@ -268,6 +270,28 @@ mod tests {
             source["DirectStreamUrl"],
             "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&api_key=token"
         );
+    }
+
+    #[test]
+    fn removes_all_live_start_index_spellings_from_bigbrother_playback_info() {
+        let matcher = matcher();
+        let mut body = serde_json::json!({
+            "MediaSources": [{
+                "Id": "mediasource_42",
+                "Path": "http://bb.example:3100/d/movies/Inception.mkv?file_id=42",
+                "TrancodeLiveStartIndex": 1,
+                "TranscodeLiveStartIndex": 2,
+                "TranscodingLiveStartIndex": 3
+            }]
+        });
+
+        let changed = rewrite_playback_info(&mut body, "7", &matcher);
+
+        assert!(changed);
+        let source = &body["MediaSources"][0];
+        assert!(source.get("TrancodeLiveStartIndex").is_none());
+        assert!(source.get("TranscodeLiveStartIndex").is_none());
+        assert!(source.get("TranscodingLiveStartIndex").is_none());
     }
 
     #[test]
