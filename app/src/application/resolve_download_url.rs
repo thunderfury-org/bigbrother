@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tokio::sync::{Mutex, Notify};
-use tracing::error;
+use tracing::{debug, error, warn};
 
 use crate::error::{AppError, AppResult};
 
@@ -81,10 +81,12 @@ where
         if let Some(cached_url) = self.cache.get_download_url(&cache_key).await? {
             return Ok(ResolveDownloadUrlResult::Redirect(cached_url));
         }
+        debug!("download url cache miss for file {file_id}");
 
         let (entry, owner) = {
             let mut inflight = self.inflight.lock().await;
             if let Some(entry) = inflight.get(&file_id) {
+                debug!("joining in-flight download url resolve for file {file_id}");
                 (entry.clone(), false)
             } else {
                 let entry = Arc::new(InflightResolve::new());
@@ -97,7 +99,34 @@ where
             return entry.wait().await;
         }
 
+        let started_at = Instant::now();
         let result = self.resolve_uncached(file_id, &cache_key).await;
+        match &result {
+            Ok(ResolveDownloadUrlResult::Redirect(_)) => {
+                debug!(
+                    "resolved download url for file {file_id} in {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Ok(ResolveDownloadUrlResult::Unauthorized) => {
+                warn!(
+                    "download url resolve unauthorized for file {file_id} after {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Ok(ResolveDownloadUrlResult::NotFound) => {
+                warn!(
+                    "download url resolve not found for file {file_id} after {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Err(err) => {
+                warn!(
+                    "download url resolve failed for file {file_id} after {:?}: {err}",
+                    started_at.elapsed()
+                );
+            }
+        }
         entry.complete(result.clone()).await;
         self.inflight.lock().await.remove(&file_id);
         result
@@ -114,7 +143,7 @@ where
 
                 if let Err(err) = self
                     .cache
-                    .set_download_url(&cache_key, &url, Duration::from_mins(30))
+                    .set_download_url(cache_key, &url, Duration::from_mins(30))
                     .await
                 {
                     error!("Failed to cache download url for file {file_id}, {err}");
@@ -253,10 +282,8 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_maps_not_found() {
-        let service = ResolveDownloadUrlService::new(
-            FakeCache::default(),
-            FakeSource::new(Err("not_found")),
-        );
+        let service =
+            ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("not_found")));
 
         let result = service.resolve(1).await.unwrap();
         assert!(matches!(result, ResolveDownloadUrlResult::NotFound));
@@ -264,10 +291,8 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_maps_source_error_to_dependency_error() {
-        let service = ResolveDownloadUrlService::new(
-            FakeCache::default(),
-            FakeSource::new(Err("boom")),
-        );
+        let service =
+            ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("boom")));
 
         let error = service.resolve(1).await.unwrap_err();
         assert!(matches!(error, AppError::Dependency(_)));
