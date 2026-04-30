@@ -44,9 +44,10 @@ impl BigbrotherStrmMatcher {
 
 pub fn emby_token_query(raw_url: &str) -> Option<String> {
     let url = parse_url_like(raw_url, "http://localhost").ok()?;
-    url.query_pairs().find_map(|(key, value)| {
+    url.query()?.split('&').find_map(|segment| {
+        let key = segment.split_once('=').map_or(segment, |(key, _)| key);
         let lower = key.to_ascii_lowercase();
-        (lower == "api_key" || lower == "x-emby-token").then(|| format!("{key}={value}"))
+        (lower == "api_key" || lower == "x-emby-token").then(|| segment.to_owned())
     })
 }
 
@@ -155,6 +156,14 @@ mod tests {
             Some("X-Emby-Token=def".to_string())
         );
         assert_eq!(emby_token_query("/Videos/1/stream?DeviceId=x"), None);
+    }
+
+    #[test]
+    fn preserves_emby_token_query_percent_encoding() {
+        assert_eq!(
+            emby_token_query("/Videos/1/stream?api_key=a%26b%3Dc"),
+            Some("api_key=a%26b%3Dc".to_string())
+        );
     }
 
     #[test]
