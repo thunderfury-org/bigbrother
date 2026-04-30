@@ -366,7 +366,7 @@ async fn resolve_cleans_inflight_after_failure_and_allows_retry() {
 Run:
 
 ```bash
-cargo test -p app application::resolve_download_url::tests -- --nocapture
+cargo test -p bigbrother application::resolve_download_url::tests -- --nocapture
 ```
 
 Expected: the new same-file concurrent test fails because `source.calls()` is greater than `1`. Existing tests should compile after the fake updates.
@@ -599,7 +599,7 @@ This preserves cache-first behavior and coalesces only the cold miss path.
 Run:
 
 ```bash
-cargo test -p app application::resolve_download_url::tests -- --nocapture
+cargo test -p bigbrother application::resolve_download_url::tests -- --nocapture
 ```
 
 Expected: all `resolve_download_url` tests pass.
@@ -736,7 +736,7 @@ Do not log the redirect URL.
 Run:
 
 ```bash
-cargo test -p app application::resolve_download_url::tests -- --nocapture
+cargo test -p bigbrother application::resolve_download_url::tests -- --nocapture
 ```
 
 Expected: all focused tests pass.
