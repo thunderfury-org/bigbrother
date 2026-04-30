@@ -1,10 +1,14 @@
+// This module is wired into runtime in Task 7, when the optional Emby proxy is
+// exposed from configuration. Keep the Task 4 skeleton lint-clean until then.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::{Path, State},
-    http::{HeaderMap, Method, StatusCode, Uri},
+    extract::State,
+    http::{HeaderMap, HeaderName, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::any,
 };
@@ -74,12 +78,11 @@ where
     C: crate::application::ports::DownloadUrlCache + Clone + Send + Sync + 'static,
     S: crate::application::ports::DownloadUrlSource + Clone + Send + Sync + 'static,
 {
-    proxy_request(&ctx, method, headers, uri, body, "").await
+    proxy_request(&ctx, method, headers, uri, body).await
 }
 
 async fn proxy_handler<C, S>(
     State(ctx): State<EmbyProxyContext<C, S>>,
-    Path(path): Path<String>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
@@ -89,7 +92,7 @@ where
     C: crate::application::ports::DownloadUrlCache + Clone + Send + Sync + 'static,
     S: crate::application::ports::DownloadUrlSource + Clone + Send + Sync + 'static,
 {
-    proxy_request(&ctx, method, headers, uri, body, path.as_str()).await
+    proxy_request(&ctx, method, headers, uri, body).await
 }
 
 async fn proxy_request<C, S>(
@@ -98,9 +101,8 @@ async fn proxy_request<C, S>(
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-    path: &str,
 ) -> Response {
-    match forward(ctx, method, headers, uri, body, path).await {
+    match forward(ctx, method, headers, uri, body).await {
         Ok(response) => response,
         Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
     }
@@ -112,15 +114,18 @@ async fn forward<C, S>(
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-    path: &str,
 ) -> AppResult<Response> {
     let mut upstream = ctx.upstream_base_url.clone();
-    upstream.set_path(format!("/{path}").as_str());
-    upstream.set_query(uri.query());
+    let path_and_query = uri
+        .path_and_query()
+        .map_or(uri.path(), |value| value.as_str());
+    upstream = upstream.join(path_and_query).map_err(|err| {
+        AppError::InvalidParameter(format!("invalid proxied emby request uri: {err}"))
+    })?;
 
     let mut request = ctx.client.request(method, upstream);
     for (name, value) in headers.iter() {
-        if name.as_str().eq_ignore_ascii_case("host") {
+        if !should_forward_request_header(name) {
             continue;
         }
         request = request.header(name, value);
@@ -136,22 +141,41 @@ async fn forward<C, S>(
 async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResult<Response> {
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
-    let body = upstream_response
-        .bytes()
-        .await
-        .map_err(|err| AppError::Dependency(format!("failed to read emby response body: {err}")))?;
+    let body = Body::from_stream(upstream_response.bytes_stream());
 
     let mut builder = Response::builder().status(status);
     for (name, value) in headers.iter() {
-        if name.as_str().eq_ignore_ascii_case("content-length") {
+        if !should_forward_response_header(name) {
             continue;
         }
         builder = builder.header(name, value);
     }
 
     builder
-        .body(Body::from(body))
+        .body(body)
         .map_err(|err| AppError::Internal(format!("failed to build proxy response: {err}")))
+}
+
+fn should_forward_request_header(name: &HeaderName) -> bool {
+    !is_hop_by_hop_header(name) && !name.as_str().eq_ignore_ascii_case("host")
+}
+
+fn should_forward_response_header(name: &HeaderName) -> bool {
+    !is_hop_by_hop_header(name) && !name.as_str().eq_ignore_ascii_case("content-length")
+}
+
+fn is_hop_by_hop_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str().to_ascii_lowercase().as_str(),
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
 }
 
 #[cfg(test)]
@@ -193,6 +217,40 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.text().await.unwrap(), "emby-ok");
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_preserves_encoded_path_segments() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/Videos/a%2Fb/stream"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("encoded-ok"))
+            .mount(&upstream)
+            .await;
+
+        let ctx = EmbyProxyContext::new(
+            upstream.uri(),
+            None,
+            "http://bb.example:3100".to_string(),
+            "/d".to_string(),
+            fake_resolver(),
+        )
+        .unwrap();
+        let app = new_router(ctx);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = reqwest::get(format!("http://{addr}/Videos/a%2Fb/stream"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "encoded-ok");
 
         server.abort();
     }
