@@ -124,17 +124,12 @@ async fn forward<C, S>(
     uri: Uri,
     body: Bytes,
 ) -> AppResult<Response> {
-    let mut upstream = ctx.upstream_base_url.clone();
-    let path_and_query = uri
-        .path_and_query()
-        .map_or(uri.path(), |value| value.as_str());
-    upstream = upstream.join(path_and_query).map_err(|err| {
-        AppError::InvalidParameter(format!("invalid proxied emby request uri: {err}"))
-    })?;
+    let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
     let mut request = ctx.client.request(method, upstream);
+    let connection_headers = connection_header_tokens(&headers);
     for (name, value) in headers.iter() {
-        if !should_forward_request_header(name) {
+        if !should_forward_request_header(name, connection_headers.as_slice()) {
             continue;
         }
         request = request.header(name, value);
@@ -150,11 +145,12 @@ async fn forward<C, S>(
 async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResult<Response> {
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
+    let connection_headers = connection_header_tokens(&headers);
     let body = Body::from_stream(upstream_response.bytes_stream());
 
     let mut builder = Response::builder().status(status);
     for (name, value) in headers.iter() {
-        if !should_forward_response_header(name) {
+        if !should_forward_response_header(name, connection_headers.as_slice()) {
             continue;
         }
         builder = builder.header(name, value);
@@ -165,12 +161,29 @@ async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResul
         .map_err(|err| AppError::Internal(format!("failed to build proxy response: {err}")))
 }
 
-fn should_forward_request_header(name: &HeaderName) -> bool {
-    !is_hop_by_hop_header(name) && !name.as_str().eq_ignore_ascii_case("host")
+fn build_upstream_url(upstream_base_url: &Url, uri: &Uri) -> AppResult<Url> {
+    let mut raw = upstream_base_url.origin().ascii_serialization();
+    raw.push_str(uri.path());
+    if let Some(query) = uri.query() {
+        raw.push('?');
+        raw.push_str(query);
+    }
+
+    Url::parse(raw.as_str()).map_err(|err| {
+        AppError::InvalidParameter(format!("invalid proxied emby request uri: {err}"))
+    })
 }
 
-fn should_forward_response_header(name: &HeaderName) -> bool {
-    !is_hop_by_hop_header(name) && !name.as_str().eq_ignore_ascii_case("content-length")
+fn should_forward_request_header(name: &HeaderName, connection_headers: &[String]) -> bool {
+    !is_hop_by_hop_header(name)
+        && !is_connection_header_token(name, connection_headers)
+        && !name.as_str().eq_ignore_ascii_case("host")
+}
+
+fn should_forward_response_header(name: &HeaderName, connection_headers: &[String]) -> bool {
+    !is_hop_by_hop_header(name)
+        && !is_connection_header_token(name, connection_headers)
+        && !name.as_str().eq_ignore_ascii_case("content-length")
 }
 
 fn is_hop_by_hop_header(name: &HeaderName) -> bool {
@@ -187,12 +200,30 @@ fn is_hop_by_hop_header(name: &HeaderName) -> bool {
     )
 }
 
+fn is_connection_header_token(name: &HeaderName, connection_headers: &[String]) -> bool {
+    connection_headers
+        .iter()
+        .any(|header| name.as_str().eq_ignore_ascii_case(header.as_str()))
+}
+
+fn connection_header_tokens(headers: &HeaderMap) -> Vec<String> {
+    headers
+        .get_all("connection")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::http::StatusCode;
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
+        Match, Mock, MockServer, Request, ResponseTemplate,
         matchers::{body_string, header, method, path, query_param},
     };
 
@@ -262,6 +293,24 @@ mod tests {
         assert_eq!(response.text().await.unwrap(), "encoded-ok");
 
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_keeps_double_slash_paths_on_configured_upstream() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("//evil.example/System/Info"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("still-upstream"))
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::get(format!("http://{addr}//evil.example/System/Info"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "still-upstream");
     }
 
     #[tokio::test]
@@ -339,6 +388,55 @@ mod tests {
         assert_eq!(response.text().await.unwrap(), "redirecting");
     }
 
+    #[tokio::test]
+    async fn transparent_proxy_drops_request_headers_named_by_connection() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/System/Info"))
+            .and(HeaderAbsent("connection"))
+            .and(HeaderAbsent("x-internal"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("filtered"))
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::Client::new()
+            .get(format!("http://{addr}/System/Info"))
+            .header("connection", "x-internal")
+            .header("x-internal", "secret")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "filtered");
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_drops_response_headers_named_by_connection() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/System/Info"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("connection", "x-internal")
+                    .insert_header("x-internal", "secret")
+                    .set_body_string("filtered"),
+            )
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::get(format!("http://{addr}/System/Info"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().get("connection").is_none());
+        assert!(response.headers().get("x-internal").is_none());
+        assert_eq!(response.text().await.unwrap(), "filtered");
+    }
+
     async fn spawn_proxy(upstream_uri: String) -> std::net::SocketAddr {
         let ctx = EmbyProxyContext::new(
             upstream_uri,
@@ -355,6 +453,14 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         addr
+    }
+
+    struct HeaderAbsent(&'static str);
+
+    impl Match for HeaderAbsent {
+        fn matches(&self, request: &Request) -> bool {
+            !request.headers.contains_key(self.0)
+        }
     }
 
     use crate::{
