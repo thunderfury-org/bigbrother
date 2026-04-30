@@ -45,11 +45,20 @@ impl<C, S> EmbyProxyContext<C, S> {
             Url::parse(upstream_base_url.trim_end_matches('/')).map_err(|err| {
                 AppError::InvalidParameter(format!("invalid emby upstream url: {err}"))
             })?;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .no_gzip()
+            .no_brotli()
+            .no_deflate()
+            .build()
+            .map_err(|err| {
+                AppError::Internal(format!("failed to build emby proxy client: {err}"))
+            })?;
 
         Ok(Self {
             upstream_base_url,
             api_key,
-            client: reqwest::Client::new(),
+            client,
             matcher: BigbrotherStrmMatcher::new(advertise_base_url, strm_path_prefix),
             resolver: Arc::new(resolver),
         })
@@ -184,7 +193,7 @@ mod tests {
     use axum::http::StatusCode;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{method, path},
+        matchers::{body_string, header, method, path, query_param},
     };
 
     #[tokio::test]
@@ -253,6 +262,99 @@ mod tests {
         assert_eq!(response.text().await.unwrap(), "encoded-ok");
 
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_forwards_request_and_response_parts() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/Items/42"))
+            .and(query_param("api_key", "secret"))
+            .and(query_param("format", "json"))
+            .and(header("x-emby-client", "bigbrother-test"))
+            .and(body_string(r#"{"name":"movie"}"#))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .insert_header("x-emby-result", "created")
+                    .set_body_string("created-ok"),
+            )
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/Items/42?api_key=secret&format=json"))
+            .header("host", "bb.example")
+            .header("x-emby-client", "bigbrother-test")
+            .body(r#"{"name":"movie"}"#)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.headers().get("x-emby-result").unwrap(), "created");
+        assert_eq!(response.text().await.unwrap(), "created-ok");
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_maps_upstream_connection_errors_to_bad_gateway() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+
+        let addr = spawn_proxy(upstream).await;
+        let response = reqwest::get(format!("http://{addr}/System/Info"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn transparent_proxy_preserves_upstream_redirects() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/redirect-me"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", "/target")
+                    .set_body_string("redirecting"),
+            )
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!("http://{addr}/redirect-me"))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(response.headers().get("location").unwrap(), "/target");
+        assert_eq!(response.text().await.unwrap(), "redirecting");
+    }
+
+    async fn spawn_proxy(upstream_uri: String) -> std::net::SocketAddr {
+        let ctx = EmbyProxyContext::new(
+            upstream_uri,
+            None,
+            "http://bb.example:3100".to_string(),
+            "/d".to_string(),
+            fake_resolver(),
+        )
+        .unwrap();
+        let app = new_router(ctx);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        addr
     }
 
     use crate::{
