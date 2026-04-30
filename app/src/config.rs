@@ -6,6 +6,7 @@ use super::error::AppError;
 #[serde(default, rename_all = "snake_case")]
 struct AppConfig {
     pub media_server: MediaServerConfig,
+    pub emby_proxy: EmbyProxyConfig,
     pub pan123: Pan123Config,
     pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
@@ -19,6 +20,15 @@ pub struct MediaServerConfig {
     pub port: Option<u16>,
     pub advertise_base_url: Option<String>,
     pub strm_path_prefix: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct EmbyProxyConfig {
+    pub enable: bool,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub upstream_base_url: Option<String>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -76,6 +86,10 @@ impl Manager {
 
     pub fn get_media_server_config(&self) -> &MediaServerConfig {
         &self.app_config.media_server
+    }
+
+    pub fn get_emby_proxy_config(&self) -> &EmbyProxyConfig {
+        &self.app_config.emby_proxy
     }
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
@@ -162,5 +176,96 @@ impl MediaServerConfig {
             self.get_advertise_base_url(),
             self.get_strm_path_prefix()
         )
+    }
+}
+
+impl EmbyProxyConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enable
+    }
+
+    fn get_host(&self) -> &str {
+        self.host.as_deref().unwrap_or("0.0.0.0")
+    }
+
+    fn get_port(&self) -> u16 {
+        self.port.unwrap_or(8097)
+    }
+
+    pub fn get_addr(&self) -> String {
+        format!("{}:{}", self.get_host(), self.get_port())
+    }
+
+    pub fn get_upstream_base_url(&self) -> Option<String> {
+        self.upstream_base_url
+            .as_ref()
+            .map(|url| url.trim_end_matches('/').to_owned())
+            .filter(|url| !url.is_empty())
+    }
+
+    pub fn get_api_key(&self) -> Option<&str> {
+        self.api_key.as_deref().filter(|value| !value.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn unique_temp_dir() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("bigbrother-config-{suffix}"))
+    }
+
+    #[test]
+    fn emby_proxy_defaults_to_disabled() {
+        let data_dir = unique_temp_dir();
+        fs::create_dir_all(data_dir.join("config")).unwrap();
+        fs::write(data_dir.join("config/config.yaml"), "").unwrap();
+
+        let config = Manager::try_from(data_dir.to_str().unwrap()).unwrap();
+
+        assert!(!config.get_emby_proxy_config().is_enabled());
+        assert_eq!(config.get_emby_proxy_config().get_addr(), "0.0.0.0:8097");
+
+        fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn emby_proxy_parses_enabled_config() {
+        let data_dir = unique_temp_dir();
+        fs::create_dir_all(data_dir.join("config")).unwrap();
+        fs::write(
+            data_dir.join("config/config.yaml"),
+            r#"
+emby_proxy:
+  enable: true
+  host: 127.0.0.1
+  port: 18097
+  upstream_base_url: http://emby.example:8096/
+  api_key: secret
+"#,
+        )
+        .unwrap();
+
+        let config = Manager::try_from(data_dir.to_str().unwrap()).unwrap();
+        let emby_proxy = config.get_emby_proxy_config();
+
+        assert!(emby_proxy.is_enabled());
+        assert_eq!(emby_proxy.get_addr(), "127.0.0.1:18097");
+        assert_eq!(
+            emby_proxy.get_upstream_base_url().unwrap(),
+            "http://emby.example:8096"
+        );
+        assert_eq!(emby_proxy.get_api_key(), Some("secret"));
+
+        fs::remove_dir_all(data_dir).unwrap();
     }
 }

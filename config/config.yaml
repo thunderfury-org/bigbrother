@@ -17,3 +17,10 @@ telegram:
 library:
   remote_path: ""
   local_path: ""
+
+emby_proxy:
+  enable: false
+  host: 0.0.0.0
+  port: 8097
+  upstream_base_url: http://127.0.0.1:8096
+  api_key: ""
