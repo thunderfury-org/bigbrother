@@ -71,7 +71,10 @@ fn normalize_prefix(prefix: &str) -> String {
 }
 
 fn path_matches_prefix(path: &str, prefix: &str) -> bool {
-    path == prefix || path.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
+    path == prefix
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 fn parse_url_like(raw: &str, base_url: &str) -> Result<Url, url::ParseError> {
