@@ -1,27 +1,73 @@
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::Duration,
+};
 
+use tokio::sync::{Mutex, Notify};
 use tracing::error;
 
 use crate::error::{AppError, AppResult};
 
 use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveDownloadUrlResult {
     Redirect(String),
     Unauthorized,
     NotFound,
 }
 
+type SharedResolveResult = AppResult<ResolveDownloadUrlResult>;
+
+#[derive(Debug)]
+struct InflightResolve {
+    result: Mutex<Option<SharedResolveResult>>,
+    notify: Notify,
+}
+
+impl InflightResolve {
+    fn new() -> Self {
+        Self {
+            result: Mutex::new(None),
+            notify: Notify::new(),
+        }
+    }
+
+    async fn wait(&self) -> SharedResolveResult {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if let Some(result) = self.result.lock().await.clone() {
+                return result;
+            }
+
+            notified.await;
+        }
+    }
+
+    async fn complete(&self, result: SharedResolveResult) {
+        *self.result.lock().await = Some(result);
+        self.notify.notify_waiters();
+    }
+}
+
 #[derive(Clone)]
 pub struct ResolveDownloadUrlService<C, S> {
     cache: C,
     source: S,
+    inflight: Arc<Mutex<HashMap<i64, Arc<InflightResolve>>>>,
 }
 
 impl<C, S> ResolveDownloadUrlService<C, S> {
     pub fn new(cache: C, source: S) -> Self {
-        Self { cache, source }
+        Self {
+            cache,
+            source,
+            inflight: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
@@ -36,6 +82,28 @@ where
             return Ok(ResolveDownloadUrlResult::Redirect(cached_url));
         }
 
+        let (entry, owner) = {
+            let mut inflight = self.inflight.lock().await;
+            if let Some(entry) = inflight.get(&file_id) {
+                (entry.clone(), false)
+            } else {
+                let entry = Arc::new(InflightResolve::new());
+                inflight.insert(file_id, entry.clone());
+                (entry, true)
+            }
+        };
+
+        if !owner {
+            return entry.wait().await;
+        }
+
+        let result = self.resolve_uncached(file_id, &cache_key).await;
+        entry.complete(result.clone()).await;
+        self.inflight.lock().await.remove(&file_id);
+        result
+    }
+
+    async fn resolve_uncached(&self, file_id: i64, cache_key: &str) -> SharedResolveResult {
         match self.source.get_download_url(file_id).await {
             Ok(url) => {
                 if url.is_empty() {
