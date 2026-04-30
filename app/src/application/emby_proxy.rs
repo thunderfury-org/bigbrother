@@ -21,18 +21,16 @@ impl BigbrotherStrmMatcher {
 
     pub fn parse(&self, raw: &str) -> Option<ParsedBigbrotherStrm> {
         let url = parse_url_like(raw, &self.advertise_base_url).ok()?;
-        if !url.path().starts_with(self.strm_path_prefix.as_str()) {
+        let base = Url::parse(self.advertise_base_url.as_str()).ok()?;
+        if url.scheme() != base.scheme()
+            || url.host_str() != base.host_str()
+            || url.port_or_known_default() != base.port_or_known_default()
+        {
             return None;
         }
 
-        if raw.starts_with("http://") || raw.starts_with("https://") {
-            let base = Url::parse(self.advertise_base_url.as_str()).ok()?;
-            if url.scheme() != base.scheme()
-                || url.host_str() != base.host_str()
-                || url.port_or_known_default() != base.port_or_known_default()
-            {
-                return None;
-            }
+        if !path_matches_prefix(url.path(), self.strm_path_prefix.as_str()) {
+            return None;
         }
 
         let file_id = url
@@ -68,6 +66,10 @@ fn normalize_prefix(prefix: &str) -> String {
         format!("/{trimmed}")
     };
     prefixed.trim_end_matches('/').to_owned()
+}
+
+fn path_matches_prefix(path: &str, prefix: &str) -> bool {
+    path == prefix || path.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
 }
 
 fn parse_url_like(raw: &str, base_url: &str) -> Result<Url, url::ParseError> {
@@ -111,6 +113,30 @@ mod tests {
                 .parse("https://example.com/d/movie.mkv?file_id=42")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn rejects_uppercase_scheme_non_bigbrother_url() {
+        assert!(
+            matcher()
+                .parse("HTTP://evil.example/d/movie.mkv?file_id=42")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rejects_protocol_relative_non_bigbrother_url() {
+        assert!(
+            matcher()
+                .parse("//evil.example/d/movie.mkv?file_id=42")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn rejects_paths_outside_strm_prefix_boundary() {
+        assert!(matcher().parse("/download/movie.mkv?file_id=42").is_none());
+        assert!(matcher().parse("/d2/movie.mkv?file_id=42").is_none());
     }
 
     #[test]
