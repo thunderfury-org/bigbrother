@@ -1,27 +1,73 @@
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use tracing::error;
+use tokio::sync::{Mutex, Notify};
+use tracing::{debug, error, warn};
 
 use crate::error::{AppError, AppResult};
 
 use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveDownloadUrlResult {
     Redirect(String),
     Unauthorized,
     NotFound,
 }
 
+type SharedResolveResult = AppResult<ResolveDownloadUrlResult>;
+
+#[derive(Debug)]
+struct InflightResolve {
+    result: Mutex<Option<SharedResolveResult>>,
+    notify: Notify,
+}
+
+impl InflightResolve {
+    fn new() -> Self {
+        Self {
+            result: Mutex::new(None),
+            notify: Notify::new(),
+        }
+    }
+
+    async fn wait(&self) -> SharedResolveResult {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if let Some(result) = self.result.lock().await.clone() {
+                return result;
+            }
+
+            notified.await;
+        }
+    }
+
+    async fn complete(&self, result: SharedResolveResult) {
+        *self.result.lock().await = Some(result);
+        self.notify.notify_waiters();
+    }
+}
+
 #[derive(Clone)]
 pub struct ResolveDownloadUrlService<C, S> {
     cache: C,
     source: S,
+    inflight: Arc<Mutex<HashMap<i64, Arc<InflightResolve>>>>,
 }
 
 impl<C, S> ResolveDownloadUrlService<C, S> {
     pub fn new(cache: C, source: S) -> Self {
-        Self { cache, source }
+        Self {
+            cache,
+            source,
+            inflight: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
@@ -35,7 +81,58 @@ where
         if let Some(cached_url) = self.cache.get_download_url(&cache_key).await? {
             return Ok(ResolveDownloadUrlResult::Redirect(cached_url));
         }
+        debug!("download url cache miss for file {file_id}");
 
+        let (entry, owner) = {
+            let mut inflight = self.inflight.lock().await;
+            if let Some(entry) = inflight.get(&file_id) {
+                debug!("joining in-flight download url resolve for file {file_id}");
+                (entry.clone(), false)
+            } else {
+                let entry = Arc::new(InflightResolve::new());
+                inflight.insert(file_id, entry.clone());
+                (entry, true)
+            }
+        };
+
+        if !owner {
+            return entry.wait().await;
+        }
+
+        let started_at = Instant::now();
+        let result = self.resolve_uncached(file_id, &cache_key).await;
+        match &result {
+            Ok(ResolveDownloadUrlResult::Redirect(_)) => {
+                debug!(
+                    "resolved download url for file {file_id} in {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Ok(ResolveDownloadUrlResult::Unauthorized) => {
+                warn!(
+                    "download url resolve unauthorized for file {file_id} after {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Ok(ResolveDownloadUrlResult::NotFound) => {
+                warn!(
+                    "download url resolve not found for file {file_id} after {:?}",
+                    started_at.elapsed()
+                );
+            }
+            Err(err) => {
+                warn!(
+                    "download url resolve failed for file {file_id} after {:?}: {err}",
+                    started_at.elapsed()
+                );
+            }
+        }
+        entry.complete(result.clone()).await;
+        self.inflight.lock().await.remove(&file_id);
+        result
+    }
+
+    async fn resolve_uncached(&self, file_id: i64, cache_key: &str) -> SharedResolveResult {
         match self.source.get_download_url(file_id).await {
             Ok(url) => {
                 if url.is_empty() {
@@ -46,7 +143,7 @@ where
 
                 if let Err(err) = self
                     .cache
-                    .set_download_url(&cache_key, &url, Duration::from_mins(30))
+                    .set_download_url(cache_key, &url, Duration::from_mins(30))
                     .await
                 {
                     error!("Failed to cache download url for file {file_id}, {err}");
@@ -65,7 +162,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        collections::HashMap,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
     use super::super::ports::DownloadUrlResult;
 
@@ -73,63 +177,113 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct FakeCache {
-        stored: Arc<Mutex<Option<String>>>,
+        stored: Arc<Mutex<HashMap<String, String>>>,
+    }
+
+    impl FakeCache {
+        fn with_download_url(file_id: i64, url: &str) -> Self {
+            let cache = Self::default();
+            cache
+                .stored
+                .lock()
+                .unwrap()
+                .insert(format!("pan123:download_url:{file_id}"), url.to_owned());
+            cache
+        }
     }
 
     impl DownloadUrlCache for FakeCache {
-        async fn get_download_url(&self, _key: &str) -> AppResult<Option<String>> {
-            Ok(self.stored.lock().unwrap().clone())
+        async fn get_download_url(&self, key: &str) -> AppResult<Option<String>> {
+            Ok(self.stored.lock().unwrap().get(key).cloned())
         }
 
-        async fn set_download_url(&self, _key: &str, url: &str, _ttl: Duration) -> AppResult<()> {
-            *self.stored.lock().unwrap() = Some(url.to_owned());
+        async fn set_download_url(&self, key: &str, url: &str, _ttl: Duration) -> AppResult<()> {
+            self.stored
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), url.to_owned());
             Ok(())
         }
     }
 
     #[derive(Clone)]
     struct FakeSource {
-        result: Arc<Mutex<Result<String, &'static str>>>,
+        results: Arc<Mutex<HashMap<i64, Result<String, &'static str>>>>,
+        calls: Arc<AtomicUsize>,
+        delay: Duration,
+    }
+
+    impl FakeSource {
+        fn new(default_result: Result<String, &'static str>) -> Self {
+            Self {
+                results: Arc::new(Mutex::new(HashMap::from([(1, default_result)]))),
+                calls: Arc::new(AtomicUsize::new(0)),
+                delay: Duration::ZERO,
+            }
+        }
+
+        fn with_results(
+            results: impl IntoIterator<Item = (i64, Result<String, &'static str>)>,
+        ) -> Self {
+            Self {
+                results: Arc::new(Mutex::new(results.into_iter().collect())),
+                calls: Arc::new(AtomicUsize::new(0)),
+                delay: Duration::ZERO,
+            }
+        }
+
+        fn with_delay(mut self, delay: Duration) -> Self {
+            self.delay = delay;
+            self
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
     }
 
     impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
-            match &*self.result.lock().unwrap() {
-                Ok(url) => Ok(url.clone()),
-                Err(kind) if *kind == "not_found" => {
-                    Err(DownloadUrlError::NotFound("missing".to_string()))
-                }
-                Err(kind) if *kind == "unauthorized" => Err(DownloadUrlError::Unauthorized),
-                Err(kind) => Err(DownloadUrlError::Error((*kind).to_string())),
+        async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if !self.delay.is_zero() {
+                tokio::time::sleep(self.delay).await;
+            }
+
+            let result = self
+                .results
+                .lock()
+                .unwrap()
+                .get(&file_id)
+                .cloned()
+                .unwrap_or_else(|| Err("not_found"));
+
+            match result {
+                Ok(url) => Ok(url),
+                Err("not_found") => Err(DownloadUrlError::NotFound("missing".to_string())),
+                Err("unauthorized") => Err(DownloadUrlError::Unauthorized),
+                Err(kind) => Err(DownloadUrlError::Error(kind.to_string())),
             }
         }
     }
 
     #[tokio::test]
     async fn resolve_returns_cached_url() {
-        let cache = FakeCache {
-            stored: Arc::new(Mutex::new(Some("https://cached".to_string()))),
-        };
-        let source = FakeSource {
-            result: Arc::new(Mutex::new(Ok("https://remote".to_string()))),
-        };
-        let service = ResolveDownloadUrlService::new(cache, source);
+        let cache = FakeCache::with_download_url(1, "https://cached");
+        let source = FakeSource::new(Ok("https://remote".to_string()));
+        let service = ResolveDownloadUrlService::new(cache, source.clone());
 
         let result = service.resolve(1).await.unwrap();
         assert!(matches!(
             result,
             ResolveDownloadUrlResult::Redirect(url) if url == "https://cached"
         ));
+        assert_eq!(source.calls(), 0);
     }
 
     #[tokio::test]
     async fn resolve_maps_not_found() {
-        let service = ResolveDownloadUrlService::new(
-            FakeCache::default(),
-            FakeSource {
-                result: Arc::new(Mutex::new(Err("not_found"))),
-            },
-        );
+        let service =
+            ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("not_found")));
 
         let result = service.resolve(1).await.unwrap();
         assert!(matches!(result, ResolveDownloadUrlResult::NotFound));
@@ -137,14 +291,104 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_maps_source_error_to_dependency_error() {
-        let service = ResolveDownloadUrlService::new(
-            FakeCache::default(),
-            FakeSource {
-                result: Arc::new(Mutex::new(Err("boom"))),
-            },
-        );
+        let service =
+            ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("boom")));
 
         let error = service.resolve(1).await.unwrap_err();
         assert!(matches!(error, AppError::Dependency(_)));
+    }
+
+    #[tokio::test]
+    async fn resolve_coalesces_concurrent_cache_misses_for_same_file_id() {
+        let source =
+            FakeSource::new(Ok("https://remote".to_string())).with_delay(Duration::from_millis(50));
+        let service = Arc::new(ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            source.clone(),
+        ));
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let service = service.clone();
+            handles.push(tokio::spawn(async move { service.resolve(1).await }));
+        }
+
+        let mut redirects = Vec::new();
+        for handle in handles {
+            match handle.await.unwrap().unwrap() {
+                ResolveDownloadUrlResult::Redirect(url) => redirects.push(url),
+                other => panic!("expected redirect, got {other:?}"),
+            }
+        }
+
+        assert_eq!(redirects, vec!["https://remote".to_string(); 8]);
+        assert_eq!(source.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_does_not_coalesce_different_file_ids() {
+        let source = FakeSource::with_results([
+            (1, Ok("https://remote/1".to_string())),
+            (2, Ok("https://remote/2".to_string())),
+        ])
+        .with_delay(Duration::from_millis(20));
+        let service = Arc::new(ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            source.clone(),
+        ));
+
+        let first = {
+            let service = service.clone();
+            tokio::spawn(async move { service.resolve(1).await })
+        };
+        let second = {
+            let service = service.clone();
+            tokio::spawn(async move { service.resolve(2).await })
+        };
+
+        let first = first.await.unwrap().unwrap();
+        let second = second.await.unwrap().unwrap();
+
+        assert!(matches!(
+            first,
+            ResolveDownloadUrlResult::Redirect(url) if url == "https://remote/1"
+        ));
+        assert!(matches!(
+            second,
+            ResolveDownloadUrlResult::Redirect(url) if url == "https://remote/2"
+        ));
+        assert_eq!(source.calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn resolve_cleans_inflight_after_failure_and_allows_retry() {
+        let source = FakeSource::new(Err("boom")).with_delay(Duration::from_millis(50));
+        let service = Arc::new(ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            source.clone(),
+        ));
+
+        let first = {
+            let service = service.clone();
+            tokio::spawn(async move { service.resolve(1).await })
+        };
+        let second = {
+            let service = service.clone();
+            tokio::spawn(async move { service.resolve(1).await })
+        };
+
+        assert!(matches!(
+            first.await.unwrap().unwrap_err(),
+            AppError::Dependency(_)
+        ));
+        assert!(matches!(
+            second.await.unwrap().unwrap_err(),
+            AppError::Dependency(_)
+        ));
+        assert_eq!(source.calls(), 1);
+
+        let retry = service.resolve(1).await.unwrap_err();
+        assert!(matches!(retry, AppError::Dependency(_)));
+        assert_eq!(source.calls(), 2);
     }
 }

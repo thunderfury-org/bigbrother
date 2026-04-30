@@ -12,7 +12,7 @@ pub enum AppErrorKind {
     Internal,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum AppError {
     #[error("invalid parameter: {0}")]
     InvalidParameter(String),
