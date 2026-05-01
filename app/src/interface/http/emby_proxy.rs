@@ -111,8 +111,77 @@ async fn proxy_request<C, S>(
     uri: Uri,
     body: Bytes,
 ) -> Response {
+    if is_playback_info_route(&method, uri.path()) {
+        return proxy_playback_info(ctx, method, headers, uri, body).await;
+    }
+
+    proxy_request_fallback(ctx, method, headers, uri, body).await
+}
+
+async fn proxy_request_fallback<C, S>(
+    ctx: &EmbyProxyContext<C, S>,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
     match forward(ctx, method, headers, uri, body).await {
         Ok(response) => response,
+        Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
+    }
+}
+
+fn is_playback_info_route(method: &Method, path: &str) -> bool {
+    (*method == Method::GET || *method == Method::POST) && playback_item_id(path).is_some()
+}
+
+fn playback_item_id(path: &str) -> Option<&str> {
+    path.strip_prefix("/Items/")
+        .and_then(|rest| rest.strip_suffix("/PlaybackInfo"))
+}
+
+async fn proxy_playback_info<C, S>(
+    ctx: &EmbyProxyContext<C, S>,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    match forward_raw(ctx, method, headers, uri.clone(), body).await {
+        Ok((status, response_headers, response_body)) => {
+            if !status.is_success() {
+                return build_response(status, response_headers, response_body);
+            }
+
+            let Some(item_id) = playback_item_id(uri.path()) else {
+                return build_response(status, response_headers, response_body);
+            };
+
+            let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&response_body) else {
+                return build_response(status, response_headers, response_body);
+            };
+
+            if !crate::application::emby_proxy::rewrite_playback_info(
+                &mut json,
+                item_id,
+                &ctx.matcher,
+            ) {
+                return build_response(status, response_headers, response_body);
+            }
+
+            match serde_json::to_vec(&json) {
+                Ok(body) => {
+                    let mut headers = response_headers;
+                    headers.remove(axum::http::header::CONTENT_LENGTH);
+                    headers.insert(
+                        axum::http::header::CONTENT_TYPE,
+                        axum::http::HeaderValue::from_static("application/json"),
+                    );
+                    build_response(status, headers, Bytes::from(body))
+                }
+                Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+            }
+        }
         Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
     }
 }
@@ -124,6 +193,35 @@ async fn forward<C, S>(
     uri: Uri,
     body: Bytes,
 ) -> AppResult<Response> {
+    let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
+    response_from_reqwest(upstream_response).await
+}
+
+async fn forward_raw<C, S>(
+    ctx: &EmbyProxyContext<C, S>,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> AppResult<(StatusCode, HeaderMap, Bytes)> {
+    let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
+    let status = upstream_response.status();
+    let headers = upstream_response.headers().clone();
+    let body = upstream_response
+        .bytes()
+        .await
+        .map_err(|err| AppError::Dependency(format!("failed to read emby response body: {err}")))?;
+
+    Ok((status, headers, body))
+}
+
+async fn send_upstream_request<C, S>(
+    ctx: &EmbyProxyContext<C, S>,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> AppResult<reqwest::Response> {
     let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
     let mut request = ctx.client.request(method, upstream);
@@ -135,11 +233,11 @@ async fn forward<C, S>(
         request = request.header(name, value);
     }
 
-    let upstream_response =
-        request.body(body).send().await.map_err(|err| {
-            AppError::Dependency(format!("failed to proxy request to emby: {err}"))
-        })?;
-    response_from_reqwest(upstream_response).await
+    request
+        .body(body)
+        .send()
+        .await
+        .map_err(|err| AppError::Dependency(format!("failed to proxy request to emby: {err}")))
 }
 
 async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResult<Response> {
@@ -159,6 +257,22 @@ async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResul
     builder
         .body(body)
         .map_err(|err| AppError::Internal(format!("failed to build proxy response: {err}")))
+}
+
+fn build_response(status: StatusCode, headers: HeaderMap, body: Bytes) -> Response {
+    let connection_headers = connection_header_tokens(&headers);
+
+    let mut builder = Response::builder().status(status);
+    for (name, value) in headers.iter() {
+        if !should_forward_response_header(name, connection_headers.as_slice()) {
+            continue;
+        }
+        builder = builder.header(name, value);
+    }
+
+    builder
+        .body(Body::from(body))
+        .unwrap_or_else(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response())
 }
 
 fn build_upstream_url(upstream_base_url: &Url, uri: &Uri) -> AppResult<Url> {
@@ -435,6 +549,42 @@ mod tests {
         assert!(response.headers().get("connection").is_none());
         assert!(response.headers().get("x-internal").is_none());
         assert_eq!(response.text().await.unwrap(), "filtered");
+    }
+
+    #[tokio::test]
+    async fn playback_info_response_is_rewritten_for_bigbrother_strm() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/Items/7/PlaybackInfo"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaSources": [{
+                    "Id": "mediasource_42",
+                    "ItemId": "7",
+                    "Path": "http://bb.example:3100/d/movies/Inception.mkv?file_id=42",
+                    "DirectStreamUrl": "/Videos/7/stream?MediaSourceId=mediasource_42&X-Emby-Token=token",
+                    "SupportsDirectPlay": false,
+                    "SupportsTranscoding": true,
+                    "TranscodingUrl": "/Videos/7/master.m3u8"
+                }]
+            })))
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/Items/7/PlaybackInfo"))
+            .send()
+            .await
+            .unwrap();
+        let json: serde_json::Value = response.json().await.unwrap();
+
+        assert_eq!(json["MediaSources"][0]["SupportsDirectPlay"], true);
+        assert_eq!(json["MediaSources"][0]["SupportsTranscoding"], false);
+        assert_eq!(
+            json["MediaSources"][0]["DirectStreamUrl"],
+            "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
+        );
+        assert!(json["MediaSources"][0].get("TranscodingUrl").is_none());
     }
 
     async fn spawn_proxy(upstream_uri: String) -> std::net::SocketAddr {
