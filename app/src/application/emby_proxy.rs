@@ -1,7 +1,3 @@
-// These helpers are exercised by the optional Emby proxy in later wiring tasks.
-// Keep the staged domain code lint-clean until runtime integration lands.
-#![allow(dead_code)]
-
 use serde_json::Value;
 use url::Url;
 

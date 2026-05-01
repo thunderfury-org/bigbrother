@@ -89,7 +89,6 @@ impl Manager {
         &self.app_config.media_server
     }
 
-    #[allow(dead_code)]
     pub fn get_emby_proxy_config(&self) -> &EmbyProxyConfig {
         &self.app_config.emby_proxy
     }
@@ -181,7 +180,6 @@ impl MediaServerConfig {
     }
 }
 
-#[allow(dead_code)]
 impl EmbyProxyConfig {
     pub fn is_enabled(&self) -> bool {
         self.enable

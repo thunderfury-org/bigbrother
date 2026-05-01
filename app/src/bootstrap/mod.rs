@@ -49,6 +49,8 @@ pub struct ServerRuntime {
     pub bot_runtime: telegram::BotRuntime,
     pub media_server_addr: String,
     pub media_server: axum::Router,
+    pub emby_proxy_addr: Option<String>,
+    pub emby_proxy_server: Option<axum::Router>,
 }
 
 pub struct EventDeliveryRuntime {
@@ -68,6 +70,25 @@ impl AppRuntime {
         let cache = inputs.cache.clone();
         let event_bus = inputs.event_bus.clone();
         let media_server = media::new_router(media_server_context(&inputs));
+        let emby_proxy_server = inputs.emby_proxy_config.as_ref().map(|config| {
+            http::emby_proxy::new_router(
+                http::emby_proxy::EmbyProxyContext::new(
+                    config.upstream_base_url.clone(),
+                    config.api_key.clone(),
+                    config.advertise_base_url.clone(),
+                    config.strm_path_prefix.clone(),
+                    MediaDownloadUrlService::new(
+                        StringCacheStore::new(inputs.cache.clone()),
+                        Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
+                    ),
+                )
+                .expect("validated emby proxy config"),
+            )
+        });
+        let emby_proxy_addr = inputs
+            .emby_proxy_config
+            .as_ref()
+            .map(|config| config.addr.clone());
         let user_id = inputs
             .telegram_user_id
             .try_into()
@@ -107,6 +128,8 @@ impl AppRuntime {
                 ),
                 media_server_addr: inputs.media_server_addr.clone(),
                 media_server,
+                emby_proxy_addr,
+                emby_proxy_server,
             },
             event_delivery: EventDeliveryRuntime {
                 event_bus,
@@ -141,26 +164,28 @@ impl AppRuntime {
 
 impl ServerRuntime {
     async fn run(self) -> AppResult<()> {
-        let mut http_task = tokio::spawn(http::run(self.media_server_addr, self.media_server));
-        let mut bot_task = tokio::spawn(telegram::run(self.bot, self.bot_runtime));
+        let mut tasks = tokio::task::JoinSet::new();
 
-        tokio::select! {
-            http_result = &mut http_task => {
-                bot_task.abort();
-                match http_result {
-                    Ok(result) => result,
-                    Err(err) => Err(AppError::Runtime(format!("http task failed: {err}"))),
-                }
+        tasks.spawn(http::run(self.media_server_addr, self.media_server));
+        tasks.spawn(async move {
+            telegram::run(self.bot, self.bot_runtime).await;
+            Ok(())
+        });
+
+        if let (Some(addr), Some(router)) = (self.emby_proxy_addr, self.emby_proxy_server) {
+            tasks.spawn(http::run(addr, router));
+        }
+
+        match tasks.join_next().await {
+            Some(Ok(result)) => {
+                tasks.abort_all();
+                result
             }
-            bot_result = &mut bot_task => {
-                match bot_result {
-                    Ok(_) => {
-                        http_task.abort();
-                        Ok(())
-                    }
-                    Err(err) => Err(AppError::Runtime(format!("telegram task failed: {err}"))),
-                }
+            Some(Err(err)) => {
+                tasks.abort_all();
+                Err(AppError::Runtime(format!("server task failed: {err}")))
             }
+            None => Ok(()),
         }
     }
 }

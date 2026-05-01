@@ -1,7 +1,3 @@
-// This module is wired into runtime in Task 7, when the optional Emby proxy is
-// exposed from configuration. Keep the Task 4 skeleton lint-clean until then.
-#![allow(dead_code)]
-
 use std::sync::Arc;
 
 use axum::{
@@ -43,12 +39,9 @@ impl DownloadUrlResolver for MediaDownloadUrlService {
 #[derive(Clone)]
 pub(crate) struct EmbyProxyContext<R> {
     upstream_base_url: Url,
-    #[allow(dead_code)]
     api_key: Option<String>,
     client: reqwest::Client,
-    #[allow(dead_code)]
     matcher: BigbrotherStrmMatcher,
-    #[allow(dead_code)]
     resolver: Arc<R>,
 }
 
