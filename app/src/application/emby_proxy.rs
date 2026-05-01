@@ -155,6 +155,31 @@ pub fn media_source_contains_bigbrother_strm(
         .any(|value| matcher.parse(value).is_some())
 }
 
+pub fn file_id_for_media_source(
+    item_response: &Value,
+    requested_media_source_id: &str,
+    matcher: &BigbrotherStrmMatcher,
+) -> Option<i64> {
+    item_response
+        .get("Items")
+        .and_then(Value::as_array)?
+        .first()?
+        .get("MediaSources")
+        .and_then(Value::as_array)?
+        .iter()
+        .find_map(|source| {
+            let id = source.get("Id").and_then(Value::as_str)?;
+            if !media_source_ids_match(id, requested_media_source_id) {
+                return None;
+            }
+
+            ["Path", "DirectStreamUrl", "DirectPlayUrl"]
+                .iter()
+                .filter_map(|key| source.get(*key).and_then(Value::as_str))
+                .find_map(|value| matcher.parse(value).map(|parsed| parsed.file_id))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +343,35 @@ mod tests {
 
         assert!(!changed);
         assert_eq!(body, original);
+    }
+
+    #[test]
+    fn extracts_file_id_from_matching_media_source() {
+        let matcher = matcher();
+        let item = serde_json::json!({
+            "Items": [{
+                "MediaSources": [{
+                    "Id": "mediasource_42",
+                    "Path": "http://bb.example:3100/d/movie.mkv?file_id=42"
+                }]
+            }]
+        });
+
+        assert_eq!(file_id_for_media_source(&item, "42", &matcher), Some(42));
+    }
+
+    #[test]
+    fn ignores_non_matching_media_source() {
+        let matcher = matcher();
+        let item = serde_json::json!({
+            "Items": [{
+                "MediaSources": [{
+                    "Id": "43",
+                    "Path": "http://bb.example:3100/d/movie.mkv?file_id=42"
+                }]
+            }]
+        });
+
+        assert_eq!(file_id_for_media_source(&item, "42", &matcher), None);
     }
 }

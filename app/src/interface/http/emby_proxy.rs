@@ -12,17 +12,36 @@ use axum::{
     response::{IntoResponse, Response},
     routing::any,
 };
+use futures::future::BoxFuture;
 use reqwest::Url;
 
 use crate::{
     application::{
-        emby_proxy::BigbrotherStrmMatcher, resolve_download_url::ResolveDownloadUrlService,
+        emby_proxy::BigbrotherStrmMatcher, resolve_download_url::ResolveDownloadUrlResult,
     },
+    bootstrap::services::MediaDownloadUrlService,
     error::{AppError, AppResult},
 };
 
+pub(crate) trait DownloadUrlResolver: Clone + Send + Sync + 'static {
+    fn resolve_download_url(
+        &self,
+        file_id: i64,
+    ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>>;
+}
+
+impl DownloadUrlResolver for MediaDownloadUrlService {
+    fn resolve_download_url(
+        &self,
+        file_id: i64,
+    ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>> {
+        let resolver = self.clone();
+        Box::pin(async move { resolver.resolve(file_id).await })
+    }
+}
+
 #[derive(Clone)]
-pub(crate) struct EmbyProxyContext<C, S> {
+pub(crate) struct EmbyProxyContext<R> {
     upstream_base_url: Url,
     #[allow(dead_code)]
     api_key: Option<String>,
@@ -30,16 +49,19 @@ pub(crate) struct EmbyProxyContext<C, S> {
     #[allow(dead_code)]
     matcher: BigbrotherStrmMatcher,
     #[allow(dead_code)]
-    resolver: Arc<ResolveDownloadUrlService<C, S>>,
+    resolver: Arc<R>,
 }
 
-impl<C, S> EmbyProxyContext<C, S> {
+impl<R> EmbyProxyContext<R>
+where
+    R: DownloadUrlResolver,
+{
     pub(crate) fn new(
         upstream_base_url: String,
         api_key: Option<String>,
         advertise_base_url: String,
         strm_path_prefix: String,
-        resolver: ResolveDownloadUrlService<C, S>,
+        resolver: R,
     ) -> AppResult<Self> {
         let upstream_base_url =
             Url::parse(upstream_base_url.trim_end_matches('/')).map_err(|err| {
@@ -65,52 +87,56 @@ impl<C, S> EmbyProxyContext<C, S> {
     }
 }
 
-pub(crate) fn new_router<C, S>(ctx: EmbyProxyContext<C, S>) -> Router
+pub(crate) fn new_router<R>(ctx: EmbyProxyContext<R>) -> Router
 where
-    C: crate::application::ports::DownloadUrlCache + Clone + Send + Sync + 'static,
-    S: crate::application::ports::DownloadUrlSource + Clone + Send + Sync + 'static,
+    R: DownloadUrlResolver,
 {
     Router::new()
-        .route("/{*path}", any(proxy_handler::<C, S>))
-        .route("/", any(proxy_root_handler::<C, S>))
+        .route("/{*path}", any(proxy_handler::<R>))
+        .route("/", any(proxy_root_handler::<R>))
         .with_state(ctx)
 }
 
-async fn proxy_root_handler<C, S>(
-    State(ctx): State<EmbyProxyContext<C, S>>,
+async fn proxy_root_handler<R>(
+    State(ctx): State<EmbyProxyContext<R>>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
 ) -> Response
 where
-    C: crate::application::ports::DownloadUrlCache + Clone + Send + Sync + 'static,
-    S: crate::application::ports::DownloadUrlSource + Clone + Send + Sync + 'static,
+    R: DownloadUrlResolver,
 {
     proxy_request(&ctx, method, headers, uri, body).await
 }
 
-async fn proxy_handler<C, S>(
-    State(ctx): State<EmbyProxyContext<C, S>>,
+async fn proxy_handler<R>(
+    State(ctx): State<EmbyProxyContext<R>>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
 ) -> Response
 where
-    C: crate::application::ports::DownloadUrlCache + Clone + Send + Sync + 'static,
-    S: crate::application::ports::DownloadUrlSource + Clone + Send + Sync + 'static,
+    R: DownloadUrlResolver,
 {
     proxy_request(&ctx, method, headers, uri, body).await
 }
 
-async fn proxy_request<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+async fn proxy_request<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response {
+) -> Response
+where
+    R: DownloadUrlResolver,
+{
+    if is_video_stream_route(&method, uri.path()) {
+        return proxy_video_stream(ctx, method, headers, uri, body).await;
+    }
+
     if is_playback_info_route(&method, uri.path()) {
         return proxy_playback_info(ctx, method, headers, uri, body).await;
     }
@@ -118,13 +144,16 @@ async fn proxy_request<C, S>(
     proxy_request_fallback(ctx, method, headers, uri, body).await
 }
 
-async fn proxy_request_fallback<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+async fn proxy_request_fallback<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response {
+) -> Response
+where
+    R: DownloadUrlResolver,
+{
     match forward(ctx, method, headers, uri, body).await {
         Ok(response) => response,
         Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
@@ -140,13 +169,112 @@ fn playback_item_id(path: &str) -> Option<&str> {
         .and_then(|rest| rest.strip_suffix("/PlaybackInfo"))
 }
 
-async fn proxy_playback_info<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+fn is_video_stream_route(method: &Method, path: &str) -> bool {
+    if *method != Method::GET {
+        return false;
+    }
+
+    let Some(rest) = path.strip_prefix("/Videos/") else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    let Some(_item_id) = parts.next() else {
+        return false;
+    };
+    matches!(parts.next(), Some("stream" | "original"))
+}
+
+fn query_param(uri: &Uri, key: &str) -> Option<String> {
+    uri.query()?.split('&').find_map(|pair| {
+        let (left, right) = pair.split_once('=')?;
+        left.eq_ignore_ascii_case(key).then(|| right.to_string())
+    })
+}
+
+async fn proxy_video_stream<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response {
+) -> Response
+where
+    R: DownloadUrlResolver,
+{
+    let Some(media_source_id) = query_param(&uri, "MediaSourceId") else {
+        return proxy_request_fallback(ctx, method, headers, uri, body).await;
+    };
+
+    match fetch_item_media_sources(ctx, media_source_id.as_str()).await {
+        Ok(item_json) => {
+            if let Some(file_id) = crate::application::emby_proxy::file_id_for_media_source(
+                &item_json,
+                media_source_id.as_str(),
+                &ctx.matcher,
+            ) {
+                return match ctx.resolver.resolve_download_url(file_id).await {
+                    Ok(ResolveDownloadUrlResult::Redirect(url)) => {
+                        (StatusCode::FOUND, [(axum::http::header::LOCATION, url)]).into_response()
+                    }
+                    Ok(ResolveDownloadUrlResult::Unauthorized) => {
+                        (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+                    }
+                    Ok(ResolveDownloadUrlResult::NotFound) => {
+                        (StatusCode::NOT_FOUND, "File not found").into_response()
+                    }
+                    Err(err) => crate::interface::http::media::map_app_error_to_response(err),
+                };
+            }
+
+            proxy_request_fallback(ctx, method, headers, uri, body).await
+        }
+        Err(_) => proxy_request_fallback(ctx, method, headers, uri, body).await,
+    }
+}
+
+async fn fetch_item_media_sources<R>(
+    ctx: &EmbyProxyContext<R>,
+    media_source_id: &str,
+) -> AppResult<serde_json::Value>
+where
+    R: DownloadUrlResolver,
+{
+    let item_id = media_source_id
+        .strip_prefix("mediasource_")
+        .unwrap_or(media_source_id);
+    let mut url = ctx.upstream_base_url.clone();
+    url.set_path("/Items");
+    url.set_query(None);
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("Ids", item_id);
+        query.append_pair("Limit", "1");
+        query.append_pair("Fields", "Path,MediaSources");
+        if let Some(api_key) = ctx.api_key.as_deref() {
+            query.append_pair("api_key", api_key);
+        }
+    }
+
+    ctx.client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| AppError::Dependency(format!("failed to query emby item: {err}")))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| AppError::Dependency(format!("failed to parse emby item response: {err}")))
+}
+
+async fn proxy_playback_info<R>(
+    ctx: &EmbyProxyContext<R>,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> Response
+where
+    R: DownloadUrlResolver,
+{
     match forward_raw(ctx, method, headers, uri.clone(), body).await {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -186,24 +314,30 @@ async fn proxy_playback_info<C, S>(
     }
 }
 
-async fn forward<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+async fn forward<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<Response> {
+) -> AppResult<Response>
+where
+    R: DownloadUrlResolver,
+{
     let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
     response_from_reqwest(upstream_response).await
 }
 
-async fn forward_raw<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+async fn forward_raw<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<(StatusCode, HeaderMap, Bytes)> {
+) -> AppResult<(StatusCode, HeaderMap, Bytes)>
+where
+    R: DownloadUrlResolver,
+{
     let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
@@ -215,13 +349,16 @@ async fn forward_raw<C, S>(
     Ok((status, headers, body))
 }
 
-async fn send_upstream_request<C, S>(
-    ctx: &EmbyProxyContext<C, S>,
+async fn send_upstream_request<R>(
+    ctx: &EmbyProxyContext<R>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<reqwest::Response> {
+) -> AppResult<reqwest::Response>
+where
+    R: DownloadUrlResolver,
+{
     let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
     let mut request = ctx.client.request(method, upstream);
@@ -587,10 +724,54 @@ mod tests {
         assert!(json["MediaSources"][0].get("TranscodingUrl").is_none());
     }
 
+    #[tokio::test]
+    async fn video_stream_redirects_for_bigbrother_strm() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/Items"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{
+                    "MediaSources": [{
+                        "Id": "mediasource_42",
+                        "Path": "http://bb.example:3100/d/movie.mkv?file_id=42"
+                    }]
+                }]
+            })))
+            .mount(&upstream)
+            .await;
+
+        let addr =
+            spawn_proxy_with_api_key(upstream.uri(), Some("server-api-key".to_string())).await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!(
+                "http://{addr}/Videos/7/stream?MediaSourceId=mediasource_42"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get("location").unwrap(),
+            "https://download.example/video.mkv"
+        );
+    }
+
     async fn spawn_proxy(upstream_uri: String) -> std::net::SocketAddr {
+        spawn_proxy_with_api_key(upstream_uri, None).await
+    }
+
+    async fn spawn_proxy_with_api_key(
+        upstream_uri: String,
+        api_key: Option<String>,
+    ) -> std::net::SocketAddr {
         let ctx = EmbyProxyContext::new(
             upstream_uri,
-            None,
+            api_key,
             "http://bb.example:3100".to_string(),
             "/d".to_string(),
             fake_resolver(),
@@ -613,39 +794,23 @@ mod tests {
         }
     }
 
-    use crate::{
-        application::ports::{DownloadUrlCache, DownloadUrlResult, DownloadUrlSource},
-        error::AppResult,
-    };
-    use std::time::Duration;
-
     #[derive(Clone)]
-    struct FakeCache;
+    struct FakeResolver;
 
-    impl DownloadUrlCache for FakeCache {
-        async fn get_download_url(&self, _key: &str) -> AppResult<Option<String>> {
-            Ok(None)
-        }
-
-        async fn set_download_url(&self, _key: &str, _url: &str, _ttl: Duration) -> AppResult<()> {
-            Ok(())
+    impl DownloadUrlResolver for FakeResolver {
+        fn resolve_download_url(
+            &self,
+            _file_id: i64,
+        ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>> {
+            Box::pin(async {
+                Ok(ResolveDownloadUrlResult::Redirect(
+                    "https://download.example/video.mkv".to_string(),
+                ))
+            })
         }
     }
 
-    #[derive(Clone)]
-    struct FakeSource;
-
-    impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
-            Ok("https://download.example/video.mkv".to_string())
-        }
-    }
-
-    fn fake_resolver()
-    -> crate::application::resolve_download_url::ResolveDownloadUrlService<FakeCache, FakeSource>
-    {
-        crate::application::resolve_download_url::ResolveDownloadUrlService::new(
-            FakeCache, FakeSource,
-        )
+    fn fake_resolver() -> FakeResolver {
+        FakeResolver
     }
 }
