@@ -163,18 +163,14 @@ fn playback_item_id(path: &str) -> Option<&str> {
 }
 
 fn is_video_stream_route(method: &Method, path: &str) -> bool {
-    if *method != Method::GET {
-        return false;
-    }
+    *method == Method::GET && video_stream_item_id(path).is_some()
+}
 
-    let Some(rest) = path.strip_prefix("/Videos/") else {
-        return false;
-    };
+fn video_stream_item_id(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("/Videos/")?;
     let mut parts = rest.split('/');
-    let Some(_item_id) = parts.next() else {
-        return false;
-    };
-    matches!(parts.next(), Some("stream" | "original"))
+    let item_id = parts.next()?;
+    matches!(parts.next(), Some("stream" | "original")).then_some(item_id)
 }
 
 fn query_param(uri: &Uri, key: &str) -> Option<String> {
@@ -182,6 +178,19 @@ fn query_param(uri: &Uri, key: &str) -> Option<String> {
         let (left, right) = pair.split_once('=')?;
         left.eq_ignore_ascii_case(key).then(|| right.to_string())
     })
+}
+
+fn request_emby_auth_query(uri: &Uri, headers: &HeaderMap) -> Option<(String, String)> {
+    if let Some(value) = query_param(uri, "api_key") {
+        return Some(("api_key".to_string(), value));
+    }
+    if let Some(value) = query_param(uri, "X-Emby-Token") {
+        return Some(("X-Emby-Token".to_string(), value));
+    }
+    headers
+        .get("X-Emby-Token")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| ("X-Emby-Token".to_string(), value.to_string()))
 }
 
 async fn proxy_video_stream<R>(
@@ -197,8 +206,20 @@ where
     let Some(media_source_id) = query_param(&uri, "MediaSourceId") else {
         return proxy_request_fallback(ctx, method, headers, uri, body).await;
     };
+    let Some(item_id) = video_stream_item_id(uri.path()) else {
+        return proxy_request_fallback(ctx, method, headers, uri, body).await;
+    };
+    let request_auth_query = request_emby_auth_query(&uri, &headers);
 
-    match fetch_item_media_sources(ctx, media_source_id.as_str()).await {
+    match fetch_item_media_sources(
+        ctx,
+        item_id,
+        request_auth_query
+            .as_ref()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    )
+    .await
+    {
         Ok(item_json) => {
             if let Some(file_id) = crate::application::emby_proxy::file_id_for_media_source(
                 &item_json,
@@ -227,14 +248,12 @@ where
 
 async fn fetch_item_media_sources<R>(
     ctx: &EmbyProxyContext<R>,
-    media_source_id: &str,
+    item_id: &str,
+    request_auth_query: Option<(&str, &str)>,
 ) -> AppResult<serde_json::Value>
 where
     R: DownloadUrlResolver,
 {
-    let item_id = media_source_id
-        .strip_prefix("mediasource_")
-        .unwrap_or(media_source_id);
     let mut url = ctx.upstream_base_url.clone();
     url.set_path("/Items");
     url.set_query(None);
@@ -245,6 +264,8 @@ where
         query.append_pair("Fields", "Path,MediaSources");
         if let Some(api_key) = ctx.api_key.as_deref() {
             query.append_pair("api_key", api_key);
+        } else if let Some((key, value)) = request_auth_query {
+            query.append_pair(key, value);
         }
     }
 
@@ -722,6 +743,7 @@ mod tests {
         let upstream = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/Items"))
+            .and(query_param("Ids", "7"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "Items": [{
                     "MediaSources": [{
@@ -742,6 +764,44 @@ mod tests {
         let response = client
             .get(format!(
                 "http://{addr}/Videos/7/stream?MediaSourceId=mediasource_42"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get("location").unwrap(),
+            "https://download.example/video.mkv"
+        );
+    }
+
+    #[tokio::test]
+    async fn video_stream_uses_request_token_for_item_lookup_when_server_key_is_absent() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/Items"))
+            .and(query_param("Ids", "7"))
+            .and(query_param("X-Emby-Token", "user-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{
+                    "MediaSources": [{
+                        "Id": "mediasource_42",
+                        "Path": "http://bb.example:3100/d/movie.mkv?file_id=42"
+                    }]
+                }]
+            })))
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let response = client
+            .get(format!(
+                "http://{addr}/Videos/7/stream?MediaSourceId=mediasource_42&X-Emby-Token=user-token"
             ))
             .send()
             .await
