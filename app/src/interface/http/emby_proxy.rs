@@ -10,6 +10,7 @@ use axum::{
 };
 use futures::future::BoxFuture;
 use reqwest::Url;
+use tracing::error;
 
 use crate::{
     application::{
@@ -100,7 +101,7 @@ async fn proxy_root_handler<R>(
 where
     R: DownloadUrlResolver,
 {
-    proxy_request(&ctx, method, headers, uri, body).await
+    proxy_request_fallback(&ctx, method, headers, uri, body).await
 }
 
 async fn proxy_handler<R>(
@@ -158,7 +159,7 @@ fn is_playback_info_route(method: &Method, path: &str) -> bool {
 }
 
 fn playback_item_id(path: &str) -> Option<&str> {
-    path.strip_prefix("/Items/")
+    path.strip_prefix("/emby/Items/")
         .and_then(|rest| rest.strip_suffix("/PlaybackInfo"))
 }
 
@@ -167,7 +168,7 @@ fn is_video_stream_route(method: &Method, path: &str) -> bool {
 }
 
 fn video_stream_item_id(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix("/Videos/")?;
+    let rest = path.strip_prefix("/emby/Videos/")?;
     let mut parts = rest.split('/');
     let item_id = parts.next()?;
     matches!(parts.next(), Some("stream" | "original")).then_some(item_id)
@@ -300,6 +301,10 @@ where
             };
 
             let Ok(mut json) = serde_json::from_slice::<serde_json::Value>(&response_body) else {
+                error!(
+                    "serde json failed for playback info for item_id: {}",
+                    item_id
+                );
                 return build_response(status, response_headers, response_body);
             };
 
@@ -706,7 +711,7 @@ mod tests {
     async fn playback_info_response_is_rewritten_for_bigbrother_strm() {
         let upstream = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/Items/7/PlaybackInfo"))
+            .and(path("/emby/Items/7/PlaybackInfo"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "MediaSources": [{
                     "Id": "mediasource_42",
@@ -723,7 +728,7 @@ mod tests {
 
         let addr = spawn_proxy(upstream.uri()).await;
         let response = reqwest::Client::new()
-            .post(format!("http://{addr}/Items/7/PlaybackInfo"))
+            .post(format!("http://{addr}/emby/Items/7/PlaybackInfo"))
             .send()
             .await
             .unwrap();
@@ -763,7 +768,7 @@ mod tests {
             .unwrap();
         let response = client
             .get(format!(
-                "http://{addr}/Videos/7/stream?MediaSourceId=mediasource_42"
+                "http://{addr}/emby/Videos/7/stream?MediaSourceId=mediasource_42"
             ))
             .send()
             .await
@@ -801,7 +806,7 @@ mod tests {
             .unwrap();
         let response = client
             .get(format!(
-                "http://{addr}/Videos/7/stream?MediaSourceId=mediasource_42&X-Emby-Token=user-token"
+                "http://{addr}/emby/Videos/7/stream?MediaSourceId=mediasource_42&X-Emby-Token=user-token"
             ))
             .send()
             .await
