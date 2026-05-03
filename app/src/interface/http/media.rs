@@ -90,7 +90,7 @@ where
     }
 }
 
-fn map_app_error_to_response(error: AppError) -> Response {
+pub(crate) fn map_app_error_to_response(error: AppError) -> Response {
     match error.kind() {
         AppErrorKind::InvalidParameter => {
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()

@@ -1,4 +1,5 @@
 pub mod delete_media;
+pub mod emby_proxy;
 pub mod import;
 pub mod import_media;
 pub mod import_ports;
