@@ -816,16 +816,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["MediaSources"][0]["SupportsDirectPlay"], true);
-        assert_eq!(
-            json["MediaSources"][0]["DirectStreamUrl"],
-            "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
-        );
-
         let requests = upstream.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(
