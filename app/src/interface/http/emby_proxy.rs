@@ -41,7 +41,6 @@ pub(crate) struct EmbyProxyContext<R> {
     upstream_base_url: Url,
     api_key: Option<String>,
     client: reqwest::Client,
-    decoded_client: reqwest::Client,
     matcher: BigbrotherStrmMatcher,
     resolver: Arc<R>,
 }
@@ -71,18 +70,11 @@ where
             .map_err(|err| {
                 AppError::Internal(format!("failed to build emby proxy client: {err}"))
             })?;
-        let decoded_client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|err| {
-                AppError::Internal(format!("failed to build emby playback info client: {err}"))
-            })?;
 
         Ok(Self {
             upstream_base_url,
             api_key,
             client,
-            decoded_client,
             matcher: BigbrotherStrmMatcher::new(advertise_base_url, strm_path_prefix),
             resolver: Arc::new(resolver),
         })
@@ -300,7 +292,7 @@ where
 {
     match forward_raw_with_client(
         ctx,
-        &ctx.decoded_client,
+        &ctx.client,
         method,
         headers,
         uri.clone(),
