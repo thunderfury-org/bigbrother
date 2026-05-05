@@ -41,6 +41,7 @@ pub(crate) struct EmbyProxyContext<R> {
     upstream_base_url: Url,
     api_key: Option<String>,
     client: reqwest::Client,
+    decoded_client: reqwest::Client,
     matcher: BigbrotherStrmMatcher,
     resolver: Arc<R>,
 }
@@ -70,11 +71,18 @@ where
             .map_err(|err| {
                 AppError::Internal(format!("failed to build emby proxy client: {err}"))
             })?;
+        let decoded_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|err| {
+                AppError::Internal(format!("failed to build emby playback info client: {err}"))
+            })?;
 
         Ok(Self {
             upstream_base_url,
             api_key,
             client,
+            decoded_client,
             matcher: BigbrotherStrmMatcher::new(advertise_base_url, strm_path_prefix),
             resolver: Arc::new(resolver),
         })
@@ -291,7 +299,9 @@ where
     R: DownloadUrlResolver,
 {
     force_identity_encoding(&mut headers);
-    match forward_raw(ctx, method, headers, uri.clone(), body).await {
+    match forward_raw_with_client(ctx, &ctx.decoded_client, method, headers, uri.clone(), body)
+        .await
+    {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
                 return build_response(status, response_headers, response_body);
@@ -352,8 +362,9 @@ where
     response_from_reqwest(upstream_response).await
 }
 
-async fn forward_raw<R>(
+async fn forward_raw_with_client<R>(
     ctx: &EmbyProxyContext<R>,
+    client: &reqwest::Client,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
@@ -362,7 +373,8 @@ async fn forward_raw<R>(
 where
     R: DownloadUrlResolver,
 {
-    let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
+    let upstream_response =
+        send_upstream_request_with_client(ctx, client, method, headers, uri, body).await?;
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
     let body = upstream_response
@@ -383,9 +395,23 @@ async fn send_upstream_request<R>(
 where
     R: DownloadUrlResolver,
 {
+    send_upstream_request_with_client(ctx, &ctx.client, method, headers, uri, body).await
+}
+
+async fn send_upstream_request_with_client<R>(
+    ctx: &EmbyProxyContext<R>,
+    client: &reqwest::Client,
+    method: Method,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> AppResult<reqwest::Response>
+where
+    R: DownloadUrlResolver,
+{
     let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
-    let mut request = ctx.client.request(method, upstream);
+    let mut request = client.request(method, upstream);
     let connection_headers = connection_header_tokens(&headers);
     for (name, value) in headers.iter() {
         if !should_forward_request_header(name, connection_headers.as_slice()) {
