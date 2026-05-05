@@ -4,7 +4,7 @@ use axum::{
     Router,
     body::{Body, Bytes},
     extract::State,
-    http::{HeaderMap, HeaderName, Method, StatusCode, Uri},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::any,
 };
@@ -290,6 +290,10 @@ where
     R: DownloadUrlResolver,
 {
     headers.remove(axum::http::header::ACCEPT_ENCODING);
+    headers.insert(
+        axum::http::header::ACCEPT_ENCODING,
+        HeaderValue::from_static("identity"),
+    );
     match forward_raw(ctx, method, headers, uri.clone(), body).await {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -744,7 +748,7 @@ mod tests {
         let upstream = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/Items/7/PlaybackInfo"))
-            .and(HeaderAbsent("accept-encoding"))
+            .and(header("accept-encoding", "identity"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "MediaSources": [{
                     "Id": "mediasource_42",
