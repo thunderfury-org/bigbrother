@@ -282,13 +282,14 @@ where
 async fn proxy_playback_info<R>(
     ctx: &EmbyProxyContext<R>,
     method: Method,
-    headers: HeaderMap,
+    mut headers: HeaderMap,
     uri: Uri,
     body: Bytes,
 ) -> Response
 where
     R: DownloadUrlResolver,
 {
+    headers.remove(axum::http::header::ACCEPT_ENCODING);
     match forward_raw(ctx, method, headers, uri.clone(), body).await {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -736,6 +737,43 @@ mod tests {
             "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
         );
         assert!(json["MediaSources"][0].get("TranscodingUrl").is_none());
+    }
+
+    #[tokio::test]
+    async fn playback_info_rewrite_does_not_forward_accept_encoding() {
+        let upstream = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/Items/7/PlaybackInfo"))
+            .and(HeaderAbsent("accept-encoding"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaSources": [{
+                    "Id": "mediasource_42",
+                    "ItemId": "7",
+                    "Path": "http://bb.example:3100/d/movies/Inception.mkv?file_id=42",
+                    "DirectStreamUrl": "/Videos/7/stream?MediaSourceId=mediasource_42&X-Emby-Token=token",
+                    "SupportsDirectPlay": false,
+                    "SupportsTranscoding": true,
+                    "TranscodingUrl": "/Videos/7/master.m3u8"
+                }]
+            })))
+            .mount(&upstream)
+            .await;
+
+        let addr = spawn_proxy(upstream.uri()).await;
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/Items/7/PlaybackInfo"))
+            .header("accept-encoding", "gzip")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["MediaSources"][0]["SupportsDirectPlay"], true);
+        assert_eq!(
+            json["MediaSources"][0]["DirectStreamUrl"],
+            "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
+        );
     }
 
     #[tokio::test]

@@ -52,6 +52,58 @@ impl InflightResolve {
         *self.result.lock().await = Some(result);
         self.notify.notify_waiters();
     }
+
+    async fn cancel_if_pending(&self) {
+        let mut result = self.result.lock().await;
+        if result.is_none() {
+            *result = Some(Err(AppError::Runtime(
+                "download url resolve cancelled".to_string(),
+            )));
+            self.notify.notify_waiters();
+        }
+    }
+}
+
+struct InflightOwnerGuard {
+    file_id: i64,
+    inflight: Arc<Mutex<HashMap<i64, Arc<InflightResolve>>>>,
+    entry: Arc<InflightResolve>,
+    completed: bool,
+}
+
+impl InflightOwnerGuard {
+    fn new(
+        file_id: i64,
+        inflight: Arc<Mutex<HashMap<i64, Arc<InflightResolve>>>>,
+        entry: Arc<InflightResolve>,
+    ) -> Self {
+        Self {
+            file_id,
+            inflight,
+            entry,
+            completed: false,
+        }
+    }
+
+    fn mark_completed(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl Drop for InflightOwnerGuard {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+
+        let file_id = self.file_id;
+        let inflight = self.inflight.clone();
+        let entry = self.entry.clone();
+        tokio::spawn(async move {
+            inflight.lock().await.remove(&file_id);
+            entry.cancel_if_pending().await;
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -99,6 +151,8 @@ where
             return entry.wait().await;
         }
 
+        let mut owner_guard =
+            InflightOwnerGuard::new(file_id, self.inflight.clone(), entry.clone());
         let started_at = Instant::now();
         let result = self.resolve_uncached(file_id, &cache_key).await;
         match &result {
@@ -129,6 +183,7 @@ where
         }
         entry.complete(result.clone()).await;
         self.inflight.lock().await.remove(&file_id);
+        owner_guard.mark_completed();
         result
     }
 
@@ -266,6 +321,28 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Default)]
+    struct PendingThenSuccessSource {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl PendingThenSuccessSource {
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl DownloadUrlSource for PendingThenSuccessSource {
+        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            if call == 1 {
+                std::future::pending::<()>().await;
+            }
+
+            Ok("https://remote/retry".to_string())
+        }
+    }
+
     #[tokio::test]
     async fn resolve_returns_cached_url() {
         let cache = FakeCache::with_download_url(1, "https://cached");
@@ -389,6 +466,36 @@ mod tests {
 
         let retry = service.resolve(1).await.unwrap_err();
         assert!(matches!(retry, AppError::Dependency(_)));
+        assert_eq!(source.calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn resolve_cleans_inflight_after_owner_cancellation() {
+        let source = PendingThenSuccessSource::default();
+        let service = Arc::new(ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            source.clone(),
+        ));
+
+        let owner = {
+            let service = service.clone();
+            tokio::spawn(async move { service.resolve(1).await })
+        };
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        owner.abort();
+        let _ = owner.await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        let result = tokio::time::timeout(Duration::from_millis(200), service.resolve(1))
+            .await
+            .expect("retry should not wait on stale in-flight entry")
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            ResolveDownloadUrlResult::Redirect(url) if url == "https://remote/retry"
+        ));
         assert_eq!(source.calls(), 2);
     }
 }

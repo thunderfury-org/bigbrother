@@ -70,8 +70,10 @@ impl AppRuntime {
         let cache = inputs.cache.clone();
         let event_bus = inputs.event_bus.clone();
         let media_server = media::new_router(media_server_context(&inputs));
-        let emby_proxy_server = inputs.emby_proxy_config.as_ref().map(|config| {
-            http::emby_proxy::new_router(
+        let emby_proxy_server = inputs
+            .emby_proxy_config
+            .as_ref()
+            .map(|config| {
                 http::emby_proxy::EmbyProxyContext::new(
                     config.upstream_base_url.clone(),
                     config.api_key.clone(),
@@ -82,9 +84,9 @@ impl AppRuntime {
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
                     ),
                 )
-                .expect("validated emby proxy config"),
-            )
-        });
+                .map(http::emby_proxy::new_router)
+            })
+            .transpose()?;
         let emby_proxy_addr = inputs
             .emby_proxy_config
             .as_ref()
@@ -237,5 +239,51 @@ impl CacheCleanupRuntime {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+    use crate::error::AppError;
+
+    fn unique_temp_dir() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("bigbrother-runtime-{suffix}"))
+    }
+
+    #[tokio::test]
+    async fn from_app_returns_error_for_invalid_emby_proxy_upstream_url() {
+        let data_dir = unique_temp_dir();
+        let config_dir = data_dir.join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("config.yaml"),
+            r#"
+emby_proxy:
+  enable: true
+  upstream_base_url: http://
+"#,
+        )
+        .unwrap();
+
+        let app = AppContext::new(data_dir.to_str().unwrap()).await.unwrap();
+        let result = AppRuntime::from_app(app);
+
+        assert!(matches!(
+            result,
+            Err(AppError::InvalidParameter(message))
+                if message.contains("invalid emby upstream url")
+        ));
+
+        let _ = fs::remove_dir_all(data_dir);
     }
 }
