@@ -289,11 +289,7 @@ async fn proxy_playback_info<R>(
 where
     R: DownloadUrlResolver,
 {
-    headers.remove(axum::http::header::ACCEPT_ENCODING);
-    headers.insert(
-        axum::http::header::ACCEPT_ENCODING,
-        HeaderValue::from_static("identity"),
-    );
+    force_identity_encoding(&mut headers);
     match forward_raw(ctx, method, headers, uri.clone(), body).await {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -331,6 +327,14 @@ where
         }
         Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
     }
+}
+
+fn force_identity_encoding(headers: &mut HeaderMap) {
+    headers.remove(axum::http::header::ACCEPT_ENCODING);
+    headers.insert(
+        axum::http::header::ACCEPT_ENCODING,
+        HeaderValue::from_static("identity"),
+    );
 }
 
 async fn forward<R>(
@@ -748,7 +752,6 @@ mod tests {
         let upstream = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/Items/7/PlaybackInfo"))
-            .and(header("accept-encoding", "identity"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "MediaSources": [{
                     "Id": "mediasource_42",
@@ -777,6 +780,22 @@ mod tests {
         assert_eq!(
             json["MediaSources"][0]["DirectStreamUrl"],
             "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
+        );
+    }
+
+    #[test]
+    fn playback_info_headers_force_identity_encoding() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::ACCEPT_ENCODING,
+            HeaderValue::from_static("gzip"),
+        );
+
+        force_identity_encoding(&mut headers);
+
+        assert_eq!(
+            headers.get(axum::http::header::ACCEPT_ENCODING).unwrap(),
+            "identity"
         );
     }
 
