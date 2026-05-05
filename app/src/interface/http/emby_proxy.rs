@@ -522,9 +522,10 @@ fn connection_header_tokens(headers: &HeaderMap) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
     use wiremock::{
-        Match, Mock, MockServer, Request, ResponseTemplate,
+        Match, Mock, MockServer, Request as WiremockRequest, ResponseTemplate,
         matchers::{body_string, header, method, path, query_param},
     };
 
@@ -793,20 +794,43 @@ mod tests {
             .mount(&upstream)
             .await;
 
-        let addr = spawn_proxy(upstream.uri()).await;
-        let response = reqwest::Client::new()
-            .post(format!("http://{addr}/Items/7/PlaybackInfo"))
-            .header("accept-encoding", "gzip")
-            .send()
+        let ctx = EmbyProxyContext::new(
+            upstream.uri(),
+            None,
+            "http://bb.example:3100".to_string(),
+            "/d".to_string(),
+            fake_resolver(),
+        )
+        .unwrap();
+        let app = new_router(ctx);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/Items/7/PlaybackInfo")
+                    .header(axum::http::header::ACCEPT_ENCODING, "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        let json: serde_json::Value = response.json().await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["MediaSources"][0]["SupportsDirectPlay"], true);
         assert_eq!(
             json["MediaSources"][0]["DirectStreamUrl"],
             "/Videos/7/stream?MediaSourceId=mediasource_42&Static=true&X-Emby-Token=token"
+        );
+
+        let requests = upstream.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].headers.get("accept-encoding").unwrap(),
+            "identity"
         );
     }
 
@@ -930,7 +954,7 @@ mod tests {
     struct HeaderAbsent(&'static str);
 
     impl Match for HeaderAbsent {
-        fn matches(&self, request: &Request) -> bool {
+        fn matches(&self, request: &WiremockRequest) -> bool {
             !request.headers.contains_key(self.0)
         }
     }
