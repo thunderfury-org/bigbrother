@@ -291,16 +291,23 @@ where
 async fn proxy_playback_info<R>(
     ctx: &EmbyProxyContext<R>,
     method: Method,
-    mut headers: HeaderMap,
+    headers: HeaderMap,
     uri: Uri,
     body: Bytes,
 ) -> Response
 where
     R: DownloadUrlResolver,
 {
-    force_identity_encoding(&mut headers);
-    match forward_raw_with_client(ctx, &ctx.decoded_client, method, headers, uri.clone(), body)
-        .await
+    match forward_raw_with_client(
+        ctx,
+        &ctx.decoded_client,
+        method,
+        headers,
+        uri.clone(),
+        body,
+        Some(HeaderValue::from_static("identity")),
+    )
+    .await
     {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -340,14 +347,6 @@ where
     }
 }
 
-fn force_identity_encoding(headers: &mut HeaderMap) {
-    headers.remove(axum::http::header::ACCEPT_ENCODING);
-    headers.insert(
-        axum::http::header::ACCEPT_ENCODING,
-        HeaderValue::from_static("identity"),
-    );
-}
-
 async fn forward<R>(
     ctx: &EmbyProxyContext<R>,
     method: Method,
@@ -369,12 +368,21 @@ async fn forward_raw_with_client<R>(
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
+    accept_encoding_override: Option<HeaderValue>,
 ) -> AppResult<(StatusCode, HeaderMap, Bytes)>
 where
     R: DownloadUrlResolver,
 {
-    let upstream_response =
-        send_upstream_request_with_client(ctx, client, method, headers, uri, body).await?;
+    let upstream_response = send_upstream_request_with_client(
+        ctx,
+        client,
+        method,
+        headers,
+        uri,
+        body,
+        accept_encoding_override,
+    )
+    .await?;
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
     let body = upstream_response
@@ -395,7 +403,7 @@ async fn send_upstream_request<R>(
 where
     R: DownloadUrlResolver,
 {
-    send_upstream_request_with_client(ctx, &ctx.client, method, headers, uri, body).await
+    send_upstream_request_with_client(ctx, &ctx.client, method, headers, uri, body, None).await
 }
 
 async fn send_upstream_request_with_client<R>(
@@ -405,6 +413,7 @@ async fn send_upstream_request_with_client<R>(
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
+    accept_encoding_override: Option<HeaderValue>,
 ) -> AppResult<reqwest::Response>
 where
     R: DownloadUrlResolver,
@@ -414,10 +423,16 @@ where
     let mut request = client.request(method, upstream);
     let connection_headers = connection_header_tokens(&headers);
     for (name, value) in headers.iter() {
+        if accept_encoding_override.is_some() && *name == axum::http::header::ACCEPT_ENCODING {
+            continue;
+        }
         if !should_forward_request_header(name, connection_headers.as_slice()) {
             continue;
         }
         request = request.header(name, value);
+    }
+    if let Some(value) = accept_encoding_override {
+        request = request.header(axum::http::header::ACCEPT_ENCODING, value);
     }
 
     request
@@ -820,22 +835,6 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(
             requests[0].headers.get("accept-encoding").unwrap(),
-            "identity"
-        );
-    }
-
-    #[test]
-    fn playback_info_headers_force_identity_encoding() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::ACCEPT_ENCODING,
-            HeaderValue::from_static("gzip"),
-        );
-
-        force_identity_encoding(&mut headers);
-
-        assert_eq!(
-            headers.get(axum::http::header::ACCEPT_ENCODING).unwrap(),
             "identity"
         );
     }
