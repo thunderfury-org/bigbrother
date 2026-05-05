@@ -65,6 +65,7 @@ where
             .no_gzip()
             .no_brotli()
             .no_deflate()
+            .no_zstd()
             .build()
             .map_err(|err| {
                 AppError::Internal(format!("failed to build emby proxy client: {err}"))
