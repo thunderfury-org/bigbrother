@@ -412,7 +412,7 @@ where
 {
     let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
-    let mut request = client.request(method, upstream);
+    let mut upstream_headers = HeaderMap::new();
     let connection_headers = connection_header_tokens(&headers);
     for (name, value) in headers.iter() {
         if accept_encoding_override.is_some() && *name == axum::http::header::ACCEPT_ENCODING {
@@ -421,13 +421,15 @@ where
         if !should_forward_request_header(name, connection_headers.as_slice()) {
             continue;
         }
-        request = request.header(name, value);
+        upstream_headers.append(name.clone(), value.clone());
     }
     if let Some(value) = accept_encoding_override {
-        request = request.header(axum::http::header::ACCEPT_ENCODING, value);
+        upstream_headers.insert(axum::http::header::ACCEPT_ENCODING, value);
     }
 
-    request
+    client
+        .request(method, upstream)
+        .headers(upstream_headers)
         .body(body)
         .send()
         .await
