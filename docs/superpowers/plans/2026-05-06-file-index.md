@@ -85,7 +85,7 @@
 Run:
 
 ```bash
-rtk cargo test -p migration
+cargo test -p migration
 ```
 
 Expected before this task: PASS. This establishes the baseline before adding schema.
@@ -470,7 +470,7 @@ pub mod file_location_description;
 Run:
 
 ```bash
-rtk cargo test -p migration
+cargo test -p migration
 ```
 
 Expected: PASS.
@@ -480,7 +480,7 @@ Expected: PASS.
 Run:
 
 ```bash
-rtk cargo check -p bigbrother
+cargo check -p bigbrother
 ```
 
 Expected: PASS.
@@ -488,8 +488,8 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-rtk git add Cargo.toml app/Cargo.toml migration/src/m20260506_000000_create_table_file_index.rs migration/src/lib.rs app/src/infrastructure/entity/model/file_index.rs app/src/infrastructure/entity/model/file_location.rs app/src/infrastructure/entity/model/file_description.rs app/src/infrastructure/entity/model/file_location_description.rs app/src/infrastructure/entity/model/mod.rs
-rtk git commit -m "add file index schema"
+git add Cargo.toml app/Cargo.toml migration/src/m20260506_000000_create_table_file_index.rs migration/src/lib.rs app/src/infrastructure/entity/model/file_index.rs app/src/infrastructure/entity/model/file_location.rs app/src/infrastructure/entity/model/file_description.rs app/src/infrastructure/entity/model/file_location_description.rs app/src/infrastructure/entity/model/mod.rs
+git commit -m "add file index schema"
 ```
 
 ## Task 2: Add Application Models, Hashing, and Repository Port
@@ -653,7 +653,7 @@ mod tests {
 Run:
 
 ```bash
-rtk cargo test -p bigbrother application::file_index
+cargo test -p bigbrother application::file_index
 ```
 
 Expected: FAIL because `SeenFile`, `SeenFileHash`, `record_seen_files`, `location_hash`, and `description_hash` are missing.
@@ -792,7 +792,7 @@ Keep the test module below this code and remove duplicate imports from the initi
 Run:
 
 ```bash
-rtk cargo test -p bigbrother application::file_index
+cargo test -p bigbrother application::file_index
 ```
 
 Expected: PASS.
@@ -800,8 +800,8 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-rtk git add Cargo.toml app/Cargo.toml app/src/application/file_index.rs app/src/application/ports.rs app/src/application/mod.rs
-rtk git commit -m "add file index application model"
+git add Cargo.toml app/Cargo.toml app/src/application/file_index.rs app/src/application/ports.rs app/src/application/mod.rs
+git commit -m "add file index application model"
 ```
 
 ## Task 3: Implement SeaORM File Index Repository
@@ -959,7 +959,7 @@ mod tests {
 Run:
 
 ```bash
-rtk cargo test -p bigbrother infrastructure::repo::file_index
+cargo test -p bigbrother infrastructure::repo::file_index
 ```
 
 Expected: FAIL because `entity::file_index::record_files` and `search_files` are missing.
@@ -1281,7 +1281,7 @@ fn push_unique(values: &mut Vec<String>, value: String) {
 Run:
 
 ```bash
-rtk cargo test -p bigbrother infrastructure::repo::file_index
+cargo test -p bigbrother infrastructure::repo::file_index
 ```
 
 Expected: PASS for all repository tests.
@@ -1289,8 +1289,8 @@ Expected: PASS for all repository tests.
 - [ ] **Step 6: Commit**
 
 ```bash
-rtk git add app/src/infrastructure/entity/file_index.rs app/src/infrastructure/entity/mod.rs app/src/infrastructure/repo/file_index.rs app/src/infrastructure/repo/mod.rs
-rtk git commit -m "add file index repository"
+git add app/src/infrastructure/entity/file_index.rs app/src/infrastructure/entity/mod.rs app/src/infrastructure/repo/file_index.rs app/src/infrastructure/repo/mod.rs
+git commit -m "add file index repository"
 ```
 
 ## Task 4: Add Ingest Source Parsing Service
@@ -1335,7 +1335,7 @@ mod ingest_tests {
 Run:
 
 ```bash
-rtk cargo test -p bigbrother application::file_index::ingest_tests
+cargo test -p bigbrother application::file_index::ingest_tests
 ```
 
 Expected: FAIL because `SeenFile::from_raw_file` is missing.
@@ -1590,7 +1590,7 @@ where
 Run:
 
 ```bash
-rtk cargo test -p bigbrother application::import_media
+cargo test -p bigbrother application::import_media
 ```
 
 Expected: PASS. Existing import behavior must not change.
@@ -1598,8 +1598,8 @@ Expected: PASS. Existing import behavior must not change.
 - [ ] **Step 8: Commit**
 
 ```bash
-rtk git add app/src/application/file_index.rs app/src/application/ports.rs app/src/application/import/share/providers.rs app/src/application/import/json.rs app/src/application/import_media.rs
-rtk git commit -m "add file index ingest parsing"
+git add app/src/application/file_index.rs app/src/application/ports.rs app/src/application/import/share/providers.rs app/src/application/import/json.rs app/src/application/import_media.rs
+git commit -m "add file index ingest parsing"
 ```
 
 ## Task 5: Wire CLI Synchronous Indexing and Search
@@ -1661,7 +1661,7 @@ fn parses_search_files_command() {
 Run:
 
 ```bash
-rtk cargo test -p bigbrother interface::cli
+cargo test -p bigbrother interface::cli
 ```
 
 Expected: FAIL because `description` and `SearchFiles` are missing.
@@ -1804,7 +1804,7 @@ async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResul
 Run:
 
 ```bash
-rtk cargo test -p bigbrother interface::cli
+cargo test -p bigbrother interface::cli
 ```
 
 Expected: PASS.
@@ -1814,7 +1814,7 @@ Expected: PASS.
 Run:
 
 ```bash
-rtk cargo check -p bigbrother
+cargo check -p bigbrother
 ```
 
 Expected: PASS.
@@ -1822,8 +1822,8 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-rtk git add app/src/interface/cli/mod.rs app/src/main.rs app/src/bootstrap/services.rs
-rtk git commit -m "add file index cli commands"
+git add app/src/interface/cli/mod.rs app/src/main.rs app/src/bootstrap/services.rs
+git commit -m "add file index cli commands"
 ```
 
 ## Task 6: Add Telegram Index Event Publishing and Worker
@@ -2097,8 +2097,8 @@ In Telegram document handling, before import processing, download JSON/CAS docum
 Run:
 
 ```bash
-rtk cargo test -p bigbrother interface::telegram
-rtk cargo check -p bigbrother
+cargo test -p bigbrother interface::telegram
+cargo check -p bigbrother
 ```
 
 Expected: PASS.
@@ -2106,8 +2106,8 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-rtk git add app/src/interface/telegram/file_index.rs app/src/interface/telegram/mod.rs app/src/interface/telegram/msg.rs app/src/bootstrap/app.rs app/src/bootstrap/mod.rs
-rtk git commit -m "index telegram resources asynchronously"
+git add app/src/interface/telegram/file_index.rs app/src/interface/telegram/mod.rs app/src/interface/telegram/msg.rs app/src/bootstrap/app.rs app/src/bootstrap/mod.rs
+git commit -m "index telegram resources asynchronously"
 ```
 
 ## Task 7: Final Verification and Cleanup
@@ -2120,7 +2120,7 @@ rtk git commit -m "index telegram resources asynchronously"
 Run:
 
 ```bash
-rtk make test
+make test
 ```
 
 Expected: PASS.
@@ -2130,7 +2130,7 @@ Expected: PASS.
 Run:
 
 ```bash
-rtk make lint
+make lint
 ```
 
 Expected: PASS.
@@ -2140,8 +2140,8 @@ Expected: PASS.
 Run:
 
 ```bash
-rtk git status --short
-rtk git diff --stat HEAD
+git status --short
+git diff --stat HEAD
 ```
 
 Expected: only intended file-index implementation files are changed since the last task commit.
@@ -2151,8 +2151,8 @@ Expected: only intended file-index implementation files are changed since the la
 If `make test` or `make lint` required fixes, commit them:
 
 ```bash
-rtk git add Cargo.toml app/src migration/src
-rtk git commit -m "stabilize file index implementation"
+git add Cargo.toml app/src migration/src
+git commit -m "stabilize file index implementation"
 ```
 
 If no files changed after verification, skip this commit.
