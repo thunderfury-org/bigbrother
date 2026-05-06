@@ -5,18 +5,21 @@ use std::{
 };
 
 use teloxide::{prelude::*, sugar::request::RequestReplyExt};
+use teloxide::net::Download;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
 use crate::{
-    application::delete_media::MediaDeleteCandidate,
+    application::{delete_media::MediaDeleteCandidate, file_index::FileIndexSource},
     bootstrap::services::{
         DeleteMediaServiceRuntime, ImportService, KeywordService, NotifyService, SyncService,
     },
+    infrastructure::event_bus::EventBus,
 };
 
 mod cmd;
 pub(crate) mod delivery;
+pub mod file_index;
 mod msg;
 
 struct BotServices {
@@ -25,6 +28,8 @@ struct BotServices {
     notify: NotifyService,
     sync: SyncService,
     delete_media: DeleteMediaServiceRuntime,
+    file_index_events: EventBus,
+    file_index_ingest_dir: String,
     delete_media_cache: DeleteMediaCandidateCache,
 }
 
@@ -54,6 +59,8 @@ impl BotRuntime {
         notify_service: NotifyService,
         sync_service: SyncService,
         delete_media_service: DeleteMediaServiceRuntime,
+        file_index_events: EventBus,
+        file_index_ingest_dir: String,
     ) -> Self {
         Self {
             user_id,
@@ -63,6 +70,8 @@ impl BotRuntime {
                 notify: notify_service,
                 sync: sync_service,
                 delete_media: delete_media_service,
+                file_index_events,
+                file_index_ingest_dir,
                 delete_media_cache: DeleteMediaCandidateCache::new(Duration::from_secs(15 * 60)),
             }),
         }
@@ -86,6 +95,14 @@ impl BotRuntime {
 
     fn delete_media_service(&self) -> &DeleteMediaServiceRuntime {
         &self.services.delete_media
+    }
+
+    fn file_index_event_bus(&self) -> &EventBus {
+        &self.services.file_index_events
+    }
+
+    fn file_index_ingest_dir(&self) -> &str {
+        &self.services.file_index_ingest_dir
     }
 
     async fn cache_delete_media_candidates(&self, candidates: &[MediaDeleteCandidate]) {
@@ -165,6 +182,8 @@ pub(crate) async fn run(bot: teloxide::Bot, runtime: BotRuntime) {
 }
 
 async fn handle_channel_post(runtime: BotRuntime, bot: Bot, msg: Message) -> ResponseResult<()> {
+    publish_file_index_event(&runtime, &bot, &msg).await;
+
     let keywords = match runtime.keyword_service().list_values().await {
         Ok(keywords) => keywords,
         Err(e) => {
@@ -219,6 +238,8 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
         return Ok(());
     }
 
+    publish_file_index_event(&runtime, &bot, &msg).await;
+
     if cmd::is_delete_media_usage_request(&msg) {
         bot.send_message(msg.chat.id, cmd::delete_media_usage())
             .reply_to(msg.id)
@@ -234,4 +255,90 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
         from_monitor: false,
     };
     processor.process().await
+}
+
+async fn publish_file_index_event(runtime: &BotRuntime, bot: &Bot, msg: &Message) {
+    let mut sources = file_index::extract_index_sources(msg);
+    if let Some(source) = download_document_index_source(runtime, bot, msg).await {
+        sources.push(source);
+    }
+    if sources.is_empty() {
+        return;
+    }
+
+    let event = file_index::IndexFilesFromSource {
+        sources,
+        description: file_index::message_description(msg),
+        source_kind: "telegram".to_owned(),
+    };
+    if let Err(err) = runtime.file_index_event_bus().publish(&event).await {
+        error!("Failed to publish file index event: {}", err);
+    }
+}
+
+async fn download_document_index_source(
+    runtime: &BotRuntime,
+    bot: &Bot,
+    msg: &Message,
+) -> Option<FileIndexSource> {
+    let doc = msg.document()?;
+    let file_name = doc.file_name.as_deref()?;
+    if !is_index_document(file_name) {
+        return None;
+    }
+
+    let file = match bot.get_file(doc.file.id.to_owned()).await {
+        Ok(file) => file,
+        Err(err) => {
+            error!("Failed to get telegram document for file indexing: {}", err);
+            return None;
+        }
+    };
+    if file.meta.size > 10 * 1024 * 1024 {
+        error!("Telegram document is too large for file indexing: {}", file_name);
+        return None;
+    }
+
+    let ingest_dir = runtime.file_index_ingest_dir();
+    if let Err(err) = tokio::fs::create_dir_all(ingest_dir).await {
+        error!("Failed to create file index ingest dir '{}': {}", ingest_dir, err);
+        return None;
+    }
+
+    let local_path = format!(
+        "{}/{}-{}-{}",
+        ingest_dir,
+        msg.id.0,
+        chrono::Utc::now().timestamp_millis(),
+        sanitize_file_name(file_name),
+    );
+    let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
+    if let Err(err) = bot.download_file(&file.path, &mut content).await {
+        error!("Failed to download telegram document for file indexing: {}", err);
+        return None;
+    }
+    if let Err(err) = tokio::fs::write(&local_path, content).await {
+        error!(
+            "Failed to write telegram document index source '{}': {}",
+            local_path, err
+        );
+        return None;
+    }
+
+    Some(FileIndexSource::LocalJsonFile(local_path))
+}
+
+fn is_index_document(file_name: &str) -> bool {
+    let name = file_name.to_lowercase();
+    name.ends_with(".json") || name.ends_with(".cas")
+}
+
+fn sanitize_file_name(file_name: &str) -> String {
+    file_name
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' => '_',
+            _ => ch,
+        })
+        .collect()
 }

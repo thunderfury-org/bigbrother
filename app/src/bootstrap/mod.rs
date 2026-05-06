@@ -9,10 +9,14 @@ pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        delete_media::DeleteMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, sync_strm::SyncStrmService,
+        delete_media::DeleteMediaService, file_index::FileIndexIngestService,
+        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
+        sync_strm::SyncStrmService,
     },
-    bootstrap::services::{MediaDownloadUrlService, build_import_service_from_clients},
+    bootstrap::services::{
+        FileIndexIngestRuntimeService, MediaDownloadUrlService, build_file_index_service,
+        build_import_service_from_clients,
+    },
     error::{AppError, AppResult},
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
@@ -56,6 +60,7 @@ pub struct ServerRuntime {
 pub struct EventDeliveryRuntime {
     pub event_bus: EventBus,
     pub telegram_delivery: TelegramDeliveryContext,
+    pub file_index_ingest: FileIndexIngestRuntimeService,
 }
 
 pub struct CacheCleanupRuntime {
@@ -125,6 +130,8 @@ impl AppRuntime {
                         ),
                         inputs.import_remote_path.clone(),
                     ),
+                    event_bus.clone(),
+                    inputs.file_index_ingest_dir.clone(),
                 ),
                 media_server_addr: inputs.media_server_addr.clone(),
                 media_server,
@@ -137,6 +144,15 @@ impl AppRuntime {
                     bot: inputs.bot,
                     user_id: inputs.telegram_user_id,
                 },
+                file_index_ingest: FileIndexIngestService::new(
+                    build_import_service_from_clients(
+                        &inputs.clients,
+                        inputs.import_remote_path.clone(),
+                        inputs.import_local_path.clone(),
+                        inputs.import_strm_download_url.clone(),
+                    ),
+                    build_file_index_service(inputs.db.clone()),
+                ),
             },
             cache_cleanup: CacheCleanupRuntime {
                 cache,
@@ -208,12 +224,25 @@ impl EventDeliveryRuntime {
                 crate::interface::telegram::delivery::on_send_telegram_message,
             )
             .await?;
+        self.event_bus
+            .subscribe(self.file_index_ingest, on_index_files_from_source)
+            .await?;
 
         info!("Event bus is running");
         shutdown_signal("event bus").await;
         info!("Shutting down event bus...");
         Ok(())
     }
+}
+
+async fn on_index_files_from_source(
+    service: FileIndexIngestRuntimeService,
+    payload: crate::interface::telegram::file_index::IndexFilesFromSource,
+) -> AppResult<()> {
+    service
+        .ingest_sources(payload.sources, payload.description)
+        .await?;
+    Ok(())
 }
 
 impl CacheCleanupRuntime {

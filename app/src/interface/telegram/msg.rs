@@ -141,7 +141,7 @@ impl MsgProcessor<'_> {
         let mut urls = Vec::new();
 
         let text = self.msg.text().unwrap_or_default();
-        self.extract_urls_from_text(text, &mut urls);
+        extract_urls_from_text(text, &mut urls);
 
         if let Some(entities) = self.msg.caption_entities() {
             for entity in entities {
@@ -164,20 +164,6 @@ impl MsgProcessor<'_> {
         urls
     }
 
-    fn extract_urls_from_text(&self, text: &str, urls: &mut Vec<Url>) {
-        if text.is_empty() {
-            return;
-        }
-
-        for cap in URL_RE.captures_iter(text) {
-            if let Some(matched_url) = cap.get(0)
-                && let Ok(url) = Url::parse(matched_url.as_str())
-            {
-                urls.push(url);
-            }
-        }
-    }
-
     async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
         let mut msg_sent = false;
         for media in &imported {
@@ -198,6 +184,20 @@ impl MsgProcessor<'_> {
         let reply_to = self.msg.from.as_ref().map(|_| self.msg.id.0);
         if let Err(e) = self.notify_service.send_message(text, reply_to).await {
             error!("Failed publish send telegram message event: {}", e);
+        }
+    }
+}
+
+pub(super) fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
+    if text.is_empty() {
+        return;
+    }
+
+    for cap in URL_RE.captures_iter(text) {
+        if let Some(matched_url) = cap.get(0)
+            && let Ok(url) = Url::parse(matched_url.as_str())
+        {
+            urls.push(url);
         }
     }
 }
