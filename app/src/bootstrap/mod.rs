@@ -244,7 +244,7 @@ async fn on_index_files_from_source(
     payload: crate::interface::telegram::file_index::IndexFilesFromSource,
 ) -> AppResult<()> {
     service
-        .ingest_sources(payload.sources, payload.description)
+        .ingest_sources_from_event(payload.sources, payload.description)
         .await?;
     Ok(())
 }

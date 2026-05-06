@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use tracing::warn;
 use url::Url;
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
         ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
     },
     domain::import::inner::{Etag, RawFile},
-    error::{AppError, AppResult},
+    error::{AppError, AppErrorKind, AppResult},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,31 +148,70 @@ where
     ) -> AppResult<usize> {
         let mut total = 0;
         for source in sources {
-            let raw_files = match source {
-                FileIndexSource::ShareUrl(raw_url) => {
-                    self.source
-                        .raw_files_from_share_url_string(&raw_url)
-                        .await?
-                }
-                FileIndexSource::Fslink(fslink) => {
-                    self.source.raw_files_from_fslink_string(&fslink).await?
-                }
-                FileIndexSource::LocalJsonFile(path) => {
-                    let json = tokio::fs::read(&path).await.map_err(|err| {
-                        AppError::Runtime(format!(
-                            "failed to read local index source '{path}': {err}"
-                        ))
-                    })?;
-                    self.source.raw_files_from_json_bytes(json).await?
-                }
-            };
-            let seen = raw_files.iter().map(SeenFile::from_raw_file).collect();
-            total += self
-                .file_index
-                .record_seen_files(seen, description.clone())
-                .await?;
+            total += self.ingest_source(source, description.clone()).await?;
         }
         Ok(total)
+    }
+
+    pub async fn ingest_sources_from_event(
+        &self,
+        sources: Vec<FileIndexSource>,
+        description: Option<String>,
+    ) -> AppResult<usize> {
+        let mut total = 0;
+        for source in sources {
+            let source_for_log = source.clone();
+            match self.ingest_source(source, description.clone()).await {
+                Ok(count) => total += count,
+                Err(err) if is_permanent_index_source_error(&err) => {
+                    warn!(
+                        source = ?source_for_log,
+                        error = %err,
+                        "skipping permanent file index source error"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(total)
+    }
+
+    async fn ingest_source(
+        &self,
+        source: FileIndexSource,
+        description: Option<String>,
+    ) -> AppResult<usize> {
+        let raw_files = match source {
+            FileIndexSource::ShareUrl(raw_url) => {
+                self.source
+                    .raw_files_from_share_url_string(&raw_url)
+                    .await?
+            }
+            FileIndexSource::Fslink(fslink) => {
+                self.source.raw_files_from_fslink_string(&fslink).await?
+            }
+            FileIndexSource::LocalJsonFile(path) => {
+                let json = tokio::fs::read(&path).await.map_err(|err| {
+                    AppError::Runtime(format!("failed to read local index source '{path}': {err}"))
+                })?;
+                self.source.raw_files_from_json_bytes(json).await?
+            }
+        };
+        let seen = raw_files.iter().map(SeenFile::from_raw_file).collect();
+        self.file_index.record_seen_files(seen, description).await
+    }
+}
+
+fn is_permanent_index_source_error(error: &AppError) -> bool {
+    match error.kind() {
+        AppErrorKind::InvalidParameter | AppErrorKind::NotFound | AppErrorKind::RuleRejected => {
+            true
+        }
+        AppErrorKind::Dependency => {
+            let message = error.to_string().to_ascii_lowercase();
+            message.contains("shareauditnotpass") || message.contains("share audit not pass")
+        }
+        AppErrorKind::Runtime | AppErrorKind::Internal => false,
     }
 }
 
@@ -329,8 +369,85 @@ mod tests {
 
 #[cfg(test)]
 mod ingest_tests {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
     use super::*;
     use crate::domain::import::inner::{Etag, RawFile};
+
+    #[derive(Clone, Default)]
+    struct FakeRepo {
+        recorded: Arc<Mutex<Vec<FileIndexRecordInput>>>,
+    }
+
+    impl FileIndexRepository for FakeRepo {
+        async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<usize> {
+            self.recorded.lock().unwrap().extend_from_slice(files);
+            Ok(files.len())
+        }
+
+        async fn search_files(
+            &self,
+            _keyword: &str,
+            _limit: u64,
+        ) -> AppResult<Vec<FileSearchRecord>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeRawFileSource {
+        share_results: Arc<Mutex<HashMap<String, AppResult<Vec<RawFile>>>>>,
+    }
+
+    impl FakeRawFileSource {
+        fn with_share_result(self, url: &str, result: AppResult<Vec<RawFile>>) -> Self {
+            self.share_results
+                .lock()
+                .unwrap()
+                .insert(url.to_owned(), result);
+            self
+        }
+    }
+
+    impl FileIndexRawFileSource for FakeRawFileSource {
+        async fn raw_files_from_share_url_string(&self, url: &str) -> AppResult<Vec<RawFile>> {
+            self.share_results
+                .lock()
+                .unwrap()
+                .get(url)
+                .cloned()
+                .unwrap_or_else(|| {
+                    Err(AppError::InvalidParameter(format!(
+                        "missing fake share result for {url}"
+                    )))
+                })
+        }
+
+        async fn raw_files_from_fslink_string(&self, fslink: &str) -> AppResult<Vec<RawFile>> {
+            Err(AppError::InvalidParameter(format!(
+                "missing fake fslink result for {fslink}"
+            )))
+        }
+
+        async fn raw_files_from_json_bytes(&self, _json: Vec<u8>) -> AppResult<Vec<RawFile>> {
+            Err(AppError::InvalidParameter(
+                "missing fake json result".to_owned(),
+            ))
+        }
+    }
+
+    fn raw_file(name: &str) -> RawFile {
+        RawFile {
+            id: None,
+            name: name.to_owned(),
+            etag: Etag::Md5("0123456789abcdef0123456789abcdef".into()),
+            size: 100,
+            path: "/Movies".into(),
+        }
+    }
 
     #[test]
     fn raw_file_conversion_preserves_path_name_size_and_hash() {
@@ -346,5 +463,61 @@ mod ingest_tests {
         assert_eq!(file.file_path, "/Movies");
         assert_eq!(file.size, 100);
         assert_eq!(file.hash, SeenFileHash::Md5("ABC".into()));
+    }
+
+    #[tokio::test]
+    async fn event_ingest_skips_pan189_share_audit_failure_and_continues() {
+        let repo = FakeRepo::default();
+        let source = FakeRawFileSource::default()
+            .with_share_result(
+                "https://cloud.189.cn/t/bad",
+                Err(AppError::Dependency(
+                    "request error, error, http request failed, status: 400 Bad Request, payload: {\"res_message\":\"share audit not pass.\",\"res_code\":\"ShareAuditNotPass\"}".into(),
+                )),
+            )
+            .with_share_result(
+                "https://www.123pan.com/s/good",
+                Ok(vec![raw_file("movie.mkv")]),
+            );
+        let service = FileIndexIngestService::new(source, FileIndexService::new(repo.clone()));
+
+        let written = service
+            .ingest_sources_from_event(
+                vec![
+                    FileIndexSource::ShareUrl("https://cloud.189.cn/t/bad".into()),
+                    FileIndexSource::ShareUrl("https://www.123pan.com/s/good".into()),
+                ],
+                Some("seen resource".into()),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(written, 1);
+        let recorded = repo.recorded.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].file_name, "movie.mkv");
+        assert_eq!(recorded[0].description.as_deref(), Some("seen resource"));
+    }
+
+    #[tokio::test]
+    async fn event_ingest_returns_transient_dependency_error_for_retry() {
+        let repo = FakeRepo::default();
+        let source = FakeRawFileSource::default().with_share_result(
+            "https://www.123pan.com/s/transient",
+            Err(AppError::Dependency("request error, timeout".into())),
+        );
+        let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
+
+        let error = service
+            .ingest_sources_from_event(
+                vec![FileIndexSource::ShareUrl(
+                    "https://www.123pan.com/s/transient".into(),
+                )],
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, AppError::Dependency(message) if message.contains("timeout")));
     }
 }
