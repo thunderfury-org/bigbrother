@@ -213,7 +213,11 @@ fn is_permanent_index_source_error(error: &AppError) -> bool {
 }
 
 pub fn location_hash(file_path: &str, file_name: &str) -> String {
-    hash_hex(format!("v1\0{}\0{}", file_path.trim(), file_name.trim()))
+    hash_hex(format!(
+        "v1\0{}\0{}",
+        normalize_file_path(file_path),
+        file_name.trim()
+    ))
 }
 
 pub fn description_hash(description: &str) -> String {
@@ -244,7 +248,7 @@ fn to_record_input(file: SeenFile, description: Option<String>) -> Option<FileIn
         md5,
         sha1,
         file_name: file.file_name.trim().to_owned(),
-        file_path: file.file_path.trim().to_owned(),
+        file_path: normalize_file_path(&file.file_path),
         description,
     })
 }
@@ -259,6 +263,13 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
         let value = value.trim().to_owned();
         (!value.is_empty()).then_some(value)
     })
+}
+
+fn normalize_file_path(value: &str) -> String {
+    match value.trim() {
+        "/" => String::new(),
+        value => value.to_owned(),
+    }
 }
 
 fn hash_hex(value: impl AsRef<[u8]>) -> String {
@@ -316,7 +327,7 @@ mod tests {
                         size: 20,
                         hash: SeenFileHash::Md5(" ABCDEF ".into()),
                         file_name: "movie.mkv".into(),
-                        file_path: " /Movies ".into(),
+                        file_path: " / ".into(),
                     },
                     SeenFile {
                         size: 30,
@@ -337,7 +348,7 @@ mod tests {
         assert_eq!(recorded.len(), 2);
         assert_eq!(recorded[0].md5.as_deref(), Some("abcdef"));
         assert_eq!(recorded[0].sha1, None);
-        assert_eq!(recorded[0].file_path, "/Movies");
+        assert_eq!(recorded[0].file_path, "");
         assert_eq!(recorded[0].description.as_deref(), Some("desc"));
         assert_eq!(
             recorded[1].sha1.as_deref(),
@@ -354,6 +365,10 @@ mod tests {
         assert_ne!(
             location_hash("/pa", "thfile"),
             location_hash("/path", "file")
+        );
+        assert_eq!(
+            location_hash("/", "file.mkv"),
+            location_hash("", "file.mkv")
         );
     }
 
