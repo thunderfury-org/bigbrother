@@ -16,6 +16,7 @@ use crate::{
 pub enum SeenFileHash {
     Md5(String),
     Sha1(String),
+    #[allow(dead_code)]
     Unknown(String),
 }
 
