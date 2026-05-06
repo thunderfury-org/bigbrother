@@ -4,8 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use teloxide::{prelude::*, sugar::request::RequestReplyExt};
 use teloxide::net::Download;
+use teloxide::{prelude::*, sugar::request::RequestReplyExt};
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -51,27 +51,29 @@ pub(crate) struct BotRuntime {
     services: Arc<BotServices>,
 }
 
+pub(crate) struct BotRuntimeArgs {
+    pub user_id: UserId,
+    pub keyword_service: KeywordService,
+    pub import_service: ImportService,
+    pub notify_service: NotifyService,
+    pub sync_service: SyncService,
+    pub delete_media_service: DeleteMediaServiceRuntime,
+    pub file_index_events: EventBus,
+    pub file_index_ingest_dir: String,
+}
+
 impl BotRuntime {
-    pub(crate) fn new(
-        user_id: UserId,
-        keyword_service: KeywordService,
-        import_service: ImportService,
-        notify_service: NotifyService,
-        sync_service: SyncService,
-        delete_media_service: DeleteMediaServiceRuntime,
-        file_index_events: EventBus,
-        file_index_ingest_dir: String,
-    ) -> Self {
+    pub(crate) fn new(args: BotRuntimeArgs) -> Self {
         Self {
-            user_id,
+            user_id: args.user_id,
             services: Arc::new(BotServices {
-                keyword: keyword_service,
-                import: import_service,
-                notify: notify_service,
-                sync: sync_service,
-                delete_media: delete_media_service,
-                file_index_events,
-                file_index_ingest_dir,
+                keyword: args.keyword_service,
+                import: args.import_service,
+                notify: args.notify_service,
+                sync: args.sync_service,
+                delete_media: args.delete_media_service,
+                file_index_events: args.file_index_events,
+                file_index_ingest_dir: args.file_index_ingest_dir,
                 delete_media_cache: DeleteMediaCandidateCache::new(Duration::from_secs(15 * 60)),
             }),
         }
@@ -295,13 +297,19 @@ async fn download_document_index_source(
         }
     };
     if file.meta.size > 10 * 1024 * 1024 {
-        error!("Telegram document is too large for file indexing: {}", file_name);
+        error!(
+            "Telegram document is too large for file indexing: {}",
+            file_name
+        );
         return None;
     }
 
     let ingest_dir = runtime.file_index_ingest_dir();
     if let Err(err) = tokio::fs::create_dir_all(ingest_dir).await {
-        error!("Failed to create file index ingest dir '{}': {}", ingest_dir, err);
+        error!(
+            "Failed to create file index ingest dir '{}': {}",
+            ingest_dir, err
+        );
         return None;
     }
 
@@ -314,7 +322,10 @@ async fn download_document_index_source(
     );
     let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
     if let Err(err) = bot.download_file(&file.path, &mut content).await {
-        error!("Failed to download telegram document for file indexing: {}", err);
+        error!(
+            "Failed to download telegram document for file indexing: {}",
+            err
+        );
         return None;
     }
     if let Err(err) = tokio::fs::write(&local_path, content).await {

@@ -3,8 +3,10 @@ use crate::{
         delete_media::DeleteMediaService,
         file_index::{FileIndexIngestService, FileIndexService},
         import_media::ImportMediaService,
-        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
-        resolve_download_url::ResolveDownloadUrlService, sync_strm::SyncStrmService,
+        manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService,
+        resolve_download_url::ResolveDownloadUrlService,
+        sync_strm::SyncStrmService,
     },
     bootstrap::app::Client,
     config,
@@ -51,9 +53,7 @@ pub(crate) fn build_import_service(config: &config::Manager) -> ImportService {
     )
 }
 
-pub(crate) fn build_file_index_service(
-    db: sea_orm::DatabaseConnection,
-) -> FileIndexRuntimeService {
+pub(crate) fn build_file_index_service(db: sea_orm::DatabaseConnection) -> FileIndexRuntimeService {
     FileIndexService::new(SeaOrmFileIndexRepository::new(db))
 }
 

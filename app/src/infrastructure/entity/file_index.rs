@@ -32,11 +32,7 @@ where
     Ok(files.len())
 }
 
-pub async fn search_files<C>(
-    db: &C,
-    keyword: &str,
-    limit: u64,
-) -> AppResult<Vec<FileSearchRecord>>
+pub async fn search_files<C>(db: &C, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>
 where
     C: ConnectionTrait,
 {

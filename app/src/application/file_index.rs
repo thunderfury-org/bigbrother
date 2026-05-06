@@ -149,7 +149,9 @@ where
         for source in sources {
             let raw_files = match source {
                 FileIndexSource::ShareUrl(raw_url) => {
-                    self.source.raw_files_from_share_url_string(&raw_url).await?
+                    self.source
+                        .raw_files_from_share_url_string(&raw_url)
+                        .await?
                 }
                 FileIndexSource::Fslink(fslink) => {
                     self.source.raw_files_from_fslink_string(&fslink).await?
@@ -174,11 +176,7 @@ where
 }
 
 pub fn location_hash(file_path: &str, file_name: &str) -> String {
-    hash_hex(format!(
-        "v1\0{}\0{}",
-        file_path.trim(),
-        file_name.trim()
-    ))
+    hash_hex(format!("v1\0{}\0{}", file_path.trim(), file_name.trim()))
 }
 
 pub fn description_hash(description: &str) -> String {
@@ -316,7 +314,10 @@ mod tests {
             location_hash("/path", "file.mkv"),
             location_hash(" /path ", " file.mkv ")
         );
-        assert_ne!(location_hash("/pa", "thfile"), location_hash("/path", "file"));
+        assert_ne!(
+            location_hash("/pa", "thfile"),
+            location_hash("/path", "file")
+        );
     }
 
     #[test]

@@ -24,10 +24,7 @@ pub fn extract_index_sources(msg: &Message) -> Vec<FileIndexSource> {
     extract_index_sources_from_parts(text, urls)
 }
 
-pub fn extract_index_sources_from_parts(
-    text: &str,
-    raw_urls: Vec<String>,
-) -> Vec<FileIndexSource> {
+pub fn extract_index_sources_from_parts(text: &str, raw_urls: Vec<String>) -> Vec<FileIndexSource> {
     let mut sources = Vec::new();
     for line in text.lines() {
         if crate::application::import::is_fslink(line) {

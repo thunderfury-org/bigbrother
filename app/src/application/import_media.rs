@@ -51,10 +51,7 @@ where
             .await
     }
 
-    pub async fn raw_files_from_share_url(
-        &self,
-        url: &ShareUrl<'_>,
-    ) -> AppResult<Vec<RawFile>> {
+    pub async fn raw_files_from_share_url(&self, url: &ShareUrl<'_>) -> AppResult<Vec<RawFile>> {
         self.import_use_cases
             .share_import()
             .raw_files_from_share_url(url)
@@ -68,7 +65,9 @@ where
     }
 
     pub async fn raw_files_from_json(&self, json: Vec<u8>) -> AppResult<Vec<RawFile>> {
-        self.import_use_cases.json_import().raw_files_from_json(json)
+        self.import_use_cases
+            .json_import()
+            .raw_files_from_json(json)
     }
 }
 

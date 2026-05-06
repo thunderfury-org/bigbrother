@@ -74,8 +74,7 @@ async fn run_import_share_url(
     let db = app.runtime_inputs().db;
     ensure_db_migrated(&db).await?;
     let config = config::Manager::try_from(data_dir.trim())?;
-    let ingest_service =
-        bootstrap::services::build_file_index_ingest_service(&config, db.clone());
+    let ingest_service = bootstrap::services::build_file_index_ingest_service(&config, db.clone());
     if let Err(err) = ingest_service
         .ingest_sources(
             vec![application::file_index::FileIndexSource::ShareUrl(

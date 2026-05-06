@@ -105,22 +105,26 @@ impl AppRuntime {
             db: inputs.db.clone(),
             server: ServerRuntime {
                 bot,
-                bot_runtime: telegram::BotRuntime::new(
+                bot_runtime: telegram::BotRuntime::new(telegram::BotRuntimeArgs {
                     user_id,
-                    ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone())),
-                    build_import_service_from_clients(
+                    keyword_service: ManageKeywordsService::new(SeaOrmKeywordRepository::new(
+                        inputs.db.clone(),
+                    )),
+                    import_service: build_import_service_from_clients(
                         &inputs.clients,
                         inputs.import_remote_path.clone(),
                         inputs.import_local_path.clone(),
                         inputs.import_strm_download_url.clone(),
                     ),
-                    PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone())),
-                    SyncStrmService::new(
+                    notify_service: PublishTelegramMessageService::new(EventBusPublisher::new(
+                        event_bus.clone(),
+                    )),
+                    sync_service: SyncStrmService::new(
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
                         TokioFileStore,
                         inputs.sync_config.clone(),
                     ),
-                    DeleteMediaService::new(
+                    delete_media_service: DeleteMediaService::new(
                         Pan123MediaSearchGateway::new(inputs.clients.pan123.clone()),
                         PanLibraryGateway::new(inputs.clients.pan123.clone()),
                         FilesystemImportLocalStore::new(
@@ -130,9 +134,9 @@ impl AppRuntime {
                         ),
                         inputs.import_remote_path.clone(),
                     ),
-                    event_bus.clone(),
-                    inputs.file_index_ingest_dir.clone(),
-                ),
+                    file_index_events: event_bus.clone(),
+                    file_index_ingest_dir: inputs.file_index_ingest_dir.clone(),
+                }),
                 media_server_addr: inputs.media_server_addr.clone(),
                 media_server,
                 emby_proxy_addr,
