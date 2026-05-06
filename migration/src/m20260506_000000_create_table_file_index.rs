@@ -12,7 +12,7 @@ impl MigrationTrait for Migration {
                     .table(FileIndex::Table)
                     .if_not_exists()
                     .col(pk_auto(FileIndex::Id))
-                    .col(big_unsigned(FileIndex::Size))
+                    .col(big_integer(FileIndex::Size))
                     .col(string_null(FileIndex::Md5))
                     .col(string_null(FileIndex::Sha1))
                     .col(timestamp(FileIndex::CreateTime))
