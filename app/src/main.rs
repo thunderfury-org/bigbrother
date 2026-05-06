@@ -136,7 +136,7 @@ async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResul
     for (index, record) in results.iter().enumerate() {
         println!("{}. {}", index + 1, record.file_name);
         println!("   path: {}", record.file_path);
-        println!("   size: {}", record.size);
+        println!("   size: {}", format_file_size(record.size));
         if let Some(md5) = &record.md5 {
             println!("   md5: {md5}");
         }
@@ -157,6 +157,23 @@ async fn ensure_db_migrated(db: &DatabaseConnection) -> AppResult<()> {
         .map_err(|err| error::AppError::Runtime(format!("failed to run migration: {err}")))
 }
 
+fn format_file_size(size: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut value = size as f64;
+    let mut unit_index = 0;
+
+    while value >= 1024.0 && unit_index < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{size} B")
+    } else {
+        format!("{value:.2} {} ({size} bytes)", UNITS[unit_index])
+    }
+}
+
 fn parse_share_url(raw_url: &str) -> AppResult<Url> {
     let url = Url::parse(raw_url).map_err(|err| {
         error::AppError::InvalidParameter(format!("invalid share url '{raw_url}': {err}"))
@@ -173,7 +190,7 @@ fn parse_share_url(raw_url: &str) -> AppResult<Url> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_share_url;
+    use super::{format_file_size, parse_share_url};
 
     #[test]
     fn parse_share_url_accepts_supported_provider() {
@@ -188,5 +205,14 @@ mod tests {
 
         assert_eq!(err.kind(), crate::error::AppErrorKind::InvalidParameter);
         assert!(err.to_string().contains("unsupported share url"));
+    }
+
+    #[test]
+    fn format_file_size_keeps_bytes_and_adds_readable_unit() {
+        assert_eq!(
+            format_file_size(6_517_230_688),
+            "6.07 GiB (6517230688 bytes)"
+        );
+        assert_eq!(format_file_size(512), "512 B");
     }
 }
