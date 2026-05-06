@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::domain::import::{
     Pan189File,
-    inner::MediaFile,
+    inner::{MediaFile, RawFile},
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
         collect_pan189_directory_entries,
@@ -29,6 +29,17 @@ where
         share_key: &str,
         share_password: &str,
     ) -> AppResult<Vec<MediaFile>> {
+        let raw_files = self
+            .raw_files_from_pan123_share(share_key, share_password)
+            .await?;
+        Ok(self.metadata_lookup_mut().build_media_files(raw_files))
+    }
+
+    pub(crate) async fn raw_files_from_pan123_share(
+        &mut self,
+        share_key: &str,
+        share_password: &str,
+    ) -> AppResult<Vec<RawFile>> {
         let mut traversal = ShareTraversal::new((0, String::new()));
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
@@ -40,15 +51,21 @@ where
             traversal.extend(collect_pan123_directory_entries(&files, &parent_path));
         }
 
-        Ok(self
-            .metadata_lookup_mut()
-            .build_media_files(traversal.into_raw_files()))
+        Ok(traversal.into_raw_files())
     }
 
     pub(super) async fn list_files_from_pan189_share(
         &mut self,
         share_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
+        let raw_files = self.raw_files_from_pan189_share(share_code).await?;
+        Ok(self.metadata_lookup_mut().build_media_files(raw_files))
+    }
+
+    pub(crate) async fn raw_files_from_pan189_share(
+        &mut self,
+        share_code: &str,
+    ) -> AppResult<Vec<RawFile>> {
         let share_info = self
             .share_source()
             .get_pan189_share_info(share_code)
@@ -82,7 +99,7 @@ where
         let only_contains_cas_files =
             !raw_files.is_empty() && raw_files.iter().all(|file| is_cas_file(&file.name));
 
-        let media_files = if only_contains_cas_files {
+        if only_contains_cas_files {
             let mut cas_raw_files = Vec::new();
             for candidate in &cas_files {
                 let json = self
@@ -100,12 +117,10 @@ where
                     &cas_context_path(&candidate.file.name),
                 ));
             }
-            self.metadata_lookup_mut().build_media_files(cas_raw_files)
+            Ok(cas_raw_files)
         } else {
-            self.metadata_lookup_mut().build_media_files(raw_files)
-        };
-
-        Ok(media_files)
+            Ok(raw_files)
+        }
     }
 
     pub(super) async fn list_files_from_pan115_share(
@@ -113,6 +128,17 @@ where
         share_code: &str,
         receive_code: &str,
     ) -> AppResult<Vec<MediaFile>> {
+        let raw_files = self
+            .raw_files_from_pan115_share(share_code, receive_code)
+            .await?;
+        Ok(self.metadata_lookup_mut().build_media_files(raw_files))
+    }
+
+    pub(crate) async fn raw_files_from_pan115_share(
+        &mut self,
+        share_code: &str,
+        receive_code: &str,
+    ) -> AppResult<Vec<RawFile>> {
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
 
         while let Some((cid, parent_path)) = traversal.next_dir() {
@@ -124,9 +150,7 @@ where
             traversal.extend(collect_pan115_directory_entries(&entries, &parent_path));
         }
 
-        Ok(self
-            .metadata_lookup_mut()
-            .build_media_files(traversal.into_raw_files()))
+        Ok(traversal.into_raw_files())
     }
 }
 

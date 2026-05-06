@@ -1,6 +1,7 @@
 use crate::{
     application::import::{ImportUseCaseFactory, ImportedMedia, ShareUrl},
     application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource},
+    domain::import::inner::RawFile,
     error::AppResult,
 };
 
@@ -48,6 +49,26 @@ where
             .json_import()
             .import_from_json(json)
             .await
+    }
+
+    pub async fn raw_files_from_share_url(
+        &self,
+        url: &ShareUrl<'_>,
+    ) -> AppResult<Vec<RawFile>> {
+        self.import_use_cases
+            .share_import()
+            .raw_files_from_share_url(url)
+            .await
+    }
+
+    pub async fn raw_files_from_fslink(&self, fslink: &str) -> AppResult<Vec<RawFile>> {
+        self.import_use_cases
+            .json_import()
+            .raw_files_from_fslink(fslink)
+    }
+
+    pub async fn raw_files_from_json(&self, json: Vec<u8>) -> AppResult<Vec<RawFile>> {
+        self.import_use_cases.json_import().raw_files_from_json(json)
     }
 }
 

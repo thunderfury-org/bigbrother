@@ -28,6 +28,16 @@ where
         self.import_from_resource_json(&resource).await
     }
 
+    pub(crate) fn raw_files_from_fslink(&self, fslink: &str) -> AppResult<Vec<RawFile>> {
+        let resource = self.parse_fslink_resource(fslink)?;
+        Ok(raw_files_from_resource(&resource))
+    }
+
+    pub(crate) fn raw_files_from_json(&self, json: Vec<u8>) -> AppResult<Vec<RawFile>> {
+        let resource: ResourceJson = parse_files_from_json(json)?;
+        Ok(raw_files_from_resource(&resource))
+    }
+
     fn parse_fslink_resource(&self, fslink: &str) -> AppResult<ResourceJson> {
         let mut resource = ResourceJson::default();
 
@@ -49,29 +59,7 @@ where
     }
 
     fn normalize_resource_files(&mut self, resource: &ResourceJson) -> Vec<MediaFile> {
-        let mut raw_files = Vec::new();
-
-        for file in &resource.files {
-            let _path = format!("{}/{}", &resource.common_path, &file.path);
-            let path = Path::new(_path.as_str());
-            let parent_path = path
-                .parent()
-                .map(|p| p.to_str().unwrap_or_default())
-                .unwrap_or_default();
-            let name = path
-                .file_name()
-                .map(|p| p.to_str().unwrap_or_default())
-                .unwrap_or_default();
-
-            raw_files.push(RawFile {
-                id: None,
-                name: name.to_owned(),
-                etag: file.etag.as_str().into(),
-                size: file.size,
-                path: parent_path.to_owned(),
-            });
-        }
-
+        let raw_files = raw_files_from_resource(resource);
         self.metadata_lookup_mut().build_media_files(raw_files)
     }
 
@@ -81,4 +69,31 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         self.transfer_mut().transfer_media_files(&media_files).await
     }
+}
+
+pub(crate) fn raw_files_from_resource(resource: &ResourceJson) -> Vec<RawFile> {
+    let mut raw_files = Vec::new();
+
+    for file in &resource.files {
+        let full_path = format!("{}/{}", &resource.common_path, &file.path);
+        let path = Path::new(full_path.as_str());
+        let parent_path = path
+            .parent()
+            .map(|p| p.to_str().unwrap_or_default())
+            .unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|p| p.to_str().unwrap_or_default())
+            .unwrap_or_default();
+
+        raw_files.push(RawFile {
+            id: None,
+            name: name.to_owned(),
+            etag: file.etag.as_str().into(),
+            size: file.size,
+            path: parent_path.to_owned(),
+        });
+    }
+
+    raw_files
 }

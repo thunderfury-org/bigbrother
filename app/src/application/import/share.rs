@@ -9,7 +9,7 @@ use crate::application::import_ports::{
 };
 use crate::domain::import::{
     ShareUrl,
-    inner::MediaFile,
+    inner::{MediaFile, RawFile},
     source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
 };
 use crate::error::{AppError, AppResult};
@@ -28,6 +28,40 @@ where
         info!("Importing from share URL: {}", url.get_url());
         let (provider, media_files) = self.collect_media_files(url).await?;
         self.execute_import(provider, media_files).await
+    }
+
+    pub(crate) async fn raw_files_from_share_url(
+        &mut self,
+        url: &ShareUrl<'_>,
+    ) -> AppResult<Vec<RawFile>> {
+        match url {
+            ShareUrl::Pan123(url) => {
+                let (share_key, share_password) = parse_pan123_share_parts(url);
+                self.raw_files_from_pan123_share(share_key.as_str(), share_password.as_str())
+                    .await
+            }
+            ShareUrl::Pan189(url) => {
+                let share_code = parse_pan189_share_code(url);
+                if share_code.is_empty() {
+                    return Err(AppError::NotFound(format!(
+                        "Can not extract share code from URL: {}",
+                        url
+                    )));
+                }
+                self.raw_files_from_pan189_share(&share_code).await
+            }
+            ShareUrl::Pan115(url) => {
+                let (share_code, receive_code) = parse_pan115_share_parts(url);
+                if share_code.is_empty() {
+                    return Err(AppError::NotFound(format!(
+                        "Can not extract share code from URL: {}",
+                        url
+                    )));
+                }
+                self.raw_files_from_pan115_share(&share_code, &receive_code)
+                    .await
+            }
+        }
     }
 
     async fn collect_media_files(
