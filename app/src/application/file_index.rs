@@ -161,9 +161,16 @@ where
         let mut total = 0;
         for source in sources {
             let source_for_log = source.clone();
-            match self.ingest_source(source, description.clone()).await {
-                Ok(count) => total += count,
+            match self
+                .ingest_source(source.clone(), description.clone())
+                .await
+            {
+                Ok(count) => {
+                    cleanup_local_event_source(&source_for_log).await;
+                    total += count;
+                }
                 Err(err) if is_permanent_index_source_error(&err) => {
+                    cleanup_local_event_source(&source_for_log).await;
                     warn!(
                         source = ?source_for_log,
                         error = %err,
@@ -209,6 +216,20 @@ fn is_permanent_index_source_error(error: &AppError) -> bool {
         }
         AppErrorKind::Dependency => false,
         AppErrorKind::Runtime | AppErrorKind::Internal => false,
+    }
+}
+
+async fn cleanup_local_event_source(source: &FileIndexSource) {
+    let FileIndexSource::LocalJsonFile(path) = source else {
+        return;
+    };
+
+    if let Err(err) = tokio::fs::remove_file(path).await {
+        warn!(
+            source = ?source,
+            error = %err,
+            "failed to remove local file index source"
+        );
     }
 }
 
@@ -383,6 +404,7 @@ mod tests {
 mod ingest_tests {
     use std::{
         collections::HashMap,
+        path::PathBuf,
         sync::{Arc, Mutex},
     };
 
@@ -412,6 +434,7 @@ mod ingest_tests {
     #[derive(Clone, Default)]
     struct FakeRawFileSource {
         share_results: Arc<Mutex<HashMap<String, AppResult<Vec<RawFile>>>>>,
+        json_result: Arc<Mutex<Option<AppResult<Vec<RawFile>>>>>,
     }
 
     impl FakeRawFileSource {
@@ -420,6 +443,11 @@ mod ingest_tests {
                 .lock()
                 .unwrap()
                 .insert(url.to_owned(), result);
+            self
+        }
+
+        fn with_json_result(self, result: AppResult<Vec<RawFile>>) -> Self {
+            *self.json_result.lock().unwrap() = Some(result);
             self
         }
     }
@@ -445,9 +473,11 @@ mod ingest_tests {
         }
 
         async fn raw_files_from_json_bytes(&self, _json: Vec<u8>) -> AppResult<Vec<RawFile>> {
-            Err(AppError::InvalidParameter(
-                "missing fake json result".to_owned(),
-            ))
+            self.json_result.lock().unwrap().clone().unwrap_or_else(|| {
+                Err(AppError::InvalidParameter(
+                    "missing fake json result".to_owned(),
+                ))
+            })
         }
     }
 
@@ -459,6 +489,14 @@ mod ingest_tests {
             size: 100,
             path: "/Movies".into(),
         }
+    }
+
+    fn temp_index_file(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("bigbrother-file-index-{nanos}-{name}.json"))
     }
 
     #[test]
@@ -531,5 +569,74 @@ mod ingest_tests {
             .unwrap_err();
 
         assert!(matches!(error, AppError::Dependency(message) if message.contains("timeout")));
+    }
+
+    #[tokio::test]
+    async fn event_ingest_deletes_local_json_source_after_success() {
+        let repo = FakeRepo::default();
+        let path = temp_index_file("success");
+        tokio::fs::write(&path, b"{}").await.unwrap();
+        let source = FakeRawFileSource::default().with_json_result(Ok(vec![raw_file("movie.mkv")]));
+        let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
+
+        let written = service
+            .ingest_sources_from_event(
+                vec![FileIndexSource::LocalJsonFile(
+                    path.to_string_lossy().to_string(),
+                )],
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(written, 1);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn event_ingest_deletes_local_json_source_after_permanent_error() {
+        let repo = FakeRepo::default();
+        let path = temp_index_file("permanent");
+        tokio::fs::write(&path, b"{}").await.unwrap();
+        let source = FakeRawFileSource::default()
+            .with_json_result(Err(AppError::InvalidParameter("bad json".into())));
+        let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
+
+        let written = service
+            .ingest_sources_from_event(
+                vec![FileIndexSource::LocalJsonFile(
+                    path.to_string_lossy().to_string(),
+                )],
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(written, 0);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn event_ingest_keeps_local_json_source_for_retryable_error() {
+        let repo = FakeRepo::default();
+        let path = temp_index_file("retry");
+        tokio::fs::write(&path, b"{}").await.unwrap();
+        let source = FakeRawFileSource::default()
+            .with_json_result(Err(AppError::Dependency("timeout".into())));
+        let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
+
+        let error = service
+            .ingest_sources_from_event(
+                vec![FileIndexSource::LocalJsonFile(
+                    path.to_string_lossy().to_string(),
+                )],
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, AppError::Dependency(message) if message.contains("timeout")));
+        assert!(path.exists());
+        let _ = tokio::fs::remove_file(path).await;
     }
 }
