@@ -45,9 +45,19 @@ pub fn extract_index_sources_from_parts(text: &str, raw_urls: Vec<String>) -> Ve
 pub fn message_description(msg: &Message) -> Option<String> {
     msg.text()
         .or(msg.caption())
+        .and_then(message_description_from_text)
+}
+
+fn message_description_from_text(text: &str) -> Option<String> {
+    let description = text
+        .lines()
         .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !crate::application::import::is_fslink(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let description = description.trim();
+    (!description.is_empty()).then_some(description.to_owned())
 }
 
 fn extract_urls(msg: &Message) -> Vec<Url> {
@@ -91,5 +101,23 @@ mod tests {
         );
 
         assert_eq!(sources.len(), 2);
+    }
+
+    #[test]
+    fn message_description_ignores_fslink_lines() {
+        let description = message_description_from_text(
+            "资源说明\n123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv",
+        );
+
+        assert_eq!(description.as_deref(), Some("资源说明"));
+    }
+
+    #[test]
+    fn message_description_returns_none_for_fslink_only_text() {
+        let description = message_description_from_text(
+            "123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv",
+        );
+
+        assert_eq!(description, None);
     }
 }
