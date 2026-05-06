@@ -207,10 +207,7 @@ fn is_permanent_index_source_error(error: &AppError) -> bool {
         AppErrorKind::InvalidParameter | AppErrorKind::NotFound | AppErrorKind::RuleRejected => {
             true
         }
-        AppErrorKind::Dependency => {
-            let message = error.to_string().to_ascii_lowercase();
-            message.contains("shareauditnotpass") || message.contains("share audit not pass")
-        }
+        AppErrorKind::Dependency => false,
         AppErrorKind::Runtime | AppErrorKind::Internal => false,
     }
 }
@@ -471,8 +468,8 @@ mod ingest_tests {
         let source = FakeRawFileSource::default()
             .with_share_result(
                 "https://cloud.189.cn/t/bad",
-                Err(AppError::Dependency(
-                    "request error, error, http request failed, status: 400 Bad Request, payload: {\"res_message\":\"share audit not pass.\",\"res_code\":\"ShareAuditNotPass\"}".into(),
+                Err(AppError::RuleRejected(
+                    "request error, share audit not pass".into(),
                 )),
             )
             .with_share_result(

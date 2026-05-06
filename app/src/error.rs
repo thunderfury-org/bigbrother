@@ -57,12 +57,31 @@ impl From<serde_json::Error> for AppError {
 
 impl From<RequestError> for AppError {
     fn from(e: RequestError) -> Self {
-        Self::Dependency(format!("request error, {e}"))
+        match e {
+            RequestError::ShareAuditNotPass => {
+                Self::RuleRejected("request error, share audit not pass".to_owned())
+            }
+            other => Self::Dependency(format!("request error, {other}")),
+        }
     }
 }
 
 impl From<sea_orm::error::DbErr> for AppError {
     fn from(e: sea_orm::error::DbErr) -> Self {
         Self::Dependency(format!("db error, {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_audit_not_pass_maps_to_rule_rejected() {
+        let error = AppError::from(RequestError::ShareAuditNotPass);
+
+        assert!(
+            matches!(error, AppError::RuleRejected(message) if message.contains("share audit not pass"))
+        );
     }
 }

@@ -199,6 +199,9 @@ impl Client {
         )
         .await?;
         if info.res_code != 0 {
+            if is_share_audit_not_pass(&info.res_message) {
+                return Err(RequestError::ShareAuditNotPass);
+            }
             return Err(RequestError::Error(format!(
                 "get share info failed, res_code: {}, res_message: {}",
                 info.res_code, info.res_message
@@ -791,6 +794,12 @@ fn is_pan189_auth_error(code: &str, message: &str) -> bool {
             && (message.contains("invalid") || message.contains("expired"))
 }
 
+fn is_share_audit_not_pass(message: &str) -> bool {
+    message
+        .to_ascii_lowercase()
+        .contains("share audit not pass")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -909,6 +918,27 @@ mod tests {
             }
             other => panic!("expected business error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn get_share_info_returns_share_audit_not_pass_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/share/getShareInfoByCodeV2.action"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "res_code": 400,
+                "res_message": "share audit not pass.",
+                "fileId": "",
+                "fileName": "",
+                "shareId": 0,
+                "shareMode": 0
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client(&server).get_share_info("abc123").await.unwrap_err();
+
+        assert!(matches!(error, RequestError::ShareAuditNotPass));
     }
 
     #[tokio::test]
