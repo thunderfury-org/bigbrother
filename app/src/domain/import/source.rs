@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose};
-use serde::Deserialize;
+use serde::{Deserialize, de::Deserializer};
 use tracing::info;
 use url::Url;
 
@@ -44,7 +44,9 @@ impl<'a> ShareUrl<'a> {
 #[derive(Debug, Deserialize)]
 pub(crate) struct ResourceFile {
     pub(crate) path: String,
+    #[serde(default, alias = "md5", alias = "sha1")]
     pub(crate) etag: String,
+    #[serde(deserialize_with = "deserialize_u64_from_string_or_number")]
     pub(crate) size: u64,
 }
 
@@ -178,6 +180,23 @@ pub(crate) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
         common_path: String::new(),
         files,
     })
+}
+
+fn deserialize_u64_from_string_or_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U64Value {
+        Number(u64),
+        String(String),
+    }
+
+    match U64Value::deserialize(deserializer)? {
+        U64Value::Number(value) => Ok(value),
+        U64Value::String(value) => value.parse::<u64>().map_err(serde::de::Error::custom),
+    }
 }
 
 fn decode_base64_json_if_needed(json: Vec<u8>) -> Vec<u8> {
@@ -367,6 +386,36 @@ mod tests {
         assert_eq!(object_resource.files.len(), 2);
         assert_eq!(array_resource.common_path, "");
         assert_eq!(array_resource.files[0].path, "3 h.264.mkv");
+    }
+
+    #[test]
+    fn parses_json_resource_with_string_sizes() {
+        let object_json = r#"
+        {
+            "commonPath": "",
+            "files": [
+                {
+                    "path": "Pegasus.3.2026.2160p.WEB-DL.60fps.HQ.DV.H.265.DTS5.1-HiveWeb.mkv",
+                    "sha1": "A444F38B2CECB8A71AD27A0DD88BED1CF1FA1EB6",
+                    "size": "30062779674"
+                }
+            ]
+        }
+        "#;
+
+        let resource = parse_files_from_json(object_json.as_bytes().to_vec()).unwrap();
+
+        assert_eq!(resource.common_path, "");
+        assert_eq!(resource.files.len(), 1);
+        assert_eq!(
+            resource.files[0].path,
+            "Pegasus.3.2026.2160p.WEB-DL.60fps.HQ.DV.H.265.DTS5.1-HiveWeb.mkv"
+        );
+        assert_eq!(
+            resource.files[0].etag,
+            "A444F38B2CECB8A71AD27A0DD88BED1CF1FA1EB6"
+        );
+        assert_eq!(resource.files[0].size, 30062779674);
     }
 
     #[test]

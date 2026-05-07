@@ -53,6 +53,15 @@ pub async fn get<U: IntoUrl, T: DeserializeOwned>(
     query: Option<Vec<(&str, &str)>>,
     headers: Option<Vec<(&str, &str)>>,
 ) -> RequestResult<T> {
+    let response = get_response(url, query, headers).await?;
+    process_response(response).await
+}
+
+pub async fn get_response<U: IntoUrl>(
+    url: U,
+    query: Option<Vec<(&str, &str)>>,
+    headers: Option<Vec<(&str, &str)>>,
+) -> RequestResult<reqwest::Response> {
     let mut request = HTTP_CLIENT.get(url);
     if let Some(q) = query {
         request = request.query(&q);
@@ -66,11 +75,10 @@ pub async fn get<U: IntoUrl, T: DeserializeOwned>(
         }
     }
 
-    let result = request.send().await;
-    match result {
-        Err(e) => Err(RequestError::Error(format!("http get failed, {}", e))),
-        Ok(response) => process_response(response).await,
-    }
+    request
+        .send()
+        .await
+        .map_err(|e| RequestError::Error(format!("http get failed, {}", e)))
 }
 
 pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(

@@ -2,4 +2,8 @@
 
 pub mod cache;
 pub mod event;
+pub mod file_description;
+pub mod file_index;
+pub mod file_location;
+pub mod file_location_description;
 pub mod keyword;

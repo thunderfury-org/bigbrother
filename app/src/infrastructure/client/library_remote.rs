@@ -61,6 +61,9 @@ fn map_download_url_error(err: RequestError) -> DownloadUrlError {
         RequestError::Unauthorized => DownloadUrlError::Unauthorized,
         RequestError::NotFound(message) => DownloadUrlError::NotFound(message),
         RequestError::AlreadyExists => DownloadUrlError::Error("already exists".to_string()),
+        RequestError::ShareAuditNotPass => {
+            DownloadUrlError::Error("share audit not pass".to_string())
+        }
         RequestError::TooManyRequests => DownloadUrlError::Error("too many requests".to_string()),
         RequestError::Error(message) => DownloadUrlError::Error(message),
     }
@@ -126,6 +129,10 @@ mod tests {
         assert!(matches!(
             map_download_url_error(RequestError::TooManyRequests),
             DownloadUrlError::Error(message) if message == "too many requests"
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::ShareAuditNotPass),
+            DownloadUrlError::Error(message) if message == "share audit not pass"
         ));
     }
 

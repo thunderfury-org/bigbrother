@@ -11,12 +11,13 @@ pub struct Cli {
 pub enum Commands {
     Server(DataDirArgs),
     ImportShareUrl(ImportShareUrlArgs),
+    SearchFiles(SearchFilesArgs),
 }
 
 #[derive(Args)]
 pub struct DataDirArgs {
     /// data directory
-    #[arg(short, long, default_value_t = String::from("./data"))]
+    #[arg(short = 'D', long, default_value_t = String::from("./data"))]
     pub data_dir: String,
 }
 
@@ -26,7 +27,18 @@ pub struct ImportShareUrlArgs {
     pub data_dir: DataDirArgs,
     #[arg(short, long)]
     pub verbose: bool,
+    #[arg(short = 'd', long)]
+    pub description: Option<String>,
     pub url: String,
+}
+
+#[derive(Args)]
+pub struct SearchFilesArgs {
+    #[command(flatten)]
+    pub data_dir: DataDirArgs,
+    #[arg(short, long, default_value_t = 20)]
+    pub limit: u64,
+    pub keyword: String,
 }
 
 #[cfg(test)]
@@ -58,6 +70,47 @@ mod tests {
                 assert_eq!(args.url, "https://www.123pan.com/s/test?pwd=pass");
             }
             _ => panic!("expected import-share-url command"),
+        }
+    }
+
+    #[test]
+    fn parses_import_share_url_description() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "import-share-url",
+            "--description",
+            "from cli",
+            "--data-dir",
+            "./data",
+            "https://www.123pan.com/s/test?pwd=pass",
+        ]);
+
+        match cli.command {
+            Commands::ImportShareUrl(args) => {
+                assert_eq!(args.description.as_deref(), Some("from cli"));
+            }
+            _ => panic!("expected import-share-url command"),
+        }
+    }
+
+    #[test]
+    fn parses_search_files_command() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "search-files",
+            "--limit",
+            "50",
+            "--data-dir",
+            "./data",
+            "movie",
+        ]);
+
+        match cli.command {
+            Commands::SearchFiles(args) => {
+                assert_eq!(args.keyword, "movie");
+                assert_eq!(args.limit, 50);
+            }
+            _ => panic!("expected search-files command"),
         }
     }
 }

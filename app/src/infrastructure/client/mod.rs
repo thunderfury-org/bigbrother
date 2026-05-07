@@ -12,6 +12,9 @@ pub enum RequestError {
     #[error("already exists")]
     AlreadyExists,
 
+    #[error("share audit not pass")]
+    ShareAuditNotPass,
+
     #[error("unauthorized")]
     Unauthorized,
 

@@ -1,7 +1,7 @@
 use std::{fs, path::Path, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use reqwest::{Client as HttpClient, header};
+use reqwest::{Client as HttpClient, StatusCode, header};
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs8::DecodePublicKey, rand_core::OsRng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -192,13 +192,39 @@ impl Client {
     }
 
     pub async fn get_share_info(&self, share_code: &str) -> RequestResult<ShareInfo> {
-        let info: ShareInfo = http::get(
+        let response = http::get_response(
             self.build_api_url("/api/open/share/getShareInfoByCodeV2.action"),
             Some(vec![("shareCode", share_code)]),
             Some(vec![("sign-type", "1")]),
         )
         .await?;
+
+        let status = response.status();
+        let url = response.url().to_string();
+        let payload = response.text().await?;
+
+        if status == StatusCode::UNAUTHORIZED {
+            return Err(RequestError::Unauthorized);
+        }
+
+        if !status.is_success() {
+            if is_share_audit_not_pass_payload(&payload) {
+                return Err(RequestError::ShareAuditNotPass);
+            }
+            return Err(RequestError::Error(format!(
+                "http request to {url} failed, status: {status}, payload: {payload}",
+            )));
+        }
+
+        let info: ShareInfo = serde_json::from_str(&payload).map_err(|err| {
+            RequestError::Error(format!(
+                "http request to {url} failed, decode payload failed, {err}, payload: {payload}",
+            ))
+        })?;
         if info.res_code != 0 {
+            if is_share_audit_not_pass(&info.res_message) {
+                return Err(RequestError::ShareAuditNotPass);
+            }
             return Err(RequestError::Error(format!(
                 "get share info failed, res_code: {}, res_message: {}",
                 info.res_code, info.res_message
@@ -791,6 +817,18 @@ fn is_pan189_auth_error(code: &str, message: &str) -> bool {
             && (message.contains("invalid") || message.contains("expired"))
 }
 
+fn is_share_audit_not_pass(message: &str) -> bool {
+    message
+        .to_ascii_lowercase()
+        .contains("share audit not pass")
+}
+
+fn is_share_audit_not_pass_payload(payload: &str) -> bool {
+    serde_json::from_str::<ErrorCodeResponse>(payload)
+        .map(|response| is_share_audit_not_pass(&response.error_message))
+        .unwrap_or_else(|_| is_share_audit_not_pass(payload))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -909,6 +947,44 @@ mod tests {
             }
             other => panic!("expected business error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn get_share_info_returns_share_audit_not_pass_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/share/getShareInfoByCodeV2.action"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "res_code": 400,
+                "res_message": "share audit not pass.",
+                "fileId": "",
+                "fileName": "",
+                "shareId": 0,
+                "shareMode": 0
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client(&server).get_share_info("abc123").await.unwrap_err();
+
+        assert!(matches!(error, RequestError::ShareAuditNotPass));
+    }
+
+    #[tokio::test]
+    async fn get_share_info_returns_share_audit_not_pass_error_on_http_400() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/share/getShareInfoByCodeV2.action"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "res_code": "ShareAuditNotPass",
+                "res_message": "share audit not pass."
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client(&server).get_share_info("abc123").await.unwrap_err();
+
+        assert!(matches!(error, RequestError::ShareAuditNotPass));
     }
 
     #[tokio::test]

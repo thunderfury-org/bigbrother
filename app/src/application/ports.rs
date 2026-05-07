@@ -77,3 +77,28 @@ pub trait FileStore {
     async fn remove_file(&self, path: &str) -> AppResult<()>;
     async fn remove_dir_all(&self, path: &str) -> AppResult<()>;
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileIndexRecordInput {
+    pub size: u64,
+    pub md5: Option<String>,
+    pub sha1: Option<String>,
+    pub file_name: String,
+    pub file_path: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSearchRecord {
+    pub file_name: String,
+    pub file_path: String,
+    pub size: u64,
+    pub md5: Option<String>,
+    pub sha1: Option<String>,
+    pub descriptions: Vec<String>,
+}
+
+pub trait FileIndexRepository: Clone {
+    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()>;
+    async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>;
+}
