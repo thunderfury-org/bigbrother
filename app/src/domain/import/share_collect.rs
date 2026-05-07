@@ -1,7 +1,7 @@
 use crate::domain::import::inner::RawFile;
 
 use super::{
-    LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder,
+    LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, QuarkFile, QuarkFolder,
     share_walk::{DirectoryEntries, child_share_path},
 };
 
@@ -78,6 +78,35 @@ pub(crate) fn collect_pan115_directory_entries(
             child_dirs.push((cid.to_owned(), child_share_path(parent_path, &entry.name)));
         }
     }
+
+    DirectoryEntries::new(child_dirs, raw_files)
+}
+
+pub(crate) fn collect_quark_directory_entries(
+    folders: &[QuarkFolder],
+    files: &[QuarkFile],
+    parent_path: &str,
+) -> DirectoryEntries<String> {
+    let child_dirs = folders
+        .iter()
+        .map(|folder| {
+            (
+                folder.fid.to_owned(),
+                child_share_path(parent_path, &folder.name),
+            )
+        })
+        .collect();
+
+    let raw_files = files
+        .iter()
+        .map(|file| RawFile {
+            id: None,
+            name: file.name.to_owned(),
+            etag: String::new().as_str().into(),
+            size: file.size,
+            path: parent_path.to_owned(),
+        })
+        .collect();
 
     DirectoryEntries::new(child_dirs, raw_files)
 }

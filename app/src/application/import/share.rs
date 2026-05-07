@@ -10,7 +10,10 @@ use crate::application::import_ports::{
 use crate::domain::import::{
     ShareUrl,
     inner::{MediaFile, RawFile},
-    source::{parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code},
+    source::{
+        parse_pan115_share_parts, parse_pan123_share_parts, parse_pan189_share_code,
+        parse_quark_share_parts,
+    },
 };
 use crate::error::{AppError, AppResult};
 
@@ -61,7 +64,16 @@ where
                 self.raw_files_from_pan115_share(&share_code, &receive_code)
                     .await
             }
-            ShareUrl::Quark(_) => todo!(),
+            ShareUrl::Quark(url) => {
+                let (share_id, password) = parse_quark_share_parts(url);
+                if share_id.is_empty() {
+                    return Err(AppError::NotFound(format!(
+                        "Can not extract share id from URL: {}",
+                        url
+                    )));
+                }
+                self.raw_files_from_quark_share(&share_id, &password).await
+            }
         }
     }
 
@@ -73,7 +85,7 @@ where
             ShareUrl::Pan123(url) => self.collect_pan123_media_files(url).await,
             ShareUrl::Pan189(url) => self.collect_pan189_media_files(url).await,
             ShareUrl::Pan115(url) => self.collect_pan115_media_files(url).await,
-            ShareUrl::Quark(_) => todo!(),
+            ShareUrl::Quark(url) => self.collect_quark_media_files(url).await,
         }
     }
 
@@ -122,6 +134,25 @@ where
             .list_files_from_pan115_share(&share_code, &receive_code)
             .await?;
         Ok(("pan115", media_files))
+    }
+
+    async fn collect_quark_media_files(
+        &mut self,
+        url: &Url,
+    ) -> AppResult<(&'static str, Vec<MediaFile>)> {
+        let (share_id, password) = parse_quark_share_parts(url);
+
+        if share_id.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "Can not extract share id from URL: {}",
+                url
+            )));
+        }
+
+        let media_files = self
+            .list_files_from_quark_share(&share_id, &password)
+            .await?;
+        Ok(("quark", media_files))
     }
 
     async fn execute_import(

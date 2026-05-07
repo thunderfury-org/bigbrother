@@ -5,7 +5,7 @@ use crate::domain::import::{
     inner::{MediaFile, RawFile},
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
-        collect_pan189_directory_entries,
+        collect_pan189_directory_entries, collect_quark_directory_entries,
     },
     share_walk::ShareTraversal,
     source::{ResourceJson, parse_files_from_json},
@@ -151,6 +151,81 @@ where
         }
 
         Ok(traversal.into_raw_files())
+    }
+
+    pub(super) async fn list_files_from_quark_share(
+        &mut self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<Vec<MediaFile>> {
+        let raw_files = self.raw_files_from_quark_share(share_id, password).await?;
+        Ok(self.metadata_lookup_mut().build_media_files(raw_files))
+    }
+
+    pub(crate) async fn raw_files_from_quark_share(
+        &mut self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<Vec<RawFile>> {
+        let share_info = self
+            .share_source()
+            .get_quark_share_info(share_id, password)
+            .await?;
+
+        // Phase 1: BFS traversal, collect file info
+        let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
+        let mut file_infos: Vec<(String, String, String, u64, String)> = Vec::new();
+        // (fid, share_fid_token, name, size, path)
+
+        while let Some((parent_id, parent_path)) = traversal.next_dir() {
+            let (folders, files) = self
+                .share_source()
+                .list_quark_share_files(share_id, password, &share_info.stoken, &parent_id)
+                .await?;
+
+            for file in &files {
+                file_infos.push((
+                    file.fid.clone(),
+                    file.share_fid_token.clone(),
+                    file.name.clone(),
+                    file.size,
+                    parent_path.clone(),
+                ));
+            }
+
+            traversal.extend(collect_quark_directory_entries(
+                &folders,
+                &files,
+                &parent_path,
+            ));
+        }
+
+        // Phase 2: Batch fetch md5
+        let md5_pairs: Vec<(String, String)> = file_infos
+            .iter()
+            .map(|(fid, token, _, _, _)| (fid.clone(), token.clone()))
+            .collect();
+        let md5_map = self
+            .share_source()
+            .batch_get_quark_file_md5s(share_id, password, &share_info.stoken, &md5_pairs)
+            .await?;
+
+        // Phase 3: Build RawFiles with md5
+        let raw_files: Vec<RawFile> = file_infos
+            .into_iter()
+            .map(|(fid, _token, name, size, path)| {
+                let md5 = md5_map.get(&fid).cloned().unwrap_or_default();
+                RawFile {
+                    id: None,
+                    name,
+                    etag: md5.as_str().into(),
+                    size,
+                    path,
+                }
+            })
+            .collect();
+
+        Ok(raw_files)
     }
 }
 
