@@ -13,10 +13,9 @@ pub(crate) enum ShareUrl<'a> {
 
 impl<'a> ShareUrl<'a> {
     pub fn from(url: &'a Url) -> Option<Self> {
-        if url
-            .host_str()
-            .is_some_and(|host| host.starts_with("www.123") && host.ends_with(".com"))
-            && url.path().starts_with("/s/")
+        if url.host_str().is_some_and(|host| {
+            (host.starts_with("www.123") || host.contains(".share.123")) && host.ends_with(".com")
+        }) && (url.path().starts_with("/s/") || url.path().starts_with("/123"))
         {
             Some(Self::Pan123(url))
         } else if url.host_str().is_some_and(|host| host == "cloud.189.cn")
@@ -290,9 +289,15 @@ mod tests {
     #[test]
     fn share_url_recognizes_supported_hosts() {
         let pan123 = Url::parse("https://www.123pan.com/s/abc123?pwd=test").unwrap();
+        let pan123_new =
+            Url::parse("https://1850081502.share.123865.com/123pan/4Ulmvd-hWbSA?pwd=33Rw").unwrap();
         let pan189 = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
 
         assert!(matches!(ShareUrl::from(&pan123), Some(ShareUrl::Pan123(_))));
+        assert!(matches!(
+            ShareUrl::from(&pan123_new),
+            Some(ShareUrl::Pan123(_))
+        ));
         assert!(matches!(ShareUrl::from(&pan189), Some(ShareUrl::Pan189(_))));
     }
 
@@ -305,6 +310,8 @@ mod tests {
     #[test]
     fn parses_share_specific_parts() {
         let pan123 = Url::parse("https://www.123pan.com/s/share123?pwd=pass456").unwrap();
+        let pan123_new =
+            Url::parse("https://1850081502.share.123865.com/123pan/4Ulmvd-hWbSA?pwd=33Rw").unwrap();
         let pan189_query = Url::parse("https://cloud.189.cn/web/share?code=abc123").unwrap();
         let pan189_path = Url::parse("https://cloud.189.cn/t/pathcode").unwrap();
         let pan115 = Url::parse("https://115.com/s/share115?password=recv").unwrap();
@@ -313,6 +320,10 @@ mod tests {
         assert_eq!(
             parse_pan123_share_parts(&pan123),
             ("share123".into(), "pass456".into())
+        );
+        assert_eq!(
+            parse_pan123_share_parts(&pan123_new),
+            ("4Ulmvd-hWbSA".into(), "33Rw".into())
         );
         assert_eq!(parse_pan189_share_code(&pan189_query), "abc123");
         assert_eq!(parse_pan189_share_code(&pan189_path), "pathcode");
