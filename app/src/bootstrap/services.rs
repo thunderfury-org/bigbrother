@@ -112,6 +112,8 @@ mod tests {
 pan123:
   passport: test-user
   password: test-pass
+quark:
+  cookie: test-cookie
 tmdb:
   api_key: test-tmdb-key
 library:
