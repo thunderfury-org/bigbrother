@@ -99,17 +99,20 @@ impl Pan115FileEntry {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) struct QuarkShareInfo {
     pub stoken: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) struct QuarkFolder {
     pub fid: String,
     pub name: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) struct QuarkFile {
     pub fid: String,
     pub name: String,

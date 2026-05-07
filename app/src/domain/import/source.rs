@@ -106,6 +106,7 @@ pub(crate) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
     (share_code, receive_code)
 }
 
+#[allow(dead_code)]
 pub(crate) fn parse_quark_share_parts(url: &Url) -> (String, String) {
     let share_id = url
         .path_segments()

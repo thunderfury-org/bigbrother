@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use crate::{
     application::import::{
         Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
-        Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
+        Pan189ShareInfo, QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult,
+        Season, TvDetail,
     },
     application::{
         import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
@@ -322,6 +323,34 @@ impl ShareSource for ShareImportGateway {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    async fn get_quark_share_info(
+        &self,
+        _share_id: &str,
+        _password: &str,
+    ) -> AppResult<QuarkShareInfo> {
+        todo!()
+    }
+
+    async fn list_quark_share_files(
+        &self,
+        _share_id: &str,
+        _password: &str,
+        _stoken: &str,
+        _pdir_fid: &str,
+    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
+        todo!()
+    }
+
+    async fn batch_get_quark_file_md5s(
+        &self,
+        _share_id: &str,
+        _password: &str,
+        _stoken: &str,
+        _file_infos: &[(String, String)],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        todo!()
     }
 }
 
