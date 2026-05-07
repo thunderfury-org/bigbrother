@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    QueryFilter, QueryOrder, QuerySelect, TransactionSession, TransactionTrait,
 };
 
 use crate::{
@@ -17,19 +17,21 @@ use crate::{
     },
 };
 
-pub async fn record_files<C>(db: &C, files: &[FileIndexRecordInput]) -> AppResult<usize>
+pub async fn record_files<C>(db: &C, files: &[FileIndexRecordInput]) -> AppResult<()>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
+    let txn = db.begin().await?;
     for file in files {
-        let file_index_id = find_or_insert_file_index(db, file).await?;
-        let file_location_id = find_or_insert_file_location(db, file_index_id, file).await?;
+        let file_index_id = find_or_insert_file_index(&txn, file).await?;
+        let file_location_id = find_or_insert_file_location(&txn, file_index_id, file).await?;
         if let Some(description) = file.description.as_deref() {
-            let file_description_id = find_or_insert_description(db, description).await?;
-            link_description(db, file_location_id, file_description_id).await?;
+            let file_description_id = find_or_insert_description(&txn, description).await?;
+            link_description(&txn, file_location_id, file_description_id).await?;
         }
     }
-    Ok(files.len())
+    txn.commit().await?;
+    Ok(())
 }
 
 pub async fn search_files<C>(db: &C, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>

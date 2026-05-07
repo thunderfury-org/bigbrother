@@ -71,7 +71,7 @@ where
         &self,
         files: Vec<SeenFile>,
         description: Option<String>,
-    ) -> AppResult<usize> {
+    ) -> AppResult<()> {
         let description = normalize_optional_text(description);
         let inputs = files
             .into_iter()
@@ -145,29 +145,26 @@ where
         &self,
         sources: Vec<FileIndexSource>,
         description: Option<String>,
-    ) -> AppResult<usize> {
-        let mut total = 0;
+    ) -> AppResult<()> {
         for source in sources {
-            total += self.ingest_source(source, description.clone()).await?;
+            self.ingest_source(source, description.clone()).await?;
         }
-        Ok(total)
+        Ok(())
     }
 
     pub async fn ingest_sources_from_event(
         &self,
         sources: Vec<FileIndexSource>,
         description: Option<String>,
-    ) -> AppResult<usize> {
-        let mut total = 0;
+    ) -> AppResult<()> {
         for source in sources {
             let source_for_log = source.clone();
             match self
                 .ingest_source(source.clone(), description.clone())
                 .await
             {
-                Ok(count) => {
+                Ok(()) => {
                     cleanup_local_event_source(&source_for_log).await;
-                    total += count;
                 }
                 Err(err) if is_permanent_index_source_error(&err) => {
                     cleanup_local_event_source(&source_for_log).await;
@@ -180,14 +177,14 @@ where
                 Err(err) => return Err(err),
             }
         }
-        Ok(total)
+        Ok(())
     }
 
     async fn ingest_source(
         &self,
         source: FileIndexSource,
         description: Option<String>,
-    ) -> AppResult<usize> {
+    ) -> AppResult<()> {
         let raw_files = match source {
             FileIndexSource::ShareUrl(raw_url) => {
                 self.source
@@ -310,9 +307,9 @@ mod tests {
     }
 
     impl FileIndexRepository for FakeRepo {
-        async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<usize> {
+        async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
             self.recorded.lock().unwrap().extend_from_slice(files);
-            Ok(files.len())
+            Ok(())
         }
 
         async fn search_files(
@@ -329,7 +326,7 @@ mod tests {
         let repo = FakeRepo::default();
         let service = FileIndexService::new(repo.clone());
 
-        let written = service
+        service
             .record_seen_files(
                 vec![
                     SeenFile {
@@ -364,7 +361,6 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(written, 2);
         let recorded = repo.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 2);
         assert_eq!(recorded[0].md5.as_deref(), Some("abcdef"));
@@ -417,9 +413,9 @@ mod ingest_tests {
     }
 
     impl FileIndexRepository for FakeRepo {
-        async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<usize> {
+        async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
             self.recorded.lock().unwrap().extend_from_slice(files);
-            Ok(files.len())
+            Ok(())
         }
 
         async fn search_files(
@@ -531,7 +527,7 @@ mod ingest_tests {
             );
         let service = FileIndexIngestService::new(source, FileIndexService::new(repo.clone()));
 
-        let written = service
+        service
             .ingest_sources_from_event(
                 vec![
                     FileIndexSource::ShareUrl("https://cloud.189.cn/t/bad".into()),
@@ -542,7 +538,6 @@ mod ingest_tests {
             .await
             .unwrap();
 
-        assert_eq!(written, 1);
         let recorded = repo.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 1);
         assert_eq!(recorded[0].file_name, "movie.mkv");
@@ -579,7 +574,7 @@ mod ingest_tests {
         let source = FakeRawFileSource::default().with_json_result(Ok(vec![raw_file("movie.mkv")]));
         let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
 
-        let written = service
+        service
             .ingest_sources_from_event(
                 vec![FileIndexSource::LocalJsonFile(
                     path.to_string_lossy().to_string(),
@@ -589,7 +584,6 @@ mod ingest_tests {
             .await
             .unwrap();
 
-        assert_eq!(written, 1);
         assert!(!path.exists());
     }
 
@@ -602,7 +596,7 @@ mod ingest_tests {
             .with_json_result(Err(AppError::InvalidParameter("bad json".into())));
         let service = FileIndexIngestService::new(source, FileIndexService::new(repo));
 
-        let written = service
+        service
             .ingest_sources_from_event(
                 vec![FileIndexSource::LocalJsonFile(
                     path.to_string_lossy().to_string(),
@@ -612,7 +606,6 @@ mod ingest_tests {
             .await
             .unwrap();
 
-        assert_eq!(written, 0);
         assert!(!path.exists());
     }
 

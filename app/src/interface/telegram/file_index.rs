@@ -8,7 +8,6 @@ use crate::{application::file_index::FileIndexSource, infrastructure::event_bus:
 pub struct IndexFilesFromSource {
     pub sources: Vec<FileIndexSource>,
     pub description: Option<String>,
-    pub source_kind: String,
 }
 
 impl Event for IndexFilesFromSource {

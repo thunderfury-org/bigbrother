@@ -271,7 +271,6 @@ async fn publish_file_index_event(runtime: &BotRuntime, bot: &Bot, msg: &Message
     let event = file_index::IndexFilesFromSource {
         sources,
         description: file_index::message_description(msg),
-        source_kind: "telegram".to_owned(),
     };
     if let Err(err) = runtime.file_index_event_bus().publish(&event).await {
         error!("Failed to publish file index event: {}", err);

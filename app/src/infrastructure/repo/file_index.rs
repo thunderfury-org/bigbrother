@@ -18,7 +18,7 @@ impl SeaOrmFileIndexRepository {
 }
 
 impl FileIndexRepository for SeaOrmFileIndexRepository {
-    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<usize> {
+    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
         entity::file_index::record_files(&self.db, files).await
     }
 
@@ -64,8 +64,8 @@ mod tests {
             },
         ];
 
-        assert_eq!(repo.record_files(&files).await.unwrap(), 2);
-        assert_eq!(repo.record_files(&files).await.unwrap(), 2);
+        repo.record_files(&files).await.unwrap();
+        repo.record_files(&files).await.unwrap();
 
         let results = repo.search_files("movie", 20).await.unwrap();
         assert_eq!(results.len(), 1);

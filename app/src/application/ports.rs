@@ -99,6 +99,6 @@ pub struct FileSearchRecord {
 }
 
 pub trait FileIndexRepository: Clone {
-    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<usize>;
+    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()>;
     async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>;
 }
