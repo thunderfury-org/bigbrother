@@ -196,7 +196,9 @@ where
             }
             FileIndexSource::LocalJsonFile(path) => {
                 let json = tokio::fs::read(&path).await.map_err(|err| {
-                    AppError::Runtime(format!("failed to read local index source '{path}': {err}"))
+                    AppError::InvalidParameter(format!(
+                        "failed to read local index source '{path}': {err}"
+                    ))
                 })?;
                 self.source.raw_files_from_json_bytes(json).await?
             }
