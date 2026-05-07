@@ -14,7 +14,7 @@ mod transfer_target;
 
 pub(crate) use crate::domain::import::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-    SearchMovieResult, SearchTvResult, Season, TvDetail,
+    QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
 pub(crate) use crate::domain::import::{ShareUrl, is_fslink};
 pub(crate) use factory::{

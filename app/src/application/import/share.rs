@@ -61,6 +61,7 @@ where
                 self.raw_files_from_pan115_share(&share_code, &receive_code)
                     .await
             }
+            ShareUrl::Quark(_) => todo!(),
         }
     }
 
@@ -72,6 +73,7 @@ where
             ShareUrl::Pan123(url) => self.collect_pan123_media_files(url).await,
             ShareUrl::Pan189(url) => self.collect_pan189_media_files(url).await,
             ShareUrl::Pan115(url) => self.collect_pan115_media_files(url).await,
+            ShareUrl::Quark(_) => todo!(),
         }
     }
 

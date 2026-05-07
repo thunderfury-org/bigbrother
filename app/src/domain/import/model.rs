@@ -97,3 +97,22 @@ impl Pan115FileEntry {
         self.fid.is_some()
     }
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct QuarkShareInfo {
+    pub stoken: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct QuarkFolder {
+    pub fid: String,
+    pub name: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct QuarkFile {
+    pub fid: String,
+    pub name: String,
+    pub size: u64,
+    pub share_fid_token: String,
+}
