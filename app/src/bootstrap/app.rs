@@ -13,6 +13,7 @@ pub struct Client {
     pub pan115: client::pan115::Client,
     pub pan123: client::pan123::Client,
     pub pan189: client::pan189::Client,
+    pub quark: client::quark::Client,
     pub tmdb: client::tmdb::Client,
 }
 
@@ -30,6 +31,7 @@ impl Client {
                 password: config.get_pan189_config().password.clone(),
                 cache_dir: format!("{}/pan189", config.get_cache_dir()),
             }),
+            quark: client::quark::Client::new(&config.get_quark_config().cookie),
             tmdb: client::tmdb::Client::new(&config.get_tmdb_config().api_key),
         }
     }

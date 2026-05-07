@@ -76,6 +76,7 @@ pub(crate) fn build_import_service_from_clients(
             clients.pan115.clone(),
             clients.pan123.clone(),
             clients.pan189.clone(),
+            clients.quark.clone(),
         ),
         TmdbMetadataGateway::new(clients.tmdb.clone()),
         FilesystemImportLocalStore::new(remote_path, local_path, strm_download_url),
