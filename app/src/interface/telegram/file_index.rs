@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use teloxide::types::{InlineKeyboardButtonKind, Message, MessageEntityKind};
+use teloxide::types::Message;
 use url::Url;
 
 use crate::{application::file_index::FileIndexSource, infrastructure::event_bus::Event};
@@ -17,7 +17,7 @@ impl Event for IndexFilesFromSource {
 
 pub fn extract_index_sources(msg: &Message) -> Vec<FileIndexSource> {
     let text = msg.text().or(msg.caption()).unwrap_or_default();
-    let urls = extract_urls(msg)
+    let urls = super::msg::extract_urls_from_msg(msg)
         .into_iter()
         .map(|url| url.to_string())
         .collect::<Vec<_>>();
@@ -58,35 +58,6 @@ fn message_description_from_text(text: &str) -> Option<String> {
         .join("\n");
     let description = description.trim();
     (!description.is_empty()).then_some(description.to_owned())
-}
-
-fn extract_urls(msg: &Message) -> Vec<Url> {
-    let mut urls = Vec::new();
-    if let Some(text) = msg.text() {
-        super::msg::extract_urls_from_text(text, &mut urls);
-    }
-    if let Some(caption) = msg.caption() {
-        super::msg::extract_urls_from_text(caption, &mut urls);
-    }
-
-    if let Some(entities) = msg.caption_entities() {
-        for entity in entities {
-            if let MessageEntityKind::TextLink { url } = &entity.kind {
-                urls.push(url.clone());
-            }
-        }
-    }
-
-    if let Some(reply_markup) = msg.reply_markup() {
-        for buttons in &reply_markup.inline_keyboard {
-            for button in buttons {
-                if let InlineKeyboardButtonKind::Url(url) = &button.kind {
-                    urls.push(url.clone());
-                }
-            }
-        }
-    }
-    urls
 }
 
 #[cfg(test)]

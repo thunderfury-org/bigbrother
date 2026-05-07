@@ -138,30 +138,7 @@ impl MsgProcessor<'_> {
     }
 
     fn extract_urls(&self) -> Vec<Url> {
-        let mut urls = Vec::new();
-
-        let text = self.msg.text().unwrap_or_default();
-        extract_urls_from_text(text, &mut urls);
-
-        if let Some(entities) = self.msg.caption_entities() {
-            for entity in entities {
-                if let MessageEntityKind::TextLink { url } = &entity.kind {
-                    urls.push(url.clone());
-                }
-            }
-        }
-
-        if let Some(reply_markup) = self.msg.reply_markup() {
-            for buttons in &reply_markup.inline_keyboard {
-                for button in buttons {
-                    if let InlineKeyboardButtonKind::Url(url) = &button.kind {
-                        urls.push(url.clone());
-                    }
-                }
-            }
-        }
-
-        urls
+        extract_urls_from_msg(self.msg)
     }
 
     async fn handle_imported_medias(&self, imported: Vec<ImportedMedia>) -> ResponseResult<()> {
@@ -186,6 +163,37 @@ impl MsgProcessor<'_> {
             error!("Failed publish send telegram message event: {}", e);
         }
     }
+}
+
+pub(super) fn extract_urls_from_msg(msg: &Message) -> Vec<Url> {
+    let mut urls = Vec::new();
+
+    if let Some(text) = msg.text() {
+        extract_urls_from_text(text, &mut urls);
+    }
+    if let Some(caption) = msg.caption() {
+        extract_urls_from_text(caption, &mut urls);
+    }
+
+    if let Some(entities) = msg.caption_entities() {
+        for entity in entities {
+            if let MessageEntityKind::TextLink { url } = &entity.kind {
+                urls.push(url.clone());
+            }
+        }
+    }
+
+    if let Some(reply_markup) = msg.reply_markup() {
+        for buttons in &reply_markup.inline_keyboard {
+            for button in buttons {
+                if let InlineKeyboardButtonKind::Url(url) = &button.kind {
+                    urls.push(url.clone());
+                }
+            }
+        }
+    }
+
+    urls
 }
 
 pub(super) fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
