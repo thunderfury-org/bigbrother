@@ -75,6 +75,7 @@ fn build_imported_tv_result_merges_existing_episode_presence() {
         has_failed: false,
         total_size: 2048,
         episodes: vec![1, 3],
+        failed_episodes: vec![],
     };
     let existing_episode_files = HashMap::from([(2, vec![create_media_file("S01E02.mkv", 100)])]);
 
@@ -120,6 +121,7 @@ fn accumulate_episode_transfer_result_records_success() {
             has_failed: false,
             total_size: 1024,
             episodes: vec![3],
+            failed_episodes: vec![],
         }
     );
 }
@@ -136,6 +138,7 @@ fn accumulate_episode_transfer_result_records_failure_without_episode() {
             has_failed: true,
             total_size: 0,
             episodes: vec![],
+            failed_episodes: vec![3],
         }
     );
 }

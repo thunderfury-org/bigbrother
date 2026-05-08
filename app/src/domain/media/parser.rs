@@ -677,7 +677,19 @@ impl ParsedMediaName {
     }
 
     fn parse_title(&mut self) {
-        let mut text = self.unoccupied_text();
+        // 纯数字文件名当作集数（如 "8.mp4" → episode 8）
+        let remaining = self.unoccupied_text();
+        let trimmed = remaining.trim();
+        if let Some(ep) = (!trimmed.is_empty() && DIGIT_RE.is_match(trimmed))
+            .then(|| parse_u32(trimmed))
+            .flatten()
+        {
+            self.metadata.episode_number = Some(ep);
+            self.parsed_kind = ParsedMediaKind::TvEpisode;
+            return;
+        }
+
+        let mut text = remaining;
         for (re, replace_to) in TITLE_REPLACE_RE.iter() {
             text = re.replace_all(&text, *replace_to).into_owned();
         }
