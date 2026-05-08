@@ -32,7 +32,6 @@ pub trait LibraryGateway: Clone {
     async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()>;
 }
 
-#[allow(dead_code)]
 pub trait ShareSource: Clone {
     async fn list_pan123_share_files(
         &self,

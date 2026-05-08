@@ -372,6 +372,12 @@ impl ShareSource for ShareImportGateway {
             .quark
             .list_share_files(share_id, password, stoken, pdir_fid, 1, 1000)
             .await?;
+        if folders.len() + files.len() >= 1000 {
+            tracing::warn!(
+                "quark directory {} has >= 1000 entries, results may be truncated",
+                pdir_fid
+            );
+        }
         Ok((
             folders.into_iter().map(Into::into).collect(),
             files.into_iter().map(Into::into).collect(),

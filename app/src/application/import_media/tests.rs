@@ -301,7 +301,7 @@ impl ShareSource for FakeShareSource {
         _share_id: &str,
         _password: &str,
     ) -> AppResult<QuarkShareInfo> {
-        todo!()
+        Ok(QuarkShareInfo::default())
     }
     async fn list_quark_share_files(
         &self,
@@ -310,7 +310,7 @@ impl ShareSource for FakeShareSource {
         _stoken: &str,
         _pdir_fid: &str,
     ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
-        todo!()
+        Ok((Vec::new(), Vec::new()))
     }
     async fn batch_get_quark_file_md5s(
         &self,
@@ -319,7 +319,7 @@ impl ShareSource for FakeShareSource {
         _stoken: &str,
         _file_infos: &[(String, String)],
     ) -> AppResult<std::collections::HashMap<String, String>> {
-        todo!()
+        Ok(HashMap::new())
     }
 }
 

@@ -1,26 +1,26 @@
-#![allow(dead_code)]
-
-use std::{collections::HashMap, sync::LazyLock, time::Duration};
+use std::collections::HashMap;
 
 use base64::Engine;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use serde::Deserialize;
 
+use super::http;
 use super::{RequestError, RequestResult};
 
 const API_URL: &str = "https://pc-api.uc.cn";
+const DOWNLOAD_API_URL: &str = "https://drive-pc.quark.cn";
+const DESKTOP_UA: &str = concat!(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
+    "AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.56 ",
+    "Chrome/100.0.4896.160 Electron/18.3.5.12-a038f7b798 Safari/537.36 ",
+    "Channel/pckk_other_ch",
+);
+const BROWSER_UA: &str = concat!(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+);
 
-static HTTP_CLIENT: LazyLock<ClientWithMiddleware> = LazyLock::new(|| {
-    let req_client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .expect("failed to create quark http client");
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-    ClientBuilder::new(req_client)
-        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-        .build()
-});
+const QUARK_CODE_SHARE_CANCELLED: i32 = 41012;
+const QUARK_CODE_FILE_SIZE_LIMIT: i32 = 23018;
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -44,11 +44,11 @@ pub struct File {
 }
 
 #[derive(Debug, Deserialize)]
-struct ShareTokenResponse {
+struct QuarkResponse<T> {
     code: i32,
     #[serde(default)]
     message: String,
-    data: Option<ShareTokenData>,
+    data: Option<T>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,53 +57,14 @@ struct ShareTokenData {
 }
 
 #[derive(Debug, Deserialize)]
-struct FileListResponse {
-    code: i32,
-    #[serde(default)]
-    message: String,
-    data: Option<FileListData>,
-}
-
-#[derive(Debug, Deserialize)]
 struct FileListData {
-    list: Vec<FileItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FileItem {
-    pub fid: String,
-    pub file_name: String,
-    #[serde(default)]
-    pub dir: bool,
-    #[serde(default)]
-    pub size: u64,
-    #[serde(default)]
-    pub share_fid_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct DownloadResponse {
-    code: i32,
-    #[serde(default)]
-    message: String,
-    data: Option<Vec<DownloadItem>>,
+    list: Vec<File>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DownloadItem {
     fid: String,
     md5: String,
-}
-
-const QUARK_CODE_SHARE_CANCELLED: i32 = 41012;
-
-fn quark_error(code: i32, message: &str, api: &str) -> RequestError {
-    match code {
-        QUARK_CODE_SHARE_CANCELLED => RequestError::ShareCancelled(message.to_owned()),
-        _ => RequestError::Error(format!(
-            "quark {api} failed, code: {code}, message: {message}"
-        )),
-    }
 }
 
 impl Client {
@@ -113,84 +74,28 @@ impl Client {
         }
     }
 
-    fn default_headers(&self) -> Vec<(&str, &str)> {
+    fn headers(&self) -> Vec<(&str, &str)> {
         vec![
             ("cookie", self.cookie.as_str()),
-            ("content-type", "application/json"),
             ("accept", "application/json, text/plain, */*"),
-            (
-                "user-agent",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            ),
         ]
-    }
-
-    async fn send_request<T: serde::de::DeserializeOwned>(
-        &self,
-        method: reqwest::Method,
-        url: &str,
-        query: Option<&[(&str, &str)]>,
-        payload: Option<&serde_json::Value>,
-        extra_headers: Option<&[(&str, &str)]>,
-    ) -> RequestResult<T> {
-        let mut request = match method {
-            reqwest::Method::GET => HTTP_CLIENT.get(url),
-            reqwest::Method::POST => HTTP_CLIENT.post(url),
-            _ => return Err(RequestError::Error(format!("unsupported method: {method}"))),
-        };
-        for (k, v) in self.default_headers() {
-            request = request.header(k, v);
-        }
-        if let Some(h) = extra_headers {
-            for (k, v) in h {
-                request = request.header(*k, *v);
-            }
-        }
-        if let Some(q) = query {
-            request = request.query(q);
-        }
-        if let Some(p) = payload {
-            let body = serde_json::to_vec(p)
-                .map_err(|e| RequestError::Error(format!("serialize quark payload failed, {e}")))?;
-            request = request.body(body);
-        }
-
-        let response = request.send().await?;
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-
-        if !status.is_success() {
-            return Err(RequestError::Error(format!(
-                "quark request to {url} failed, status: {status}, body: {}",
-                &text[..text.len().min(200)]
-            )));
-        }
-
-        serde_json::from_str(&text).map_err(|e| {
-            RequestError::Error(format!(
-                "quark request to {url} failed to decode response: {e}, body: {}",
-                &text[..text.len().min(200)]
-            ))
-        })
     }
 
     pub async fn get_share_info(&self, share_id: &str, passcode: &str) -> RequestResult<String> {
         let url = format!("{API_URL}/1/clouddrive/share/sharepage/token");
-        let payload = serde_json::json!({
-            "pwd_id": share_id,
-            "passcode": passcode,
-        });
-        let resp: ShareTokenResponse = self
-            .send_request(reqwest::Method::POST, &url, None, Some(&payload), None)
-            .await?;
-
-        if resp.code != 0 {
-            return Err(quark_error(resp.code, &resp.message, "get_share_info"));
-        }
-
-        resp.data
-            .map(|d| d.stoken)
+        let resp: QuarkResponse<ShareTokenData> = http::post(
+            &url,
+            None,
+            Some(self.headers()),
+            Some(&serde_json::json!({
+                "pwd_id": share_id,
+                "passcode": passcode,
+            })),
+        )
+        .await?;
+        parse_quark_response(resp, "get_share_info")?
             .ok_or_else(|| RequestError::Error("quark get_share_info returned no data".into()))
+            .map(|d| d.stoken)
     }
 
     pub async fn list_share_files(
@@ -205,29 +110,25 @@ impl Client {
         let url = format!("{API_URL}/1/clouddrive/share/sharepage/detail");
         let page_str = page.to_string();
         let size_str = size.to_string();
-        let query = [
-            ("pwd_id", share_id),
-            ("passcode", passcode),
-            ("stoken", stoken),
-            ("pdir_fid", pdir_fid),
-            ("force", "0"),
-            ("_page", page_str.as_str()),
-            ("_size", size_str.as_str()),
-            ("_fetch_banner", "0"),
-            ("_fetch_share", "0"),
-            ("_fetch_total", "1"),
-            ("_sort", "file_type:asc,updated_at:desc"),
-        ];
-        let resp: FileListResponse = self
-            .send_request(reqwest::Method::GET, &url, Some(&query), None, None)
-            .await?;
-
-        if resp.code != 0 {
-            return Err(quark_error(resp.code, &resp.message, "list_share_files"));
-        }
-
-        let data = resp
-            .data
+        let resp: QuarkResponse<FileListData> = http::get(
+            &url,
+            Some(vec![
+                ("pwd_id", share_id),
+                ("passcode", passcode),
+                ("stoken", stoken),
+                ("pdir_fid", pdir_fid),
+                ("force", "0"),
+                ("_page", &page_str),
+                ("_size", &size_str),
+                ("_fetch_banner", "0"),
+                ("_fetch_share", "0"),
+                ("_fetch_total", "1"),
+                ("_sort", "file_type:asc,updated_at:desc"),
+            ]),
+            Some(self.headers()),
+        )
+        .await?;
+        let data = parse_quark_response(resp, "list_share_files")?
             .ok_or_else(|| RequestError::Error("quark list_share_files returned no data".into()))?;
 
         let mut folders = Vec::new();
@@ -260,7 +161,7 @@ impl Client {
         fids: &[String],
         fid_tokens: &[String],
     ) -> RequestResult<HashMap<String, String>> {
-        let url = format!("{API_URL}/1/clouddrive/file/download");
+        let url = format!("{DOWNLOAD_API_URL}/1/clouddrive/file/download");
         let payload = serde_json::json!({
             "fids": fids,
             "pwd_id": share_id,
@@ -268,72 +169,86 @@ impl Client {
             "fids_token": fid_tokens,
             "passcode": passcode,
         });
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| RequestError::Error(format!("build download client failed: {e}")))?;
+        let query = vec![
+            ("pr", "ucpro"),
+            ("fr", "pc"),
+            ("sys", "win32"),
+            ("ve", "2.5.56"),
+            ("ut", ""),
+            ("guid", ""),
+        ];
 
-        let body = serde_json::to_vec(&payload)
-            .map_err(|e| RequestError::Error(format!("serialize quark payload failed: {e}")))?;
+        // Download API needs specific headers and bypasses normal HTTP status checking
+        // (quark returns 400 with JSON error code 23018 for large files).
+        // Using http::HTTP_CLIENT directly to match original working behavior.
+        let resp = self
+            .raw_download_request(&url, &query, &payload, BROWSER_UA)
+            .await?;
+        let resp = if resp.code == QUARK_CODE_FILE_SIZE_LIMIT {
+            self.raw_download_request(&url, &query, &payload, DESKTOP_UA)
+                .await?
+        } else {
+            resp
+        };
 
-        let response = client
-            .post(&url)
-            .header("cookie", &self.cookie)
-            .header("content-type", "application/json")
-            .header("user-agent", "quark-cloud-drive")
-            .header("accept", "application/json, text/plain, */*")
-            .header("referer", "https://drive.quark.cn/")
-            .query(&[
-                ("entry", "ft"),
-                ("uc_param_str", ""),
-                ("pr", "ucpro"),
-                ("fr", "pc"),
-            ])
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| RequestError::Error(format!("quark download request failed: {e}")))?;
-
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(RequestError::Error(format!(
-                "quark download failed, status: {status}, body: {}",
-                &text[..text.len().min(200)]
-            )));
-        }
-        let resp: DownloadResponse = serde_json::from_str(&text).map_err(|e| {
-            RequestError::Error(format!(
-                "quark download failed to decode: {e}, body: {}",
-                &text[..text.len().min(200)]
-            ))
-        })?;
-
-        if resp.code != 0 {
-            return Err(quark_error(resp.code, &resp.message, "batch_download_info"));
-        }
-
+        let items = parse_quark_response(resp, "batch_download_info")?;
         let mut result = HashMap::new();
-        if let Some(items) = resp.data {
+        if let Some(items) = items {
             for item in items {
-                let md5_hex = decode_md5(&item.md5);
-                result.insert(item.fid, md5_hex);
+                result.insert(item.fid, decode_md5(&item.md5));
             }
         }
-
         Ok(result)
+    }
+
+    async fn raw_download_request(
+        &self,
+        url: &str,
+        query: &[(&str, &str)],
+        payload: &serde_json::Value,
+        user_agent: &str,
+    ) -> RequestResult<QuarkResponse<Vec<DownloadItem>>> {
+        let response = http::post_raw(
+            url,
+            Some(query.to_vec()),
+            vec![
+                ("cookie", self.cookie.as_str()),
+                ("accept", "application/json, text/plain, */*"),
+                ("user-agent", user_agent),
+                ("referer", "https://pan.quark.cn/"),
+                ("accept-language", "zh-CN"),
+            ],
+            payload,
+        )
+        .await?;
+        let text = response.text().await.unwrap_or_default();
+        serde_json::from_str::<QuarkResponse<Vec<DownloadItem>>>(&text).map_err(|e| {
+            RequestError::Error(format!(
+                "quark download decode failed: {e}, body: {}",
+                &text[..text.len().min(200)]
+            ))
+        })
+    }
+}
+
+fn parse_quark_response<T>(resp: QuarkResponse<T>, api: &str) -> RequestResult<Option<T>> {
+    match resp.code {
+        0 => Ok(resp.data),
+        QUARK_CODE_SHARE_CANCELLED => Err(RequestError::ShareCancelled(resp.message)),
+        _ => Err(RequestError::Error(format!(
+            "quark {api} failed, code: {}, message: {}",
+            resp.code, resp.message
+        ))),
     }
 }
 
 fn decode_md5(md5: &str) -> String {
-    if md5.contains("==") {
-        base64::engine::general_purpose::STANDARD
-            .decode(md5)
-            .map(|bytes| bytes.iter().map(|b| format!("{b:02x}")).collect())
-            .unwrap_or_else(|_| md5.to_owned())
-    } else {
-        md5.to_owned()
+    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(md5)
+        && bytes.len() == 16
+    {
+        return bytes.iter().map(|b| format!("{b:02x}")).collect();
     }
+    md5.to_owned()
 }
 
 #[cfg(test)]

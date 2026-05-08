@@ -141,14 +141,6 @@ where
         url: &Url,
     ) -> AppResult<(&'static str, Vec<MediaFile>)> {
         let (share_id, password) = parse_quark_share_parts(url);
-
-        if share_id.is_empty() {
-            return Err(AppError::NotFound(format!(
-                "Can not extract share id from URL: {}",
-                url
-            )));
-        }
-
         let media_files = self
             .list_files_from_quark_share(&share_id, &password)
             .await?;
