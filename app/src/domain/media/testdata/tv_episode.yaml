@@ -2,9 +2,19 @@
   expected:
     file_type: "video"
     extension: ".mp4"
-    titles:
-      - title: "20"
-        language: "en"
+    episode_number: 20
+
+- input: "8.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    episode_number: 8
+
+- input: "123.mp4"
+  expected:
+    file_type: "video"
+    extension: ".mp4"
+    episode_number: 123
 
 - input: "A_20.mp4"
   expected:

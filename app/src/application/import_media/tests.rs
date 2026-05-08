@@ -79,6 +79,7 @@ fn summarize_imported(media: ImportedMedia) -> ImportedMediaSummary {
             number_of_episodes,
             has_failed,
         },
+        ImportedMedia::Skipped { .. } => panic!("unexpected Skipped in summarize_imported"),
     }
 }
 

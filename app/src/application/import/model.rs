@@ -18,5 +18,10 @@ pub enum ImportedMedia {
         number_of_episodes: u32,
         cost: std::time::Duration,
         has_failed: bool,
+        failed_episodes: Vec<u32>,
+    },
+    Skipped {
+        count: usize,
+        files: Vec<String>,
     },
 }

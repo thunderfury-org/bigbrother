@@ -40,11 +40,16 @@ pub(crate) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             cost,
             has_failed,
         } => {
-            if *has_failed {
-                return None;
-            }
-
             let size_gb = *size as f64 / 1024.0 / 1024.0 / 1024.0;
+            if *has_failed {
+                return Some(format!(
+                    "❌ 电影 {} ({}) 入库失败\n\
+                     ⏱️ 耗时: {:.2} 秒",
+                    title,
+                    year,
+                    cost.as_secs_f64(),
+                ));
+            }
             Some(format!(
                 "🎬 电影 {} ({}) 已入库\n\
                      📊 大小: {:.2} GB\n\
@@ -66,40 +71,73 @@ pub(crate) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             number_of_episodes,
             cost,
             has_failed,
+            failed_episodes,
         } => {
-            if episodes.is_empty() {
+            if episodes.is_empty() && failed_episodes.is_empty() {
                 return None;
             }
 
             let total_size_gb = *total_size as f64 / 1024.0 / 1024.0 / 1024.0;
+
+            let success_line = if episodes.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "📺 剧集 {} ({}) S{:02} {} 已入库\n",
+                    name,
+                    year,
+                    season,
+                    format_episodes(episodes)
+                )
+            };
+
             let missing_str = if missing_episodes.is_empty() {
                 String::new()
             } else {
                 format!("🎬️ 缺失集: {}\n", format_episodes(missing_episodes))
             };
-            let failure_notice = if *has_failed {
-                "⚠️ 部分文件入库失败\n"
+
+            let failure_notice = if *has_failed && !failed_episodes.is_empty() {
+                format!("❌ {} 入库失败\n", format_episodes(failed_episodes))
+            } else if *has_failed {
+                "⚠️ 部分文件入库失败\n".to_owned()
             } else {
-                ""
+                String::new()
             };
 
             Some(format!(
-                "📺 剧集 {} ({}) S{:02} {} 已入库\n{}{}\
+                "{}{}{}\
                      📦 平均大小: {:.2} GB\n\
                      📊 总大小: {:.2} GB\n\
                      ⏱️ 耗时: {:.2} 秒\n\
                      📦 集数: {}/{}",
-                name,
-                year,
-                season,
-                format_episodes(episodes),
+                success_line,
                 missing_str,
                 failure_notice,
-                total_size_gb / (episodes.len() as f64),
+                if episodes.is_empty() {
+                    0.0
+                } else {
+                    total_size_gb / (episodes.len() as f64)
+                },
                 total_size_gb,
                 cost.as_secs_f64(),
                 max_episode_number,
                 number_of_episodes,
+            ))
+        }
+        ImportedMedia::Skipped { count, files } => {
+            let display_limit = 10;
+            let mut lines = Vec::new();
+            for file in files.iter().take(display_limit) {
+                lines.push(format!("  {file}"));
+            }
+            if *count > display_limit {
+                lines.push(format!("  ...及剩余 {} 个文件", count - display_limit));
+            }
+            Some(format!(
+                "⚠️ {} 个文件未能识别，已跳过:\n{}",
+                count,
+                lines.join("\n"),
             ))
         }
     }
@@ -134,13 +172,7 @@ pub(crate) fn format_verbose_import_notes(imported: &[ImportedMedia]) -> Vec<Str
                 max_episode_number,
                 has_failed,
                 ..
-            } if episodes.is_empty() => {
-                let reason = if *has_failed {
-                    "已识别该季资源，但没有成功入库任何新分集。"
-                } else {
-                    "已识别该季资源，但没有新分集入库，通常表示候选分集都因库中已有同集且文件不更小而被跳过。"
-                };
-
+            } if episodes.is_empty() && !has_failed => {
                 let missing = if missing_episodes.is_empty() {
                     "当前没有检测到缺失集。".to_owned()
                 } else {
@@ -148,8 +180,8 @@ pub(crate) fn format_verbose_import_notes(imported: &[ImportedMedia]) -> Vec<Str
                 };
 
                 notes.push(format!(
-                    "详细信息: 剧集 {} ({}) S{:02} {} 当前库内最高集数到 E{:02}。",
-                    name, year, season, reason, max_episode_number
+                    "详细信息: 剧集 {} ({}) S{:02} 已识别该季资源，但没有新分集入库，通常表示候选分集都因库中已有同集且文件不更小而被跳过。当前库内最高集数到 E{:02}。",
+                    name, year, season, max_episode_number
                 ));
                 notes.push(format!("详细信息: {missing}"));
             }
@@ -242,18 +274,78 @@ mod tests {
             number_of_episodes: 4,
             cost: Duration::from_secs(30),
             has_failed: true,
+            failed_episodes: vec![5, 6],
         })
         .unwrap();
 
         assert!(summary.contains("剧集 Show (2025) S01 E01-E03 已入库"));
         assert!(summary.contains("缺失集: E04"));
-        assert!(summary.contains("部分文件入库失败"));
+        assert!(summary.contains("E05-E06 入库失败"));
         assert!(summary.contains("总大小: 6.00 GB"));
-        assert!(summary.contains("集数: 3/4"));
     }
 
     #[test]
-    fn format_import_summaries_returns_empty_when_all_entries_are_skipped() {
+    fn format_movie_failure_shows_error() {
+        let summary = format_imported_media(&ImportedMedia::Movie {
+            title: "Movie".into(),
+            year: "2024".into(),
+            size: 1,
+            cost: Duration::from_secs(1),
+            has_failed: true,
+        })
+        .unwrap();
+
+        assert!(summary.contains("❌ 电影 Movie (2024) 入库失败"));
+    }
+
+    #[test]
+    fn format_skipped_shows_files_one_per_line() {
+        let summary = format_imported_media(&ImportedMedia::Skipped {
+            count: 3,
+            files: vec!["/良/1.mp4".into(), "/良/2.mp4".into(), "/良/3.mp4".into()],
+        })
+        .unwrap();
+
+        assert!(summary.contains("3 个文件未能识别"));
+        assert!(summary.contains("  /良/1.mp4"));
+        assert!(summary.contains("  /良/2.mp4"));
+        assert!(summary.contains("  /良/3.mp4"));
+    }
+
+    #[test]
+    fn format_skipped_truncates_over_10_files() {
+        let files: Vec<String> = (1..=15).map(|i| format!("/path/{i}.mp4")).collect();
+        let summary = format_imported_media(&ImportedMedia::Skipped { count: 15, files }).unwrap();
+
+        assert!(summary.contains("15 个文件未能识别"));
+        assert!(summary.contains("...及剩余 5 个文件"));
+        assert!(summary.contains("  /path/10.mp4"));
+        assert!(!summary.contains("  /path/11.mp4"));
+    }
+
+    #[test]
+    fn format_tv_with_only_failed_episodes() {
+        let summary = format_imported_media(&ImportedMedia::Tv {
+            name: "Show".into(),
+            year: "2025".into(),
+            season: 1,
+            episodes: vec![],
+            missing_episodes: vec![],
+            max_episode_number: 0,
+            total_size: 0,
+            number_of_episodes: 13,
+            cost: Duration::from_secs(10),
+            has_failed: true,
+            failed_episodes: vec![1, 2, 3],
+        })
+        .unwrap();
+
+        assert!(summary.contains("E01-E03 入库失败"));
+        assert!(!summary.contains("已入库"));
+    }
+
+    #[test]
+    fn format_import_summaries_returns_movie_failure_message() {
         let summaries = format_import_summaries(&[ImportedMedia::Movie {
             title: "Movie".into(),
             year: "2024".into(),
@@ -262,8 +354,8 @@ mod tests {
             has_failed: true,
         }]);
 
-        assert!(summaries.is_empty());
-        assert_eq!(NO_NEW_MEDIA_MESSAGE, "没有新入库的媒体");
+        assert_eq!(summaries.len(), 1);
+        assert!(summaries[0].contains("入库失败"));
     }
 
     #[test]
@@ -279,6 +371,7 @@ mod tests {
             number_of_episodes: 6,
             cost: Duration::from_secs(30),
             has_failed: false,
+            failed_episodes: vec![],
         }]);
 
         assert!(
