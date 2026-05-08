@@ -9,6 +9,7 @@ pub(crate) enum ShareUrl<'a> {
     Pan123(&'a Url),
     Pan189(&'a Url),
     Pan115(&'a Url),
+    Quark(&'a Url),
 }
 
 impl<'a> ShareUrl<'a> {
@@ -28,6 +29,10 @@ impl<'a> ShareUrl<'a> {
             && url.path().starts_with("/s/")
         {
             Some(Self::Pan115(url))
+        } else if url.host_str().is_some_and(|host| host == "pan.quark.cn")
+            && url.path().starts_with("/s/")
+        {
+            Some(Self::Quark(url))
         } else {
             None
         }
@@ -35,7 +40,7 @@ impl<'a> ShareUrl<'a> {
 
     pub fn get_url(&self) -> &Url {
         match self {
-            Self::Pan123(url) | Self::Pan189(url) | Self::Pan115(url) => url,
+            Self::Pan123(url) | Self::Pan189(url) | Self::Pan115(url) | Self::Quark(url) => url,
         }
     }
 }
@@ -99,6 +104,20 @@ pub(crate) fn parse_pan115_share_parts(url: &Url) -> (String, String) {
         .map(|(_, value)| value.to_string())
         .unwrap_or_default();
     (share_code, receive_code)
+}
+
+pub(crate) fn parse_quark_share_parts(url: &Url) -> (String, String) {
+    let share_id = url
+        .path_segments()
+        .map(|mut segments| segments.next_back().unwrap_or_default())
+        .unwrap_or_default()
+        .to_owned();
+    let password = url
+        .query_pairs()
+        .find(|(key, _)| key == "pwd")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    (share_id, password)
 }
 
 pub(crate) fn is_fslink(content: &str) -> bool {
@@ -299,6 +318,34 @@ mod tests {
             Some(ShareUrl::Pan123(_))
         ));
         assert!(matches!(ShareUrl::from(&pan189), Some(ShareUrl::Pan189(_))));
+    }
+
+    #[test]
+    fn share_url_recognizes_quark_links() {
+        for url in [
+            "https://pan.quark.cn/s/c094a3711bcc",
+            "https://pan.quark.cn/s/c094a3711bcc?pwd=abc",
+        ] {
+            let parsed_url = Url::parse(url).unwrap();
+            let parsed = ShareUrl::from(&parsed_url);
+            assert!(parsed.is_some());
+            assert!(matches!(parsed.unwrap(), ShareUrl::Quark(_)));
+        }
+    }
+
+    #[test]
+    fn parses_quark_share_parts() {
+        let with_pwd = Url::parse("https://pan.quark.cn/s/c094a3711bcc?pwd=abc123").unwrap();
+        let without_pwd = Url::parse("https://pan.quark.cn/s/c094a3711bcc").unwrap();
+
+        assert_eq!(
+            parse_quark_share_parts(&with_pwd),
+            ("c094a3711bcc".into(), "abc123".into())
+        );
+        assert_eq!(
+            parse_quark_share_parts(&without_pwd),
+            ("c094a3711bcc".into(), "".into())
+        );
     }
 
     #[test]

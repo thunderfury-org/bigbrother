@@ -64,6 +64,7 @@ fn map_download_url_error(err: RequestError) -> DownloadUrlError {
         RequestError::ShareAuditNotPass => {
             DownloadUrlError::Error("share audit not pass".to_string())
         }
+        RequestError::ShareCancelled(msg) => DownloadUrlError::NotFound(msg),
         RequestError::TooManyRequests => DownloadUrlError::Error("too many requests".to_string()),
         RequestError::Error(message) => DownloadUrlError::Error(message),
     }

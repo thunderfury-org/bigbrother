@@ -14,7 +14,7 @@ use url::Url;
 use super::*;
 use crate::application::import::{
     LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-    SearchMovieResult, SearchTvResult, TvDetail,
+    QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, TvDetail,
 };
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
@@ -295,6 +295,31 @@ impl ShareSource for FakeShareSource {
             .get(cid)
             .cloned()
             .unwrap_or_default())
+    }
+    async fn get_quark_share_info(
+        &self,
+        _share_id: &str,
+        _password: &str,
+    ) -> AppResult<QuarkShareInfo> {
+        Ok(QuarkShareInfo::default())
+    }
+    async fn list_quark_share_files(
+        &self,
+        _share_id: &str,
+        _password: &str,
+        _stoken: &str,
+        _pdir_fid: &str,
+    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
+        Ok((Vec::new(), Vec::new()))
+    }
+    async fn batch_get_quark_file_md5s(
+        &self,
+        _share_id: &str,
+        _password: &str,
+        _stoken: &str,
+        _file_infos: &[(String, String)],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        Ok(HashMap::new())
     }
 }
 

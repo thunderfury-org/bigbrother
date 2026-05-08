@@ -90,7 +90,7 @@ async fn run_import_share_url(
     let import_service = bootstrap::services::build_import_service(&config);
     let share_url = application::import::ShareUrl::from(&url).ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
-            "unsupported share url '{url}', expected pan123, pan189, or pan115 share link"
+            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
         ))
     })?;
     let imported = import_service.import_from_share_url(&share_url).await?;
@@ -181,7 +181,7 @@ fn parse_share_url(raw_url: &str) -> AppResult<Url> {
 
     application::import::ShareUrl::from(&url).ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
-            "unsupported share url '{raw_url}', expected pan123, pan189, or pan115 share link"
+            "unsupported share url '{raw_url}', expected pan123, pan189, pan115, or quark share link"
         ))
     })?;
 

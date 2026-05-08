@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     application::import::{
         LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-        SearchMovieResult, SearchTvResult, TvDetail,
+        QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, TvDetail,
     },
     error::AppResult,
 };
@@ -57,6 +57,25 @@ pub trait ShareSource: Clone {
         receive_code: &str,
         cid: &str,
     ) -> AppResult<Vec<Pan115FileEntry>>;
+    async fn get_quark_share_info(
+        &self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<QuarkShareInfo>;
+    async fn list_quark_share_files(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        pdir_fid: &str,
+    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)>;
+    async fn batch_get_quark_file_md5s(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        file_infos: &[(String, String)],
+    ) -> AppResult<HashMap<String, String>>;
 }
 
 pub trait MetadataCatalog: Clone {

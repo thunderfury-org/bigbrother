@@ -109,7 +109,7 @@ where
         })?;
         let share = ShareUrl::from(&url).ok_or_else(|| {
             AppError::InvalidParameter(format!(
-                "unsupported share url '{raw_url}', expected pan123, pan189, or pan115 share link"
+                "unsupported share url '{raw_url}', expected pan123, pan189, pan115, or quark share link"
             ))
         })?;
         self.raw_files_from_share_url(&share).await

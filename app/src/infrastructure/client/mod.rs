@@ -1,6 +1,7 @@
 pub mod pan115;
 pub mod pan123;
 pub mod pan189;
+pub mod quark;
 pub mod tmdb;
 
 mod http;
@@ -14,6 +15,9 @@ pub enum RequestError {
 
     #[error("share audit not pass")]
     ShareAuditNotPass,
+
+    #[error("share cancelled, {0}")]
+    ShareCancelled(String),
 
     #[error("unauthorized")]
     Unauthorized,

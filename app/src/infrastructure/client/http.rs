@@ -87,6 +87,16 @@ pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
     headers: Option<Vec<(&str, &str)>>,
     payload: Option<&P>,
 ) -> RequestResult<T> {
+    let response = post_response(url, query, headers, payload).await?;
+    process_response(response).await
+}
+
+pub async fn post_response<U: IntoUrl, P: Serialize>(
+    url: U,
+    query: Option<Vec<(&str, &str)>>,
+    headers: Option<Vec<(&str, &str)>>,
+    payload: Option<&P>,
+) -> RequestResult<reqwest::Response> {
     let mut request = HTTP_CLIENT.post(url);
     if let Some(q) = query {
         request = request.query(&q);
@@ -114,11 +124,42 @@ pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
         }
     }
 
-    let result = request.send().await;
-    match result {
-        Err(e) => Err(RequestError::Error(format!("http post failed, {}", e))),
-        Ok(response) => process_response(response).await,
+    request
+        .send()
+        .await
+        .map_err(|e| RequestError::Error(format!("http post failed, {}", e)))
+}
+
+/// POST without default headers — caller controls all headers.
+pub async fn post_raw<U: IntoUrl, P: Serialize>(
+    url: U,
+    query: Option<Vec<(&str, &str)>>,
+    headers: Vec<(&str, &str)>,
+    payload: &P,
+) -> RequestResult<reqwest::Response> {
+    let mut request = HTTP_CLIENT.post(url);
+    if let Some(q) = query {
+        request = request.query(&q);
     }
+    for (k, v) in headers {
+        request = request.header(k, v);
+    }
+    match serde_json::to_vec(payload) {
+        Ok(body) => {
+            request = request.header("content-type", "application/json");
+            request = request.body(body);
+        }
+        Err(err) => {
+            return Err(RequestError::Error(format!(
+                "serialize http payload failed, {}",
+                err
+            )));
+        }
+    }
+    request
+        .send()
+        .await
+        .map_err(|e| RequestError::Error(format!("http post failed, {}", e)))
 }
 
 async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> RequestResult<T> {

@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use crate::{
     application::import::{
         Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
-        Pan189ShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
+        Pan189ShareInfo, QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult,
+        Season, TvDetail,
     },
     application::{
         import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
         ports::{MediaDirectoryRecord, MediaSearchSource},
     },
     error::AppResult,
-    infrastructure::client::{pan115, pan123, pan189, tmdb},
+    infrastructure::client::{pan115, pan123, pan189, quark, tmdb},
 };
 
 #[derive(Clone)]
@@ -23,6 +24,7 @@ pub struct ShareImportGateway {
     pan115: pan115::Client,
     pan123: pan123::Client,
     pan189: pan189::Client,
+    quark: quark::Client,
 }
 
 #[derive(Clone)]
@@ -42,11 +44,17 @@ impl PanLibraryGateway {
 }
 
 impl ShareImportGateway {
-    pub fn new(pan115: pan115::Client, pan123: pan123::Client, pan189: pan189::Client) -> Self {
+    pub fn new(
+        pan115: pan115::Client,
+        pan123: pan123::Client,
+        pan189: pan189::Client,
+        quark: quark::Client,
+    ) -> Self {
         Self {
             pan115,
             pan123,
             pan189,
+            quark,
         }
     }
 }
@@ -192,6 +200,26 @@ impl From<pan115::FileEntry> for Pan115FileEntry {
     }
 }
 
+impl From<quark::Folder> for QuarkFolder {
+    fn from(value: quark::Folder) -> Self {
+        Self {
+            fid: value.fid,
+            name: value.file_name,
+        }
+    }
+}
+
+impl From<quark::File> for QuarkFile {
+    fn from(value: quark::File) -> Self {
+        Self {
+            fid: value.fid,
+            name: value.file_name,
+            size: value.size,
+            share_fid_token: value.share_fid_token,
+        }
+    }
+}
+
 impl LibraryGateway for PanLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
         Ok(self
@@ -322,6 +350,53 @@ impl ShareSource for ShareImportGateway {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    async fn get_quark_share_info(
+        &self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<QuarkShareInfo> {
+        let stoken = self.quark.get_share_info(share_id, password).await?;
+        Ok(QuarkShareInfo { stoken })
+    }
+
+    async fn list_quark_share_files(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        pdir_fid: &str,
+    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
+        let (folders, files) = self
+            .quark
+            .list_share_files(share_id, password, stoken, pdir_fid, 1, 1000)
+            .await?;
+        if folders.len() + files.len() >= 1000 {
+            tracing::warn!(
+                "quark directory {} has >= 1000 entries, results may be truncated",
+                pdir_fid
+            );
+        }
+        Ok((
+            folders.into_iter().map(Into::into).collect(),
+            files.into_iter().map(Into::into).collect(),
+        ))
+    }
+
+    async fn batch_get_quark_file_md5s(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        file_infos: &[(String, String)],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        let fids: Vec<String> = file_infos.iter().map(|(fid, _)| fid.clone()).collect();
+        let fid_tokens: Vec<String> = file_infos.iter().map(|(_, token)| token.clone()).collect();
+        Ok(self
+            .quark
+            .batch_download_info(share_id, password, stoken, &fids, &fid_tokens)
+            .await?)
     }
 }
 
