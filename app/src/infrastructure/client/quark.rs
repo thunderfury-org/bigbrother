@@ -70,10 +70,15 @@ struct FileListData {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum FileItem {
-    Folder(Folder),
-    File(File),
+struct FileItem {
+    pub fid: String,
+    pub file_name: String,
+    #[serde(default)]
+    pub dir: bool,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub share_fid_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -126,6 +131,7 @@ impl Client {
         url: &str,
         query: Option<&[(&str, &str)]>,
         payload: Option<&serde_json::Value>,
+        extra_headers: Option<&[(&str, &str)]>,
     ) -> RequestResult<T> {
         let mut request = match method {
             reqwest::Method::GET => HTTP_CLIENT.get(url),
@@ -134,6 +140,11 @@ impl Client {
         };
         for (k, v) in self.default_headers() {
             request = request.header(k, v);
+        }
+        if let Some(h) = extra_headers {
+            for (k, v) in h {
+                request = request.header(*k, *v);
+            }
         }
         if let Some(q) = query {
             request = request.query(q);
@@ -149,11 +160,6 @@ impl Client {
         let text = response.text().await.unwrap_or_default();
 
         if !status.is_success() {
-            if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(RequestError::Error(
-                    "quark API 401 Unauthorized: 请在 config.yaml 中配置 quark.cookie".into(),
-                ));
-            }
             return Err(RequestError::Error(format!(
                 "quark request to {url} failed, status: {status}, body: {}",
                 &text[..text.len().min(200)]
@@ -175,7 +181,7 @@ impl Client {
             "passcode": passcode,
         });
         let resp: ShareTokenResponse = self
-            .send_request(reqwest::Method::POST, &url, None, Some(&payload))
+            .send_request(reqwest::Method::POST, &url, None, Some(&payload), None)
             .await?;
 
         if resp.code != 0 {
@@ -213,7 +219,7 @@ impl Client {
             ("_sort", "file_type:asc,updated_at:desc"),
         ];
         let resp: FileListResponse = self
-            .send_request(reqwest::Method::GET, &url, Some(&query), None)
+            .send_request(reqwest::Method::GET, &url, Some(&query), None, None)
             .await?;
 
         if resp.code != 0 {
@@ -227,10 +233,19 @@ impl Client {
         let mut folders = Vec::new();
         let mut files = Vec::new();
         for item in data.list {
-            match item {
-                FileItem::Folder(f) => folders.push(f),
-                FileItem::File(f) if !f.dir => files.push(f),
-                _ => {}
+            if item.dir {
+                folders.push(Folder {
+                    fid: item.fid,
+                    file_name: item.file_name,
+                });
+            } else {
+                files.push(File {
+                    fid: item.fid,
+                    file_name: item.file_name,
+                    size: item.size,
+                    share_fid_token: item.share_fid_token,
+                    dir: false,
+                });
             }
         }
 
@@ -246,7 +261,6 @@ impl Client {
         fid_tokens: &[String],
     ) -> RequestResult<HashMap<String, String>> {
         let url = format!("{API_URL}/1/clouddrive/file/download");
-        let query = [("entry", "ft"), ("uc_param_str", "")];
         let payload = serde_json::json!({
             "fids": fids,
             "pwd_id": share_id,
@@ -254,9 +268,46 @@ impl Client {
             "fids_token": fid_tokens,
             "passcode": passcode,
         });
-        let resp: DownloadResponse = self
-            .send_request(reqwest::Method::POST, &url, Some(&query), Some(&payload))
-            .await?;
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| RequestError::Error(format!("build download client failed: {e}")))?;
+
+        let body = serde_json::to_vec(&payload)
+            .map_err(|e| RequestError::Error(format!("serialize quark payload failed: {e}")))?;
+
+        let response = client
+            .post(&url)
+            .header("cookie", &self.cookie)
+            .header("content-type", "application/json")
+            .header("user-agent", "quark-cloud-drive")
+            .header("accept", "application/json, text/plain, */*")
+            .header("referer", "https://drive.quark.cn/")
+            .query(&[
+                ("entry", "ft"),
+                ("uc_param_str", ""),
+                ("pr", "ucpro"),
+                ("fr", "pc"),
+            ])
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| RequestError::Error(format!("quark download request failed: {e}")))?;
+
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(RequestError::Error(format!(
+                "quark download failed, status: {status}, body: {}",
+                &text[..text.len().min(200)]
+            )));
+        }
+        let resp: DownloadResponse = serde_json::from_str(&text).map_err(|e| {
+            RequestError::Error(format!(
+                "quark download failed to decode: {e}, body: {}",
+                &text[..text.len().min(200)]
+            ))
+        })?;
 
         if resp.code != 0 {
             return Err(quark_error(resp.code, &resp.message, "batch_download_info"));
