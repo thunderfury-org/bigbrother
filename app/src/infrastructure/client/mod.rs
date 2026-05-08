@@ -16,6 +16,9 @@ pub enum RequestError {
     #[error("share audit not pass")]
     ShareAuditNotPass,
 
+    #[error("share cancelled, {0}")]
+    ShareCancelled(String),
+
     #[error("unauthorized")]
     Unauthorized,
 

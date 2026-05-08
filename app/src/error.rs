@@ -61,6 +61,7 @@ impl From<RequestError> for AppError {
             RequestError::ShareAuditNotPass => {
                 Self::RuleRejected("request error, share audit not pass".to_owned())
             }
+            RequestError::ShareCancelled(msg) => Self::NotFound(format!("分享已取消: {msg}")),
             other => Self::Dependency(format!("request error, {other}")),
         }
     }
@@ -83,5 +84,14 @@ mod tests {
         assert!(
             matches!(error, AppError::RuleRejected(message) if message.contains("share audit not pass"))
         );
+    }
+
+    #[test]
+    fn share_cancelled_maps_to_not_found() {
+        let error =
+            AppError::from(RequestError::ShareCancelled("该分享已被取消".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::NotFound));
+        assert!(error.to_string().contains("该分享已被取消"));
     }
 }

@@ -90,6 +90,15 @@ struct DownloadItem {
     md5: String,
 }
 
+const QUARK_CODE_SHARE_CANCELLED: i32 = 41012;
+
+fn quark_error(code: i32, message: &str, api: &str) -> RequestError {
+    match code {
+        QUARK_CODE_SHARE_CANCELLED => RequestError::ShareCancelled(message.to_owned()),
+        _ => RequestError::Error(format!("quark {api} failed, code: {code}, message: {message}")),
+    }
+}
+
 impl Client {
     pub fn new(cookie: &str) -> Self {
         Self {
@@ -126,10 +135,7 @@ impl Client {
         let resp: ShareTokenResponse = response.json().await?;
 
         if resp.code != 0 {
-            return Err(RequestError::Error(format!(
-                "quark get_share_info failed, code: {}, message: {}",
-                resp.code, resp.message
-            )));
+            return Err(quark_error(resp.code, &resp.message, "get_share_info"));
         }
 
         resp.data
@@ -170,10 +176,7 @@ impl Client {
         let resp: FileListResponse = response.json().await?;
 
         if resp.code != 0 {
-            return Err(RequestError::Error(format!(
-                "quark list_share_files failed, code: {}, message: {}",
-                resp.code, resp.message
-            )));
+            return Err(quark_error(resp.code, &resp.message, "list_share_files"));
         }
 
         let data = resp
@@ -223,10 +226,7 @@ impl Client {
         let resp: DownloadResponse = response.json().await?;
 
         if resp.code != 0 {
-            return Err(RequestError::Error(format!(
-                "quark batch_download_info failed, code: {}, message: {}",
-                resp.code, resp.message
-            )));
+            return Err(quark_error(resp.code, &resp.message, "batch_download_info"));
         }
 
         let mut result = HashMap::new();
