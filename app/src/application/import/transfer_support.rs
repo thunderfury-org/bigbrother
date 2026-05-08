@@ -19,6 +19,7 @@ pub(super) struct SeasonTransferState {
     pub(super) has_failed: bool,
     pub(super) total_size: u64,
     pub(super) episodes: Vec<u32>,
+    pub(super) failed_episodes: Vec<u32>,
 }
 
 pub(super) fn accumulate_episode_transfer_result(
@@ -35,6 +36,7 @@ pub(super) fn accumulate_episode_transfer_result(
         state.episodes.push(episode_number);
     } else {
         state.has_failed = true;
+        state.failed_episodes.push(episode_number);
     }
 }
 
@@ -100,6 +102,7 @@ pub(super) fn build_imported_tv_result(
         number_of_episodes: get_number_of_episodes_in_season(detail, season_number),
         cost,
         has_failed: state.has_failed,
+        failed_episodes: state.failed_episodes,
     }
 }
 
