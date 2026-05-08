@@ -200,7 +200,7 @@ where
             ));
         }
 
-        // Phase 2: Batch fetch md5
+        // Phase 2: Batch fetch md5 (cookie required)
         let md5_pairs: Vec<(String, String)> = file_infos
             .iter()
             .map(|(fid, token, _, _, _)| (fid.clone(), token.clone()))

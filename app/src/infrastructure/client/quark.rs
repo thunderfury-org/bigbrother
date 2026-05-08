@@ -149,6 +149,11 @@ impl Client {
         let text = response.text().await.unwrap_or_default();
 
         if !status.is_success() {
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(RequestError::Error(
+                    "quark API 401 Unauthorized: 请在 config.yaml 中配置 quark.cookie".into(),
+                ));
+            }
             return Err(RequestError::Error(format!(
                 "quark request to {url} failed, status: {status}, body: {}",
                 &text[..text.len().min(200)]
