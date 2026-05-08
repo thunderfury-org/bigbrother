@@ -88,8 +88,7 @@ mod tests {
 
     #[test]
     fn share_cancelled_maps_to_not_found() {
-        let error =
-            AppError::from(RequestError::ShareCancelled("该分享已被取消".to_owned()));
+        let error = AppError::from(RequestError::ShareCancelled("该分享已被取消".to_owned()));
 
         assert!(matches!(error.kind(), AppErrorKind::NotFound));
         assert!(error.to_string().contains("该分享已被取消"));
