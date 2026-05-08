@@ -302,11 +302,7 @@ mod tests {
     fn format_skipped_shows_files_one_per_line() {
         let summary = format_imported_media(&ImportedMedia::Skipped {
             count: 3,
-            files: vec![
-                "/良/1.mp4".into(),
-                "/良/2.mp4".into(),
-                "/良/3.mp4".into(),
-            ],
+            files: vec!["/良/1.mp4".into(), "/良/2.mp4".into(), "/良/3.mp4".into()],
         })
         .unwrap();
 
@@ -319,11 +315,7 @@ mod tests {
     #[test]
     fn format_skipped_truncates_over_10_files() {
         let files: Vec<String> = (1..=15).map(|i| format!("/path/{i}.mp4")).collect();
-        let summary = format_imported_media(&ImportedMedia::Skipped {
-            count: 15,
-            files,
-        })
-        .unwrap();
+        let summary = format_imported_media(&ImportedMedia::Skipped { count: 15, files }).unwrap();
 
         assert!(summary.contains("15 个文件未能识别"));
         assert!(summary.contains("...及剩余 5 个文件"));
