@@ -46,6 +46,8 @@ pub struct File {
 #[derive(Debug, Deserialize)]
 struct ShareTokenResponse {
     code: i32,
+    #[serde(default)]
+    message: String,
     data: Option<ShareTokenData>,
 }
 
@@ -57,6 +59,8 @@ struct ShareTokenData {
 #[derive(Debug, Deserialize)]
 struct FileListResponse {
     code: i32,
+    #[serde(default)]
+    message: String,
     data: Option<FileListData>,
 }
 
@@ -75,6 +79,8 @@ enum FileItem {
 #[derive(Debug, Deserialize)]
 struct DownloadResponse {
     code: i32,
+    #[serde(default)]
+    message: String,
     data: Option<Vec<DownloadItem>>,
 }
 
@@ -121,8 +127,8 @@ impl Client {
 
         if resp.code != 0 {
             return Err(RequestError::Error(format!(
-                "quark get_share_info failed, code: {}",
-                resp.code
+                "quark get_share_info failed, code: {}, message: {}",
+                resp.code, resp.message
             )));
         }
 
@@ -165,8 +171,8 @@ impl Client {
 
         if resp.code != 0 {
             return Err(RequestError::Error(format!(
-                "quark list_share_files failed, code: {}",
-                resp.code
+                "quark list_share_files failed, code: {}, message: {}",
+                resp.code, resp.message
             )));
         }
 
@@ -215,6 +221,13 @@ impl Client {
             .send()
             .await?;
         let resp: DownloadResponse = response.json().await?;
+
+        if resp.code != 0 {
+            return Err(RequestError::Error(format!(
+                "quark batch_download_info failed, code: {}, message: {}",
+                resp.code, resp.message
+            )));
+        }
 
         let mut result = HashMap::new();
         if let Some(items) = resp.data {
