@@ -66,6 +66,7 @@ pub(crate) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             number_of_episodes,
             cost,
             has_failed,
+            ..
         } => {
             if episodes.is_empty() {
                 return None;
@@ -102,6 +103,7 @@ pub(crate) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
                 number_of_episodes,
             ))
         }
+        ImportedMedia::Skipped { .. } => None,
     }
 }
 
@@ -242,6 +244,7 @@ mod tests {
             number_of_episodes: 4,
             cost: Duration::from_secs(30),
             has_failed: true,
+            failed_episodes: vec![],
         })
         .unwrap();
 
@@ -279,6 +282,7 @@ mod tests {
             number_of_episodes: 6,
             cost: Duration::from_secs(30),
             has_failed: false,
+            failed_episodes: vec![],
         }]);
 
         assert!(

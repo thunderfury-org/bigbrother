@@ -21,17 +21,33 @@ where
         &mut self,
         media_files: &[MediaFile],
     ) -> AppResult<Vec<ImportedMedia>> {
-        let medias = self.build_import_plan(media_files).await?;
-        self.execute_import_plan(&medias).await
+        let (medias, unmatched) = self.build_import_plan(media_files).await?;
+        let mut results = self.execute_import_plan(&medias).await?;
+
+        if !unmatched.is_empty() {
+            results.push(ImportedMedia::Skipped {
+                count: unmatched.len(),
+                files: unmatched
+                    .iter()
+                    .map(|(name, path)| format!("{path}/{name}"))
+                    .collect(),
+            });
+        }
+
+        Ok(results)
     }
 
     async fn build_import_plan<'a>(
         &mut self,
         media_files: &'a [MediaFile],
-    ) -> AppResult<Vec<Media<'a>>> {
-        let medias = self.workflow_mut().group_media_files(media_files).await?;
-        info!("Grouped into {} media items", medias.len());
-        Ok(medias)
+    ) -> AppResult<(Vec<Media<'a>>, Vec<(&'a str, &'a str)>)> {
+        let (medias, unmatched) = self.workflow_mut().group_media_files(media_files).await?;
+        info!(
+            "Grouped into {} media items, {} unmatched",
+            medias.len(),
+            unmatched.len()
+        );
+        Ok((medias, unmatched))
     }
 
     async fn execute_import_plan(&mut self, medias: &[Media<'_>]) -> AppResult<Vec<ImportedMedia>> {
