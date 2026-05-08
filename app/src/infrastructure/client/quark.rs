@@ -95,7 +95,9 @@ const QUARK_CODE_SHARE_CANCELLED: i32 = 41012;
 fn quark_error(code: i32, message: &str, api: &str) -> RequestError {
     match code {
         QUARK_CODE_SHARE_CANCELLED => RequestError::ShareCancelled(message.to_owned()),
-        _ => RequestError::Error(format!("quark {api} failed, code: {code}, message: {message}")),
+        _ => RequestError::Error(format!(
+            "quark {api} failed, code: {code}, message: {message}"
+        )),
     }
 }
 
@@ -118,21 +120,58 @@ impl Client {
         ]
     }
 
+    async fn send_request<T: serde::de::DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        query: Option<&[(&str, &str)]>,
+        payload: Option<&serde_json::Value>,
+    ) -> RequestResult<T> {
+        let mut request = match method {
+            reqwest::Method::GET => HTTP_CLIENT.get(url),
+            reqwest::Method::POST => HTTP_CLIENT.post(url),
+            _ => return Err(RequestError::Error(format!("unsupported method: {method}"))),
+        };
+        for (k, v) in self.default_headers() {
+            request = request.header(k, v);
+        }
+        if let Some(q) = query {
+            request = request.query(q);
+        }
+        if let Some(p) = payload {
+            let body = serde_json::to_vec(p)
+                .map_err(|e| RequestError::Error(format!("serialize quark payload failed, {e}")))?;
+            request = request.body(body);
+        }
+
+        let response = request.send().await?;
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(RequestError::Error(format!(
+                "quark request to {url} failed, status: {status}, body: {}",
+                &text[..text.len().min(200)]
+            )));
+        }
+
+        serde_json::from_str(&text).map_err(|e| {
+            RequestError::Error(format!(
+                "quark request to {url} failed to decode response: {e}, body: {}",
+                &text[..text.len().min(200)]
+            ))
+        })
+    }
+
     pub async fn get_share_info(&self, share_id: &str, passcode: &str) -> RequestResult<String> {
         let url = format!("{API_URL}/1/clouddrive/share/sharepage/token");
         let payload = serde_json::json!({
             "pwd_id": share_id,
             "passcode": passcode,
         });
-
-        let body = serde_json::to_vec(&payload)
-            .map_err(|e| RequestError::Error(format!("serialize quark payload failed, {e}")))?;
-        let mut request = HTTP_CLIENT.post(&url);
-        for (k, v) in self.default_headers() {
-            request = request.header(k, v);
-        }
-        let response = request.body(body).send().await?;
-        let resp: ShareTokenResponse = response.json().await?;
+        let resp: ShareTokenResponse = self
+            .send_request(reqwest::Method::POST, &url, None, Some(&payload))
+            .await?;
 
         if resp.code != 0 {
             return Err(quark_error(resp.code, &resp.message, "get_share_info"));
@@ -153,27 +192,24 @@ impl Client {
         size: i32,
     ) -> RequestResult<(Vec<Folder>, Vec<File>)> {
         let url = format!("{API_URL}/1/clouddrive/share/sharepage/detail");
-        let mut request = HTTP_CLIENT.get(&url);
-        for (k, v) in self.default_headers() {
-            request = request.header(k, v);
-        }
-        let response = request
-            .query(&[
-                ("pwd_id", share_id),
-                ("passcode", passcode),
-                ("stoken", stoken),
-                ("pdir_fid", pdir_fid),
-                ("force", "0"),
-                ("_page", &page.to_string()),
-                ("_size", &size.to_string()),
-                ("_fetch_banner", "0"),
-                ("_fetch_share", "0"),
-                ("_fetch_total", "1"),
-                ("_sort", "file_type:asc,updated_at:desc"),
-            ])
-            .send()
+        let page_str = page.to_string();
+        let size_str = size.to_string();
+        let query = [
+            ("pwd_id", share_id),
+            ("passcode", passcode),
+            ("stoken", stoken),
+            ("pdir_fid", pdir_fid),
+            ("force", "0"),
+            ("_page", page_str.as_str()),
+            ("_size", size_str.as_str()),
+            ("_fetch_banner", "0"),
+            ("_fetch_share", "0"),
+            ("_fetch_total", "1"),
+            ("_sort", "file_type:asc,updated_at:desc"),
+        ];
+        let resp: FileListResponse = self
+            .send_request(reqwest::Method::GET, &url, Some(&query), None)
             .await?;
-        let resp: FileListResponse = response.json().await?;
 
         if resp.code != 0 {
             return Err(quark_error(resp.code, &resp.message, "list_share_files"));
@@ -205,10 +241,7 @@ impl Client {
         fid_tokens: &[String],
     ) -> RequestResult<HashMap<String, String>> {
         let url = format!("{API_URL}/1/clouddrive/file/download");
-        let mut request = HTTP_CLIENT.post(&url);
-        for (k, v) in self.default_headers() {
-            request = request.header(k, v);
-        }
+        let query = [("entry", "ft"), ("uc_param_str", "")];
         let payload = serde_json::json!({
             "fids": fids,
             "pwd_id": share_id,
@@ -216,14 +249,9 @@ impl Client {
             "fids_token": fid_tokens,
             "passcode": passcode,
         });
-        let body = serde_json::to_vec(&payload)
-            .map_err(|e| RequestError::Error(format!("serialize quark payload failed, {e}")))?;
-        let response = request
-            .query(&[("entry", "ft"), ("uc_param_str", "")])
-            .body(body)
-            .send()
+        let resp: DownloadResponse = self
+            .send_request(reqwest::Method::POST, &url, Some(&query), Some(&payload))
             .await?;
-        let resp: DownloadResponse = response.json().await?;
 
         if resp.code != 0 {
             return Err(quark_error(resp.code, &resp.message, "batch_download_info"));
