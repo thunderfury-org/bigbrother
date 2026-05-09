@@ -463,7 +463,7 @@ impl ImportLocalStore for FakeLocalStore {
 #[tokio::test]
 async fn service_delegates_to_gateway() {
     let share_source = FakeShareSource::default();
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         share_source.clone(),
         FakeMetadataCatalog,
@@ -518,7 +518,7 @@ async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
         ]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         share_source.clone(),
         FakeMetadataCatalog,
@@ -569,7 +569,7 @@ async fn import_from_pan189_share_reports_cas_only_entries() {
         )]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         share_source,
         FakeMetadataCatalog,
@@ -618,7 +618,7 @@ async fn import_from_pan189_share_imports_downloaded_cas_entries() {
         )]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         share_source,
         FakeMetadataCatalog,
@@ -671,7 +671,7 @@ async fn import_from_pan189_share_uses_cas_file_name_as_context_path() {
         )]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         share_source,
         FakeMetadataCatalog,
@@ -729,7 +729,7 @@ async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
         ]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         share_source.clone(),
         FakeMetadataCatalog,
@@ -758,7 +758,7 @@ async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
 
 #[tokio::test]
 async fn import_from_share_url_returns_error_when_pan189_share_code_is_missing() {
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -774,7 +774,7 @@ async fn import_from_share_url_returns_error_when_pan189_share_code_is_missing()
 
 #[tokio::test]
 async fn import_from_share_url_returns_error_when_pan115_share_code_is_missing() {
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -837,7 +837,7 @@ fn existing_season_dir(
 async fn import_from_json_writes_strm_and_records_upload() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -897,7 +897,7 @@ async fn import_from_json_writes_strm_and_records_upload() {
 async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1029,7 +1029,7 @@ async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
         ]))),
         ..Default::default()
     };
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         share_source.clone(),
         FakeMetadataCatalog,
@@ -1077,7 +1077,7 @@ async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
 async fn import_from_fslink_parses_prefixed_common_path_and_writes_strm() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1144,7 +1144,7 @@ async fn import_from_json_skips_when_existing_movie_is_not_smaller() {
             )],
         );
     }
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1200,7 +1200,7 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
     fs::create_dir_all(&old_local_dir).unwrap();
     fs::write(old_local_dir.join("Inception.2010.720p.strm"), "old").unwrap();
 
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1251,13 +1251,13 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
 
 #[tokio::test]
 async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
-    let json_service = ImportMediaService::new(
+    let mut json_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
-    let share_service = ImportMediaService::new(
+    let mut share_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource {
             pan123_files: Arc::new(Mutex::new(HashMap::from([(
@@ -1275,7 +1275,7 @@ async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
-    let fslink_service = ImportMediaService::new(
+    let mut fslink_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1312,13 +1312,13 @@ async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
 
 #[tokio::test]
 async fn tv_import_contract_is_consistent_across_json_share_and_fslink() {
-    let json_service = ImportMediaService::new(
+    let mut json_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
-    let share_service = ImportMediaService::new(
+    let mut share_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource {
             pan123_files: Arc::new(Mutex::new(HashMap::from([(
@@ -1345,7 +1345,7 @@ async fn tv_import_contract_is_consistent_across_json_share_and_fslink() {
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
-    let fslink_service = ImportMediaService::new(
+    let mut fslink_service = TestImportService::new(
         FakeLibraryGateway::default(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1406,7 +1406,7 @@ async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller
             )],
         );
     }
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1480,7 +1480,7 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
     )
     .unwrap();
 
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1543,7 +1543,7 @@ async fn import_from_json_returns_error_when_library_dir_creation_fails() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().fail_mkdir_path = true;
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway,
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1572,7 +1572,7 @@ async fn import_from_json_marks_movie_failed_when_upload_returns_none() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().md5_upload_returns_none = true;
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway.clone(),
         FakeShareSource::default(),
         FakeMetadataCatalog,
@@ -1637,7 +1637,7 @@ async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() 
 
     let mut local_store = FakeLocalStore::new(local_dir.clone());
     local_store.fail_remove = true;
-    let service = ImportMediaService::new(
+    let mut service = TestImportService::new(
         gateway,
         FakeShareSource::default(),
         FakeMetadataCatalog,

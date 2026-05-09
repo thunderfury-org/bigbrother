@@ -19,6 +19,8 @@ pub(crate) mod delivery;
 pub mod file_index;
 pub(crate) mod handler;
 
+pub(crate) type ImportService = crate::bootstrap::services::ImportService;
+
 struct BotServices {
     keyword: KeywordService,
     notify: NotifyService,

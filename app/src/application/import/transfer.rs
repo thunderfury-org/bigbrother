@@ -7,17 +7,17 @@ use tracing::info;
 
 use crate::domain::import::inner::{Media, MediaFile};
 
-use super::{ImportedMedia, TransferImportUseCase, TvDetail};
+use super::{ImportedMedia, TransferWorkflow, TvDetail};
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::error::AppResult;
 
-impl<L, M, F> TransferImportUseCase<L, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub(super) async fn transfer_media_files(
+    pub(crate) async fn transfer_media_files(
         &mut self,
         media_files: &[MediaFile],
     ) -> AppResult<Vec<ImportedMedia>> {
@@ -41,7 +41,7 @@ where
         &mut self,
         media_files: &'a [MediaFile],
     ) -> AppResult<(Vec<Media<'a>>, Vec<(&'a str, &'a str)>)> {
-        let (medias, unmatched) = self.workflow_mut().group_media_files(media_files).await?;
+        let (medias, unmatched) = self.group_media_files(media_files).await?;
         info!(
             "Grouped into {} media items, {} unmatched",
             medias.len(),

@@ -16,6 +16,7 @@ use crate::{
 use id::parsed_tmdb_id;
 use resolve::{resolve_movie_candidate, resolve_tv_candidate};
 
+#[derive(Clone)]
 pub(super) struct TmdbLookup<M> {
     metadata_catalog: M,
     tv_info_cache: HashMap<String, Option<TvDetail>>,

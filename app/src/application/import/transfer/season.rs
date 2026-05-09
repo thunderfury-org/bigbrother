@@ -8,12 +8,12 @@ use crate::domain::import::{
 };
 use crate::{error::AppResult, log_time};
 
-use super::{ImportedMedia, TransferImportUseCase, TvDetail};
+use super::{ImportedMedia, TransferWorkflow, TvDetail};
 use crate::application::import::transfer_support::{
     SeasonTransferState, accumulate_episode_transfer_result,
 };
 
-impl<L, M, F> TransferImportUseCase<L, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
@@ -37,7 +37,6 @@ where
 
         let season_dir = format!("Season {:02}", season_number);
         let (season_dir_id, existing_episode_files) = self
-            .workflow_mut()
             .resolve_season_target(
                 detail,
                 season_number,

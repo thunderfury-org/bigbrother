@@ -74,7 +74,9 @@ async fn run_import_share_url(
     let db = app.runtime_inputs().db;
     ensure_db_migrated(&db).await?;
     let config = config::Manager::try_from(data_dir.trim())?;
-    let import_service = bootstrap::services::build_import_service(&config);
+    let share_crawler = bootstrap::services::build_share_crawler(&config);
+    let (mut import_service, mut metadata_lookup) =
+        bootstrap::services::build_import_service(&config);
     let file_index_service = bootstrap::services::build_file_index_service(db.clone());
 
     let share_url = application::import::ShareUrl::from(&url).ok_or_else(|| {
@@ -84,7 +86,7 @@ async fn run_import_share_url(
     })?;
 
     // Fetch raw files once
-    let raw_files = match import_service.raw_files_from_share_url(&share_url).await {
+    let raw_files = match share_crawler.raw_files_from_share_url(&share_url).await {
         Ok(files) => files,
         Err(err) => {
             eprintln!("Warning: failed to fetch raw files for indexing: {err}");
@@ -107,7 +109,12 @@ async fn run_import_share_url(
     }
 
     // Import: reuse raw files
-    let imported = import_service.import_with_raw_files(raw_files).await?;
+    let imported = application::import_media::import_with_raw_files(
+        &mut import_service,
+        &mut metadata_lookup,
+        raw_files,
+    )
+    .await?;
     let summaries = format_import_summaries(&imported);
     let verbose_notes = if verbose {
         format_verbose_import_notes(&imported)

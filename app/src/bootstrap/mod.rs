@@ -10,14 +10,12 @@ pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        delete_media::DeleteMediaService,
-        manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService,
+        delete_media::DeleteMediaService, manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService, share_crawler::ShareCrawler,
         sync_strm::SyncStrmService,
     },
     bootstrap::services::{
-        MediaDownloadUrlService,
-        build_file_index_service, build_import_service_from_clients,
+        MediaDownloadUrlService, build_file_index_service, build_import_service_from_clients,
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -27,7 +25,7 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
+            gateway::{Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway},
             local_store::FilesystemImportLocalStore,
         },
         repo::keyword::SeaOrmKeywordRepository,
@@ -107,12 +105,18 @@ impl AppRuntime {
 
         let keyword_service =
             ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone()));
-        let import_service = build_import_service_from_clients(
+        let (import_service, metadata_lookup) = build_import_service_from_clients(
             &inputs.clients,
             inputs.import_remote_path.clone(),
             inputs.import_local_path.clone(),
             inputs.import_strm_download_url.clone(),
         );
+        let share_crawler = ShareCrawler::new(ShareImportGateway::new(
+            inputs.clients.pan115.clone(),
+            inputs.clients.pan123.clone(),
+            inputs.clients.pan189.clone(),
+            inputs.clients.quark.clone(),
+        ));
         let notify_service =
             PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone()));
 
@@ -155,7 +159,9 @@ impl AppRuntime {
                 },
                 media_handler: ProcessMediaSourcesHandler {
                     file_index_service: build_file_index_service(inputs.db.clone()),
+                    share_crawler,
                     import_service,
+                    metadata_lookup,
                     notify_service,
                     keyword_service,
                     bot,

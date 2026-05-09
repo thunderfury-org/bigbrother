@@ -3,28 +3,35 @@ use tracing::warn;
 use crate::{
     application::{
         file_index::{SeenFile, is_permanent_index_source_error},
-        import::ShareUrl,
+        import::{MetadataLookup, ShareUrl},
+        import_media,
+        share_crawler::ShareCrawler,
     },
     bootstrap::services::{
-        FileIndexRuntimeService, ImportService, KeywordService, NotifyService,
+        FileIndexRuntimeService, KeywordService, NotifyService, ShareSourceService,
     },
+    domain::import::inner::RawFile,
     error::AppResult,
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
 };
 
+use super::ImportService;
+
 #[derive(Clone)]
 pub struct ProcessMediaSourcesHandler {
     pub file_index_service: FileIndexRuntimeService,
+    pub share_crawler: ShareCrawler<ShareSourceService>,
     pub import_service: ImportService,
+    pub metadata_lookup: MetadataLookup,
     pub notify_service: NotifyService,
     pub keyword_service: KeywordService,
     pub bot: teloxide::Bot,
 }
 
 pub async fn on_process_media_sources(
-    handler: ProcessMediaSourcesHandler,
+    mut handler: ProcessMediaSourcesHandler,
     payload: ProcessMediaSources,
 ) -> AppResult<()> {
     let reply_to = payload.reply_to_message_id;
@@ -52,11 +59,19 @@ pub async fn on_process_media_sources(
     }
 
     // Step 3: Import
-    if should_import(&handler.keyword_service, payload.channel_post, &payload.description).await {
-        match handler
-            .import_service
-            .import_with_raw_files(raw_files)
-            .await
+    if should_import(
+        &handler.keyword_service,
+        payload.channel_post,
+        &payload.description,
+    )
+    .await
+    {
+        match import_media::import_with_raw_files(
+            &mut handler.import_service,
+            &mut handler.metadata_lookup,
+            raw_files,
+        )
+        .await
         {
             Ok(imported) => {
                 send_import_results(&handler.notify_service, reply_to, &imported).await;
@@ -77,21 +92,21 @@ async fn fetch_raw_files(
     source: &MediaSource,
     reply_to: Option<i32>,
     error_prefix: &str,
-) -> AppResult<Option<Vec<crate::domain::import::inner::RawFile>>> {
+) -> AppResult<Option<Vec<RawFile>>> {
     let result = match source {
         MediaSource::ShareUrl(url) => {
-            let parsed_url = url::Url::parse(url)
-                .map_err(|e| crate::error::AppError::InvalidParameter(format!("invalid share url: {e}")))?;
-            let share_url =
-                ShareUrl::from(&parsed_url).ok_or_else(|| {
-                    crate::error::AppError::InvalidParameter(format!("unsupported share url: {url}"))
-                })?;
+            let parsed_url = url::Url::parse(url).map_err(|e| {
+                crate::error::AppError::InvalidParameter(format!("invalid share url: {e}"))
+            })?;
+            let share_url = ShareUrl::from(&parsed_url).ok_or_else(|| {
+                crate::error::AppError::InvalidParameter(format!("unsupported share url: {url}"))
+            })?;
             handler
-                .import_service
+                .share_crawler
                 .raw_files_from_share_url(&share_url)
                 .await
         }
-        MediaSource::Fslink(fslink) => handler.import_service.raw_files_from_fslink(fslink),
+        MediaSource::Fslink(fslink) => handler.share_crawler.raw_files_from_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
             return fetch_tg_document(handler, file_id, file_name, reply_to, error_prefix).await;
         }
@@ -114,7 +129,7 @@ async fn fetch_tg_document(
     file_name: &str,
     reply_to: Option<i32>,
     error_prefix: &str,
-) -> AppResult<Option<Vec<crate::domain::import::inner::RawFile>>> {
+) -> AppResult<Option<Vec<RawFile>>> {
     use teloxide::net::Download;
     use teloxide::prelude::Requester;
 
@@ -139,9 +154,11 @@ async fn fetch_tg_document(
         .bot
         .download_file(&file.path, &mut content)
         .await
-        .map_err(|e| crate::error::AppError::Dependency(format!("failed to download document: {e}")))?;
+        .map_err(|e| {
+            crate::error::AppError::Dependency(format!("failed to download document: {e}"))
+        })?;
 
-    match handler.import_service.raw_files_from_json(content) {
+    match handler.share_crawler.raw_files_from_json(content) {
         Ok(files) => Ok(Some(files)),
         Err(err) => {
             warn!(file_name = %file_name, error = %err, "failed to parse document");
