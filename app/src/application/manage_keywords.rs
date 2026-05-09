@@ -44,6 +44,15 @@ where
     pub async fn delete(&self, id: i64) -> AppResult<()> {
         self.repo.delete_keyword(id).await
     }
+
+    pub async fn matches_any_keyword(&self, text: &str) -> bool {
+        match self.list_values().await {
+            Ok(keywords) if !keywords.is_empty() => {
+                keywords.iter().any(|kw| text.contains(kw))
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
