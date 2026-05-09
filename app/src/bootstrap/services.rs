@@ -1,43 +1,14 @@
+pub use crate::infrastructure::services::*;
+
 use crate::{
-    application::{
-        delete_media::DeleteMediaService,
-        file_index::FileIndexService,
-        import::{MetadataLookup, TransferWorkflow},
-        manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService,
-        resolve_download_url::ResolveDownloadUrlService,
-        share_crawler::ShareCrawler,
-        sync_strm::SyncStrmService,
-    },
+    application::{import::MetadataLookup, share_crawler::ShareCrawler},
     bootstrap::app::Client,
     config,
-    infrastructure::{
-        cache::string_store::StringCacheStore,
-        client::library_remote::Pan123LibraryRemote,
-        event::publisher::EventBusPublisher,
-        fs::tokio_file_store::TokioFileStore,
-        import::{
-            gateway::{
-                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
-                TmdbMetadataGateway,
-            },
-            local_store::FilesystemImportLocalStore,
-        },
-        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+    infrastructure::import::{
+        gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+        local_store::FilesystemImportLocalStore,
     },
 };
-
-pub(crate) type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
-pub(crate) type ShareSourceService = ShareImportGateway;
-pub(crate) type ImportService =
-    TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
-pub(crate) type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
-pub(crate) type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
-pub(crate) type MediaDownloadUrlService =
-    ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;
-pub(crate) type DeleteMediaServiceRuntime =
-    DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
-pub(crate) type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
 
 pub(crate) fn build_share_crawler(config: &config::Manager) -> ShareCrawler<ShareSourceService> {
     let clients = Client::new(config);
@@ -47,10 +18,6 @@ pub(crate) fn build_share_crawler(config: &config::Manager) -> ShareCrawler<Shar
         clients.pan189.clone(),
         clients.quark.clone(),
     ))
-}
-
-pub(crate) fn build_file_index_service(db: sea_orm::DatabaseConnection) -> FileIndexRuntimeService {
-    FileIndexService::new(SeaOrmFileIndexRepository::new(db))
 }
 
 pub(crate) fn build_import_service(config: &config::Manager) -> (ImportService, MetadataLookup) {
@@ -70,12 +37,18 @@ pub(crate) fn build_import_service_from_clients(
     strm_download_url: String,
 ) -> (ImportService, MetadataLookup) {
     (
-        TransferWorkflow::new(
+        ImportService::new(
             PanLibraryGateway::new(clients.pan123.clone()),
             TmdbMetadataGateway::new(clients.tmdb.clone()),
             FilesystemImportLocalStore::new(remote_path, local_path, strm_download_url),
         ),
         MetadataLookup::default(),
+    )
+}
+
+pub(crate) fn build_file_index_service(db: sea_orm::DatabaseConnection) -> FileIndexRuntimeService {
+    crate::application::file_index::FileIndexService::new(
+        crate::infrastructure::repo::file_index::SeaOrmFileIndexRepository::new(db),
     )
 }
 

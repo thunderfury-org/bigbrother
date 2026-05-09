@@ -4,20 +4,17 @@ use crate::{
     application::{
         file_index::{SeenFile, is_permanent_index_source_error},
         import::{MetadataLookup, ShareUrl},
-        import_media,
         share_crawler::ShareCrawler,
-    },
-    bootstrap::services::{
-        FileIndexRuntimeService, KeywordService, NotifyService, ShareSourceService,
     },
     domain::import::inner::RawFile,
     error::AppResult,
+    infrastructure::services::{
+        FileIndexRuntimeService, ImportService, KeywordService, NotifyService, ShareSourceService,
+    },
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
 };
-
-use super::ImportService;
 
 #[derive(Clone)]
 pub struct ProcessMediaSourcesHandler {
@@ -66,12 +63,11 @@ pub async fn on_process_media_sources(
     )
     .await
     {
-        match import_media::import_with_raw_files(
-            &mut handler.import_service,
-            &mut handler.metadata_lookup,
-            raw_files,
-        )
-        .await
+        let media_files = handler.metadata_lookup.build_media_files(raw_files);
+        match handler
+            .import_service
+            .transfer_media_files(&media_files)
+            .await
         {
             Ok(imported) => {
                 send_import_results(&handler.notify_service, reply_to, &imported).await;

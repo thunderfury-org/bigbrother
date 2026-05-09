@@ -12,15 +12,56 @@ use std::{
 use url::Url;
 
 use super::*;
-use crate::application::import::{
-    LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-    QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, TvDetail,
-};
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
-use crate::error::AppError;
+use crate::application::share_crawler::ShareCrawler;
+use crate::domain::import::inner::RawFile;
+use crate::error::{AppError, AppResult};
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
+
+pub(crate) struct TestImportService<L, S, M, F> {
+    pub crawler: ShareCrawler<S>,
+    pub transfer: TransferWorkflow<L, M, F>,
+    pub metadata_lookup: MetadataLookup,
+}
+
+impl<L, S, M, F> TestImportService<L, S, M, F>
+where
+    L: LibraryGateway,
+    S: ShareSource,
+    M: MetadataCatalog,
+    F: ImportLocalStore,
+{
+    pub fn new(library_gateway: L, share_source: S, metadata_catalog: M, local_store: F) -> Self {
+        Self {
+            crawler: ShareCrawler::new(share_source),
+            transfer: TransferWorkflow::new(library_gateway, metadata_catalog, local_store),
+            metadata_lookup: MetadataLookup::default(),
+        }
+    }
+
+    pub async fn import_from_share_url(
+        &mut self,
+        url: &ShareUrl<'_>,
+    ) -> AppResult<Vec<ImportedMedia>> {
+        let raw_files = self.crawler.raw_files_from_share_url(url).await?;
+        let media_files = self.metadata_lookup.build_media_files(raw_files);
+        self.transfer.transfer_media_files(&media_files).await
+    }
+
+    pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
+        let raw_files = self.crawler.raw_files_from_fslink(fslink)?;
+        let media_files = self.metadata_lookup.build_media_files(raw_files);
+        self.transfer.transfer_media_files(&media_files).await
+    }
+
+    pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
+        let raw_files = self.crawler.raw_files_from_json(json)?;
+        let media_files = self.metadata_lookup.build_media_files(raw_files);
+        self.transfer.transfer_media_files(&media_files).await
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum ImportedMediaSummary {

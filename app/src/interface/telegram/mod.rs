@@ -10,16 +10,16 @@ use tracing::{error, info};
 
 use crate::{
     application::delete_media::MediaDeleteCandidate,
-    bootstrap::services::{DeleteMediaServiceRuntime, KeywordService, NotifyService, SyncService},
     infrastructure::event_bus::EventBus,
+    infrastructure::services::{
+        DeleteMediaServiceRuntime, KeywordService, NotifyService, SyncService,
+    },
 };
 
 mod cmd;
 pub(crate) mod delivery;
 pub mod file_index;
 pub(crate) mod handler;
-
-pub(crate) type ImportService = crate::bootstrap::services::ImportService;
 
 struct BotServices {
     keyword: KeywordService,

@@ -109,12 +109,8 @@ async fn run_import_share_url(
     }
 
     // Import: reuse raw files
-    let imported = application::import_media::import_with_raw_files(
-        &mut import_service,
-        &mut metadata_lookup,
-        raw_files,
-    )
-    .await?;
+    let media_files = metadata_lookup.build_media_files(raw_files);
+    let imported = import_service.transfer_media_files(&media_files).await?;
     let summaries = format_import_summaries(&imported);
     let verbose_notes = if verbose {
         format_verbose_import_notes(&imported)

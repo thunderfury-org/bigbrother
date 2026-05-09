@@ -1,5 +1,7 @@
 mod factory;
 mod group;
+#[cfg(test)]
+mod import_tests;
 mod library;
 mod metadata;
 mod model;
