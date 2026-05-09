@@ -62,6 +62,10 @@ Application service: `FileIndexService` handles upsert/search; `FileIndexIngestS
 
 Tests use `wiremock` for HTTP client boundaries and `sea-orm` in-memory SQLite for repository tests. Async tests use `#[tokio::test]`.
 
+## Solutions Documentation
+
+Documented solutions and learnings are stored in `docs/solutions/`, organized by category (e.g., `architecture-patterns/`, `developer-experience/`). Before making significant changes in an area, check for relevant existing documentation — frontmatter `module`, `tags`, and `problem_type` fields are searchable.
+
 ## Coding Conventions
 
 - `.editorconfig`: UTF-8, LF, 4-space indentation for Rust, tabs for Makefile.
