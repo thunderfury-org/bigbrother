@@ -107,9 +107,9 @@ impl AppRuntime {
             ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone()));
         let (import_service, metadata_lookup) = build_import_service_from_clients(
             &inputs.clients,
-            inputs.import_remote_path.clone(),
-            inputs.import_local_path.clone(),
-            inputs.import_strm_download_url.clone(),
+            inputs.library.remote_path.clone(),
+            inputs.library.local_path.clone(),
+            inputs.library.strm_download_url.clone(),
         );
         let share_crawler = ShareCrawler::new(ShareImportGateway::new(
             inputs.clients.pan115.clone(),
@@ -132,17 +132,17 @@ impl AppRuntime {
                     sync_service: SyncStrmService::new(
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
                         TokioFileStore,
-                        inputs.sync_config.clone(),
+                        inputs.library.clone(),
                     ),
                     delete_media_service: DeleteMediaService::new(
                         Pan123MediaSearchGateway::new(inputs.clients.pan123.clone()),
                         PanLibraryGateway::new(inputs.clients.pan123.clone()),
                         FilesystemImportLocalStore::new(
-                            inputs.import_remote_path.clone(),
-                            inputs.import_local_path.clone(),
-                            inputs.import_strm_download_url.clone(),
+                            inputs.library.remote_path.clone(),
+                            inputs.library.local_path.clone(),
+                            inputs.library.strm_download_url.clone(),
                         ),
-                        inputs.import_remote_path.clone(),
+                        inputs.library.remote_path.clone(),
                     ),
                     event_bus: event_bus.clone(),
                 }),
