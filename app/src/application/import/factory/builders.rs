@@ -2,9 +2,11 @@ use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
 
+#[cfg(test)]
+use super::JsonImportUseCase;
 use super::{
-    ImportUseCaseFactory, JsonImportUseCase, ShareImportUseCase, TransferImportUseCase,
-    TransferWorkflow, metadata, tmdb_info,
+    ImportUseCaseFactory, ShareImportUseCase, TransferImportUseCase, TransferWorkflow, metadata,
+    tmdb_info,
 };
 
 impl<L, S, M, F> ImportUseCaseFactory<L, S, M, F>
@@ -24,9 +26,10 @@ where
     }
 
     pub(crate) fn share_import(&self) -> ShareImportUseCase<L, S, M, F> {
-        ShareImportUseCase::new(self.share_source.clone(), self.transfer_workflow())
+        ShareImportUseCase::new(self.transfer_workflow())
     }
 
+    #[cfg(test)]
     pub(crate) fn json_import(&self) -> JsonImportUseCase<L, M, F> {
         JsonImportUseCase::new(self.transfer_workflow())
     }
@@ -39,16 +42,12 @@ where
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    fn new(share_source: S, transfer_workflow: TransferWorkflow<L, M, F>) -> Self {
+    fn new(transfer_workflow: TransferWorkflow<L, M, F>) -> Self {
         Self {
-            share_source,
             metadata_lookup: metadata::MetadataLookup::default(),
             transfer: TransferImportUseCase::new(transfer_workflow),
+            _phantom: std::marker::PhantomData,
         }
-    }
-
-    pub(in crate::application::import) fn share_source(&self) -> &S {
-        &self.share_source
     }
 
     pub(in crate::application::import) fn metadata_lookup_mut(
@@ -64,6 +63,7 @@ where
     }
 }
 
+#[cfg(test)]
 impl<L, M, F> JsonImportUseCase<L, M, F>
 where
     L: LibraryGateway,

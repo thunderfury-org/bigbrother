@@ -5,9 +5,9 @@ use super::{metadata, tmdb_info};
 #[derive(Clone)]
 pub(crate) struct ImportUseCaseFactory<L, S, M, F> {
     library_gateway: L,
-    share_source: S,
     metadata_catalog: M,
     local: F,
+    _phantom: std::marker::PhantomData<S>,
 }
 
 pub(crate) struct TransferWorkflow<L, M, F> {
@@ -18,11 +18,12 @@ pub(crate) struct TransferWorkflow<L, M, F> {
 }
 
 pub(crate) struct ShareImportUseCase<L, S, M, F> {
-    pub(super) share_source: S,
     pub(super) metadata_lookup: metadata::MetadataLookup,
     pub(super) transfer: TransferImportUseCase<L, M, F>,
+    _phantom: std::marker::PhantomData<S>,
 }
 
+#[allow(dead_code)]
 pub(crate) struct JsonImportUseCase<L, M, F> {
     pub(super) metadata_lookup: metadata::MetadataLookup,
     pub(super) transfer: TransferImportUseCase<L, M, F>,
@@ -35,15 +36,15 @@ pub(crate) struct TransferImportUseCase<L, M, F> {
 impl<L, S, M, F> ImportUseCaseFactory<L, S, M, F> {
     pub(crate) fn new(
         library_gateway: L,
-        share_source: S,
+        _share_source: S,
         metadata_catalog: M,
         local_store: F,
     ) -> Self {
         Self {
             library_gateway,
-            share_source,
             metadata_catalog,
             local: local_store,
+            _phantom: std::marker::PhantomData,
         }
     }
 }

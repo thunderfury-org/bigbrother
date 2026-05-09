@@ -1,11 +1,8 @@
 use crate::{
     application::{
-        delete_media::DeleteMediaService,
-        file_index::{FileIndexIngestService, FileIndexService},
-        import_media::ImportMediaService,
-        manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService,
-        resolve_download_url::ResolveDownloadUrlService,
+        delete_media::DeleteMediaService, file_index::FileIndexService,
+        import_media::ImportMediaService, manage_keywords::ManageKeywordsService,
+        notify::PublishTelegramMessageService, resolve_download_url::ResolveDownloadUrlService,
         sync_strm::SyncStrmService,
     },
     bootstrap::app::Client,
@@ -40,9 +37,6 @@ pub(crate) type MediaDownloadUrlService =
 pub(crate) type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub(crate) type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
-pub(crate) type FileIndexIngestRuntimeService =
-    FileIndexIngestService<ImportService, SeaOrmFileIndexRepository>;
-
 pub(crate) fn build_import_service(config: &config::Manager) -> ImportService {
     let clients = Client::new(config);
     build_import_service_from_clients(
@@ -55,13 +49,6 @@ pub(crate) fn build_import_service(config: &config::Manager) -> ImportService {
 
 pub(crate) fn build_file_index_service(db: sea_orm::DatabaseConnection) -> FileIndexRuntimeService {
     FileIndexService::new(SeaOrmFileIndexRepository::new(db))
-}
-
-pub(crate) fn build_file_index_ingest_service(
-    config: &config::Manager,
-    db: sea_orm::DatabaseConnection,
-) -> FileIndexIngestRuntimeService {
-    FileIndexIngestService::new(build_import_service(config), build_file_index_service(db))
 }
 
 pub(crate) fn build_import_service_from_clients(

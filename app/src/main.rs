@@ -74,26 +74,40 @@ async fn run_import_share_url(
     let db = app.runtime_inputs().db;
     ensure_db_migrated(&db).await?;
     let config = config::Manager::try_from(data_dir.trim())?;
-    let ingest_service = bootstrap::services::build_file_index_ingest_service(&config, db.clone());
-    if let Err(err) = ingest_service
-        .ingest_sources(
-            vec![application::file_index::FileIndexSource::ShareUrl(
-                url.to_string(),
-            )],
-            description,
-        )
-        .await
-    {
-        eprintln!("Warning: failed to index share url: {err}");
-    }
-
     let import_service = bootstrap::services::build_import_service(&config);
+    let file_index_service = bootstrap::services::build_file_index_service(db.clone());
+
     let share_url = application::import::ShareUrl::from(&url).ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
             "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
         ))
     })?;
-    let imported = import_service.import_from_share_url(&share_url).await?;
+
+    // Fetch raw files once
+    let raw_files = match import_service.raw_files_from_share_url(&share_url).await {
+        Ok(files) => files,
+        Err(err) => {
+            eprintln!("Warning: failed to fetch raw files for indexing: {err}");
+            vec![]
+        }
+    };
+
+    // Index: reuse raw files
+    if !raw_files.is_empty() {
+        let seen: Vec<application::file_index::SeenFile> = raw_files
+            .iter()
+            .map(application::file_index::SeenFile::from_raw_file)
+            .collect();
+        if let Err(err) = file_index_service
+            .record_seen_files(seen, description)
+            .await
+        {
+            eprintln!("Warning: failed to index share url: {err}");
+        }
+    }
+
+    // Import: reuse raw files
+    let imported = import_service.import_with_raw_files(raw_files).await?;
     let summaries = format_import_summaries(&imported);
     let verbose_notes = if verbose {
         format_verbose_import_notes(&imported)

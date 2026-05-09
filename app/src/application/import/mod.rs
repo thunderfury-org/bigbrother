@@ -17,8 +17,9 @@ pub(crate) use crate::domain::import::{
     QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
 pub(crate) use crate::domain::import::{ShareUrl, is_fslink};
+#[cfg(test)]
+pub(crate) use factory::JsonImportUseCase;
 pub(crate) use factory::{
-    ImportUseCaseFactory, JsonImportUseCase, ShareImportUseCase, TransferImportUseCase,
-    TransferWorkflow,
+    ImportUseCaseFactory, ShareImportUseCase, TransferImportUseCase, TransferWorkflow,
 };
 pub(crate) use model::ImportedMedia;

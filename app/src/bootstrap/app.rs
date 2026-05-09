@@ -61,7 +61,6 @@ pub struct RuntimeBootstrapInputs {
     pub import_remote_path: String,
     pub import_local_path: String,
     pub import_strm_download_url: String,
-    pub file_index_ingest_dir: String,
     pub sync_config: SyncStrmConfig,
 }
 
@@ -134,7 +133,6 @@ impl AppContext {
                 import_remote_path: config.get_library_config().remote_path.clone(),
                 import_local_path: config.get_library_config().local_path.clone(),
                 import_strm_download_url: config.get_media_server_config().get_strm_download_url(),
-                file_index_ingest_dir: format!("{}/ingest/file-index", data_dir.trim()),
                 sync_config: SyncStrmConfig {
                     remote_path: config.get_library_config().remote_path.clone(),
                     local_path: config.get_library_config().local_path.clone(),
