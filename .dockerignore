@@ -4,5 +4,6 @@
 .vscode/
 config/
 data/
-doc/
+docs/
 target/
+tools/
