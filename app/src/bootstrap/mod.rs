@@ -1,21 +1,17 @@
 use migration::{Migrator, MigratorTrait};
 use sea_orm::DatabaseConnection;
 use std::time::Duration;
+use tracing::{error, info};
 
 pub mod app;
-pub mod services;
 
 pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        delete_media::DeleteMediaService, file_index::FileIndexIngestService,
+        delete_media::DeleteMediaService, import::MetadataLookup,
         manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
-        sync_strm::SyncStrmService,
-    },
-    bootstrap::services::{
-        FileIndexIngestRuntimeService, MediaDownloadUrlService, build_file_index_service,
-        build_import_service_from_clients,
+        share_crawler::ShareCrawler, sync_strm::SyncStrmService,
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -25,20 +21,27 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
+            gateway::{
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
+                TmdbMetadataGateway,
+            },
             local_store::FilesystemImportLocalStore,
         },
-        repo::keyword::SeaOrmKeywordRepository,
+        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        services::{FileIndexRuntimeService, ImportService, MediaDownloadUrlService},
     },
     interface::{
         http,
         http::media::{self, MediaServerContext},
-        telegram::{self, delivery::TelegramDeliveryContext},
+        telegram::{
+            self,
+            delivery::TelegramDeliveryContext,
+            handler::{ProcessMediaSourcesHandler, on_process_media_sources},
+        },
     },
     logger,
     util::signal::shutdown_signal,
 };
-use tracing::{error, info};
 
 pub struct AppRuntime {
     pub log_dir: String,
@@ -60,7 +63,7 @@ pub struct ServerRuntime {
 pub struct EventDeliveryRuntime {
     pub event_bus: EventBus,
     pub telegram_delivery: TelegramDeliveryContext,
-    pub file_index_ingest: FileIndexIngestRuntimeService,
+    pub media_handler: ProcessMediaSourcesHandler,
 }
 
 pub struct CacheCleanupRuntime {
@@ -100,42 +103,52 @@ impl AppRuntime {
             .map(teloxide::types::UserId)
             .map_err(|_| AppError::InvalidParameter("invalid telegram user id".to_owned()))?;
 
+        let keyword_service =
+            ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone()));
+        let import_service = ImportService::new(
+            PanLibraryGateway::new(inputs.clients.pan123.clone()),
+            TmdbMetadataGateway::new(inputs.clients.tmdb.clone()),
+            FilesystemImportLocalStore::new(
+                inputs.library.remote_path.clone(),
+                inputs.library.local_path.clone(),
+                inputs.library.strm_download_url.clone(),
+            ),
+        );
+        let metadata_lookup = MetadataLookup::default();
+        let share_crawler = ShareCrawler::new(ShareImportGateway::new(
+            inputs.clients.pan115.clone(),
+            inputs.clients.pan123.clone(),
+            inputs.clients.pan189.clone(),
+            inputs.clients.quark.clone(),
+        ));
+        let notify_service =
+            PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone()));
+
         Ok(Self {
             log_dir: inputs.log_dir.clone(),
             db: inputs.db.clone(),
             server: ServerRuntime {
-                bot,
+                bot: bot.clone(),
                 bot_runtime: telegram::BotRuntime::new(telegram::BotRuntimeArgs {
                     user_id,
-                    keyword_service: ManageKeywordsService::new(SeaOrmKeywordRepository::new(
-                        inputs.db.clone(),
-                    )),
-                    import_service: build_import_service_from_clients(
-                        &inputs.clients,
-                        inputs.import_remote_path.clone(),
-                        inputs.import_local_path.clone(),
-                        inputs.import_strm_download_url.clone(),
-                    ),
-                    notify_service: PublishTelegramMessageService::new(EventBusPublisher::new(
-                        event_bus.clone(),
-                    )),
+                    keyword_service: keyword_service.clone(),
+                    notify_service: notify_service.clone(),
                     sync_service: SyncStrmService::new(
                         Pan123LibraryRemote::new(inputs.clients.pan123.clone()),
                         TokioFileStore,
-                        inputs.sync_config.clone(),
+                        inputs.library.clone(),
                     ),
                     delete_media_service: DeleteMediaService::new(
                         Pan123MediaSearchGateway::new(inputs.clients.pan123.clone()),
                         PanLibraryGateway::new(inputs.clients.pan123.clone()),
                         FilesystemImportLocalStore::new(
-                            inputs.import_remote_path.clone(),
-                            inputs.import_local_path.clone(),
-                            inputs.import_strm_download_url.clone(),
+                            inputs.library.remote_path.clone(),
+                            inputs.library.local_path.clone(),
+                            inputs.library.strm_download_url.clone(),
                         ),
-                        inputs.import_remote_path.clone(),
+                        inputs.library.remote_path.clone(),
                     ),
-                    file_index_events: event_bus.clone(),
-                    file_index_ingest_dir: inputs.file_index_ingest_dir.clone(),
+                    event_bus: event_bus.clone(),
                 }),
                 media_server_addr: inputs.media_server_addr.clone(),
                 media_server,
@@ -145,18 +158,20 @@ impl AppRuntime {
             event_delivery: EventDeliveryRuntime {
                 event_bus,
                 telegram_delivery: TelegramDeliveryContext {
-                    bot: inputs.bot,
+                    bot: bot.clone(),
                     user_id: inputs.telegram_user_id,
                 },
-                file_index_ingest: FileIndexIngestService::new(
-                    build_import_service_from_clients(
-                        &inputs.clients,
-                        inputs.import_remote_path.clone(),
-                        inputs.import_local_path.clone(),
-                        inputs.import_strm_download_url.clone(),
+                media_handler: ProcessMediaSourcesHandler {
+                    file_index_service: FileIndexRuntimeService::new(
+                        SeaOrmFileIndexRepository::new(inputs.db.clone()),
                     ),
-                    build_file_index_service(inputs.db.clone()),
-                ),
+                    share_crawler,
+                    import_service,
+                    metadata_lookup,
+                    notify_service,
+                    keyword_service,
+                    bot,
+                },
             },
             cache_cleanup: CacheCleanupRuntime {
                 cache,
@@ -229,7 +244,7 @@ impl EventDeliveryRuntime {
             )
             .await?;
         self.event_bus
-            .subscribe(self.file_index_ingest, on_index_files_from_source)
+            .subscribe(self.media_handler, on_process_media_sources)
             .await?;
 
         info!("Event bus is running");
@@ -237,16 +252,6 @@ impl EventDeliveryRuntime {
         info!("Shutting down event bus...");
         Ok(())
     }
-}
-
-async fn on_index_files_from_source(
-    service: FileIndexIngestRuntimeService,
-    payload: crate::interface::telegram::file_index::IndexFilesFromSource,
-) -> AppResult<()> {
-    service
-        .ingest_sources_from_event(payload.sources, payload.description)
-        .await?;
-    Ok(())
 }
 
 impl CacheCleanupRuntime {

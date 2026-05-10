@@ -16,8 +16,8 @@ use crate::{
     application::{
         emby_proxy::BigbrotherStrmMatcher, resolve_download_url::ResolveDownloadUrlResult,
     },
-    bootstrap::services::MediaDownloadUrlService,
     error::{AppError, AppResult},
+    infrastructure::services::MediaDownloadUrlService,
 };
 
 pub(crate) trait DownloadUrlResolver: Clone + Send + Sync + 'static {

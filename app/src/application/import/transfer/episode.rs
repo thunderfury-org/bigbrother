@@ -7,9 +7,9 @@ use crate::domain::import::{
 use crate::error::AppResult;
 use tracing::info;
 
-use super::TransferImportUseCase;
+use super::TransferWorkflow;
 
-impl<L, M, F> TransferImportUseCase<L, M, F>
+impl<L, M, F> TransferWorkflow<L, M, F>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
@@ -48,7 +48,6 @@ where
             args.episode_number
         );
         let saved_filename = self
-            .workflow()
             .transfer_media_file(
                 args.season_full_path,
                 args.season_dir_id,
@@ -59,13 +58,12 @@ where
 
         match saved_filename {
             Some(name) => {
-                self.workflow()
-                    .cleanup_replaced_episode_files(
-                        args.season_full_path,
-                        args.existing_episode_files.get(&args.episode_number),
-                        name.as_str(),
-                    )
-                    .await?;
+                self.cleanup_replaced_episode_files(
+                    args.season_full_path,
+                    args.existing_episode_files.get(&args.episode_number),
+                    name.as_str(),
+                )
+                .await?;
 
                 Ok(Some((true, media_file.video.size)))
             }

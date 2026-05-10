@@ -1,10 +1,10 @@
 mod factory;
 mod group;
-pub(super) mod json;
+#[cfg(test)]
+mod import_tests;
 mod library;
 mod metadata;
 mod model;
-pub(super) mod share;
 mod tmdb_info;
 mod transfer;
 mod transfer_cleanup;
@@ -17,8 +17,6 @@ pub(crate) use crate::domain::import::{
     QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
 pub(crate) use crate::domain::import::{ShareUrl, is_fslink};
-pub(crate) use factory::{
-    ImportUseCaseFactory, JsonImportUseCase, ShareImportUseCase, TransferImportUseCase,
-    TransferWorkflow,
-};
+pub(crate) use factory::TransferWorkflow;
+pub(crate) use metadata::MetadataLookup;
 pub(crate) use model::ImportedMedia;

@@ -6,4 +6,5 @@ pub mod event_bus;
 pub mod fs;
 pub mod import;
 pub mod repo;
+pub mod services;
 pub mod telegram;

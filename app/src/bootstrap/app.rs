@@ -58,11 +58,7 @@ pub struct RuntimeBootstrapInputs {
     pub media_server_strm_path_prefix: String,
     pub emby_proxy_config: Option<EmbyProxyRuntimeConfig>,
     pub telegram_user_id: i64,
-    pub import_remote_path: String,
-    pub import_local_path: String,
-    pub import_strm_download_url: String,
-    pub file_index_ingest_dir: String,
-    pub sync_config: SyncStrmConfig,
+    pub library: SyncStrmConfig,
 }
 
 #[derive(Clone)]
@@ -116,6 +112,12 @@ impl AppContext {
             None
         };
 
+        let library = SyncStrmConfig {
+            remote_path: config.get_library_config().remote_path.clone(),
+            local_path: config.get_library_config().local_path.clone(),
+            strm_download_url: config.get_media_server_config().get_strm_download_url(),
+        };
+
         Ok(AppContext {
             inputs: RuntimeBootstrapInputs {
                 db,
@@ -131,15 +133,7 @@ impl AppContext {
                     .to_string(),
                 emby_proxy_config,
                 telegram_user_id: config.get_telegram_config().user_id,
-                import_remote_path: config.get_library_config().remote_path.clone(),
-                import_local_path: config.get_library_config().local_path.clone(),
-                import_strm_download_url: config.get_media_server_config().get_strm_download_url(),
-                file_index_ingest_dir: format!("{}/ingest/file-index", data_dir.trim()),
-                sync_config: SyncStrmConfig {
-                    remote_path: config.get_library_config().remote_path.clone(),
-                    local_path: config.get_library_config().local_path.clone(),
-                    strm_download_url: config.get_media_server_config().get_strm_download_url(),
-                },
+                library,
             },
         })
     }

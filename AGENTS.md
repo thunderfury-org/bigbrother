@@ -36,6 +36,43 @@ Within `app/src/`, the code is layered:
 
 Data directory layout at runtime: `<data-dir>/{config,db,log,cache,pan123,pan189,ingest}`.
 
+## Architecture Constraints
+
+This project follows **Hexagonal Architecture (Ports and Adapters)**. Layer boundaries must be respected.
+
+### Dependency Direction
+
+```
+domain ← application ← infrastructure
+                   ↖ interface ↗
+                     bootstrap (composition root)
+```
+
+Arrows mean "depends on". The dependency must never reverse:
+
+- **domain/** — Zero imports from other project layers. Only external crates.
+- **application/** — Imports from `domain` only. Defines port traits; never imports concrete infrastructure types.
+- **infrastructure/** — Imports from `application` only (implements port traits). Never imports from `interface` or `bootstrap`.
+- **interface/** — Imports from `application` (via trait bounds) and `infrastructure` for adapter wiring. Never imports from `bootstrap`.
+- **bootstrap/** — The composition root. Imports from everything. Only wires dependencies and starts runtimes.
+
+### Layer Responsibilities
+
+| Layer | Owns | Must NOT contain |
+|---|---|---|
+| `domain/` | Business rules, value objects, domain logic | HTTP calls, DB queries, framework code |
+| `application/` | Use cases, port traits (interfaces), service orchestration | Concrete API clients, DB repositories, Telegram API calls |
+| `infrastructure/` | API clients, repositories, event bus, cache, filesystem adapters | Business logic, route handlers |
+| `interface/` | HTTP routes, Telegram command handlers, CLI parsing, event delivery handlers | Business logic, dependency construction |
+| `bootstrap/` | `AppContext` creation, service wiring, runtime assembly and startup | Handler logic, business rules, API calls |
+
+### Key Rules
+
+1. **bootstrap is wiring only.** It must not implement handler functions, business logic, or contain Telegram/HTTP API calls. If a function in bootstrap calls `bot.get_file()`, `bot.download_file()`, or performs keyword matching, it belongs in `interface/` or `application/`.
+2. **Port traits live in application/.** All external boundaries (repos, API clients, caches) are defined as traits in `application/ports.rs` or `application/import_ports.rs`. Infrastructure provides implementations.
+3. **Services are generic over ports.** Application services accept port traits as generic parameters, never concrete infrastructure types. Concrete types are monomorphized in `bootstrap/services.rs`.
+4. **Event handlers live in interface/.** Event bus subscriber handlers (e.g., `on_process_media_sources`, `on_send_telegram_message`) belong in the interface layer, not in bootstrap.
+
 ## Key Architecture Notes
 
 ### Import Pipeline
