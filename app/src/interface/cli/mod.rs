@@ -1,3 +1,6 @@
+mod handler;
+
+use crate::error::AppResult;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -39,6 +42,25 @@ pub struct SearchFilesArgs {
     #[arg(short, long, default_value_t = 20)]
     pub limit: u64,
     pub keyword: String,
+}
+
+pub async fn run(cli: Cli) -> AppResult<()> {
+    match &cli.command {
+        Commands::Server(_) => unreachable!("server command is handled by main"),
+        Commands::ImportShareUrl(args) => {
+            handler::run_import_share_url(
+                args.data_dir.data_dir.as_str(),
+                &args.url,
+                args.verbose,
+                args.description.clone(),
+            )
+            .await
+        }
+        Commands::SearchFiles(args) => {
+            handler::run_search_files(args.data_dir.data_dir.as_str(), &args.keyword, args.limit)
+                .await
+        }
+    }
 }
 
 #[cfg(test)]

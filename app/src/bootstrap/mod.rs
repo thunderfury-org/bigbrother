@@ -4,18 +4,14 @@ use std::time::Duration;
 use tracing::{error, info};
 
 pub mod app;
-pub mod services;
 
 pub use app::{AppContext, RuntimeBootstrapInputs};
 
 use crate::{
     application::{
-        delete_media::DeleteMediaService, manage_keywords::ManageKeywordsService,
-        notify::PublishTelegramMessageService, share_crawler::ShareCrawler,
-        sync_strm::SyncStrmService,
-    },
-    bootstrap::services::{
-        MediaDownloadUrlService, build_file_index_service, build_import_service_from_clients,
+        delete_media::DeleteMediaService, import::MetadataLookup,
+        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
+        share_crawler::ShareCrawler, sync_strm::SyncStrmService,
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -25,10 +21,14 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway},
+            gateway::{
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
+                TmdbMetadataGateway,
+            },
             local_store::FilesystemImportLocalStore,
         },
-        repo::keyword::SeaOrmKeywordRepository,
+        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        services::{FileIndexRuntimeService, ImportService, MediaDownloadUrlService},
     },
     interface::{
         http,
@@ -105,12 +105,16 @@ impl AppRuntime {
 
         let keyword_service =
             ManageKeywordsService::new(SeaOrmKeywordRepository::new(inputs.db.clone()));
-        let (import_service, metadata_lookup) = build_import_service_from_clients(
-            &inputs.clients,
-            inputs.library.remote_path.clone(),
-            inputs.library.local_path.clone(),
-            inputs.library.strm_download_url.clone(),
+        let import_service = ImportService::new(
+            PanLibraryGateway::new(inputs.clients.pan123.clone()),
+            TmdbMetadataGateway::new(inputs.clients.tmdb.clone()),
+            FilesystemImportLocalStore::new(
+                inputs.library.remote_path.clone(),
+                inputs.library.local_path.clone(),
+                inputs.library.strm_download_url.clone(),
+            ),
         );
+        let metadata_lookup = MetadataLookup::default();
         let share_crawler = ShareCrawler::new(ShareImportGateway::new(
             inputs.clients.pan115.clone(),
             inputs.clients.pan123.clone(),
@@ -158,7 +162,9 @@ impl AppRuntime {
                     user_id: inputs.telegram_user_id,
                 },
                 media_handler: ProcessMediaSourcesHandler {
-                    file_index_service: build_file_index_service(inputs.db.clone()),
+                    file_index_service: FileIndexRuntimeService::new(
+                        SeaOrmFileIndexRepository::new(inputs.db.clone()),
+                    ),
                     share_crawler,
                     import_service,
                     metadata_lookup,
