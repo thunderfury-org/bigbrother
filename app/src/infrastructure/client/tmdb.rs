@@ -293,7 +293,7 @@ mod tests {
         let error = client(&server).get_tv_detail(1396).await.unwrap_err();
 
         match error {
-            RequestError::Error(message) => {
+            RequestError::Other(message) => {
                 assert!(message.contains("decode payload failed"));
             }
             other => panic!("expected decode error, got {other:?}"),

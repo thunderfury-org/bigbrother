@@ -115,7 +115,7 @@ impl Client {
             .await?;
 
             if !response.state {
-                return Err(RequestError::Error(format!(
+                return Err(RequestError::Other(format!(
                     "list share files failed, errno: {}, error: {}",
                     response.errno, response.error
                 )));
@@ -123,7 +123,7 @@ impl Client {
 
             let data = response
                 .data
-                .ok_or_else(|| RequestError::Error("no data in response".to_string()))?;
+                .ok_or_else(|| RequestError::Other("no data in response".to_string()))?;
 
             files.extend(data.list);
 

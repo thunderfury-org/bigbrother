@@ -194,7 +194,7 @@ impl Client {
                     )
                     .await?;
                 if download_info.dispatch_list.is_empty() {
-                    Err(RequestError::Error(
+                    Err(RequestError::Other(
                         "get download url failed, no dispatch available".to_string(),
                     ))
                 } else {
@@ -593,7 +593,7 @@ impl Client {
             401 => Err(RequestError::Unauthorized),
             429 => Err(RequestError::TooManyRequests),
             5066 => Err(RequestError::NotFound(resp.message)),
-            _ => Err(RequestError::Error(format!(
+            _ => Err(RequestError::Other(format!(
                 "api error, code: {}, message: {}",
                 resp.code, resp.message
             ))),
@@ -660,7 +660,7 @@ impl Client {
 
     fn read_token_from_cache_file(&self) -> RequestResult<Option<AccessToken>> {
         if self.cache_dir.is_empty() {
-            return Err(RequestError::Error("cache dir is empty".to_string()));
+            return Err(RequestError::Other("cache dir is empty".to_string()));
         }
 
         let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
@@ -671,12 +671,12 @@ impl Client {
         match fs::read_to_string(&path) {
             Ok(c) => match serde_json::from_str(&c) {
                 Ok(t) => Ok(Some(t)),
-                Err(e) => Err(RequestError::Error(format!(
+                Err(e) => Err(RequestError::Other(format!(
                     "deserialize token cache file [{}] failed, {}",
                     path, e
                 ))),
             },
-            Err(e) => Err(RequestError::Error(format!(
+            Err(e) => Err(RequestError::Other(format!(
                 "read token cache file [{}] failed, {}",
                 path, e
             ))),
@@ -685,13 +685,13 @@ impl Client {
 
     fn write_token_to_cache_file(&self, token: &AccessToken) -> RequestResult<()> {
         if self.cache_dir.is_empty() {
-            return Err(RequestError::Error("cache dir is empty".to_string()));
+            return Err(RequestError::Other("cache dir is empty".to_string()));
         }
 
         let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
         if !Path::new(&self.cache_dir).exists() {
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
-                RequestError::Error(format!(
+                RequestError::Other(format!(
                     "create cache dir [{}] failed, {}",
                     self.cache_dir, e
                 ))
@@ -701,12 +701,12 @@ impl Client {
         match serde_json::to_string(token) {
             Ok(c) => match fs::write(&path, c) {
                 Ok(_) => Ok(()),
-                Err(e) => Err(RequestError::Error(format!(
+                Err(e) => Err(RequestError::Other(format!(
                     "write token to cache file [{}] failed, {}",
                     path, e
                 ))),
             },
-            Err(e) => Err(RequestError::Error(format!(
+            Err(e) => Err(RequestError::Other(format!(
                 "serialize token failed, {}",
                 e
             ))),
@@ -737,12 +737,12 @@ impl Client {
         match response.code {
             200 => match response.data {
                 Some(d) => Ok(d),
-                None => Err(RequestError::Error(format!(
+                None => Err(RequestError::Other(format!(
                     "pan123 sign_in error, data is empty, code: {}, message: {}",
                     response.code, response.message
                 ))),
             },
-            _ => Err(RequestError::Error(format!(
+            _ => Err(RequestError::Other(format!(
                 "pan123 sign_in error, code: {}, message: {}",
                 response.code, response.message
             ))),
@@ -1022,7 +1022,7 @@ mod tests {
         let error = client.get_download_url(99).await.unwrap_err();
 
         match error {
-            RequestError::Error(message) => {
+            RequestError::Other(message) => {
                 assert!(message.contains("no dispatch available"));
             }
             other => panic!("expected request error, got {other:?}"),

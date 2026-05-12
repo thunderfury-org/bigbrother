@@ -94,7 +94,7 @@ impl Client {
         )
         .await?;
         parse_quark_response(resp, "get_share_info")?
-            .ok_or_else(|| RequestError::Error("quark get_share_info returned no data".into()))
+            .ok_or_else(|| RequestError::Other("quark get_share_info returned no data".into()))
             .map(|d| d.stoken)
     }
 
@@ -129,7 +129,7 @@ impl Client {
         )
         .await?;
         let data = parse_quark_response(resp, "list_share_files")?
-            .ok_or_else(|| RequestError::Error("quark list_share_files returned no data".into()))?;
+            .ok_or_else(|| RequestError::Other("quark list_share_files returned no data".into()))?;
 
         let mut folders = Vec::new();
         let mut files = Vec::new();
@@ -223,7 +223,7 @@ impl Client {
         .await?;
         let text = response.text().await.unwrap_or_default();
         serde_json::from_str::<QuarkResponse<Vec<DownloadItem>>>(&text).map_err(|e| {
-            RequestError::Error(format!(
+            RequestError::Other(format!(
                 "quark download decode failed: {e}, body: {}",
                 &text[..text.len().min(200)]
             ))
@@ -235,7 +235,7 @@ fn parse_quark_response<T>(resp: QuarkResponse<T>, api: &str) -> RequestResult<O
     match resp.code {
         0 => Ok(resp.data),
         QUARK_CODE_SHARE_CANCELLED => Err(RequestError::ShareCancelled(resp.message)),
-        _ => Err(RequestError::Error(format!(
+        _ => Err(RequestError::Other(format!(
             "quark {api} failed, code: {}, message: {}",
             resp.code, resp.message
         ))),

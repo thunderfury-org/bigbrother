@@ -33,16 +33,19 @@ pub async fn download_file(url: &str, path: &str) -> RequestResult<()> {
         // write payload to file
         tokio::fs::create_dir_all(Path::new(path).parent().unwrap())
             .await
-            .map_err(|e| RequestError::Error(format!("create dir failed, {}", e)))?;
+            .map_err(|e| RequestError::Other(format!("create dir failed, {}", e)))?;
         tokio::fs::write(path, payload)
             .await
-            .map_err(|e| RequestError::Error(format!("write file failed, {}", e)))?;
+            .map_err(|e| RequestError::Other(format!("write file failed, {}", e)))?;
         return Ok(());
     }
 
     match status {
         StatusCode::NOT_FOUND => Err(RequestError::NotFound(url)),
-        _ => Err(RequestError::Error(format!(
+        s if s.is_client_error() => Err(RequestError::BadRequest(format!(
+            "http request to {url} failed, status: {status}, payload: {payload:?}",
+        ))),
+        _ => Err(RequestError::ServerError(format!(
             "http request to {url} failed, status: {status}, payload: {payload:?}",
         ))),
     }
@@ -78,7 +81,7 @@ pub async fn get_response<U: IntoUrl>(
     request
         .send()
         .await
-        .map_err(|e| RequestError::Error(format!("http get failed, {}", e)))
+        .map_err(|e| RequestError::Other(format!("http get failed, {}", e)))
 }
 
 pub async fn post<U: IntoUrl, P: Serialize, T: DeserializeOwned>(
@@ -116,7 +119,7 @@ pub async fn post_response<U: IntoUrl, P: Serialize>(
                 request = request.body(body);
             }
             Err(err) => {
-                return Err(RequestError::Error(format!(
+                return Err(RequestError::Other(format!(
                     "serialize http payload failed, {}",
                     err
                 )));
@@ -127,7 +130,7 @@ pub async fn post_response<U: IntoUrl, P: Serialize>(
     request
         .send()
         .await
-        .map_err(|e| RequestError::Error(format!("http post failed, {}", e)))
+        .map_err(|e| RequestError::Other(format!("http post failed, {}", e)))
 }
 
 /// POST without default headers — caller controls all headers.
@@ -150,7 +153,7 @@ pub async fn post_raw<U: IntoUrl, P: Serialize>(
             request = request.body(body);
         }
         Err(err) => {
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "serialize http payload failed, {}",
                 err
             )));
@@ -159,7 +162,7 @@ pub async fn post_raw<U: IntoUrl, P: Serialize>(
     request
         .send()
         .await
-        .map_err(|e| RequestError::Error(format!("http post failed, {}", e)))
+        .map_err(|e| RequestError::Other(format!("http post failed, {}", e)))
 }
 
 async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> RequestResult<T> {
@@ -170,7 +173,7 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
     if status.is_success() {
         return match serde_json::from_str::<T>(&payload) {
             Ok(data) => Ok(data),
-            Err(e) => Err(RequestError::Error(format!(
+            Err(e) => Err(RequestError::Other(format!(
                 "http request to {url} failed, decode payload failed, {e}, payload: {payload}",
             ))),
         };
@@ -182,7 +185,11 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
             "resource not found, url: {}",
             url
         ))),
-        _ => Err(RequestError::Error(format!(
+        StatusCode::TOO_MANY_REQUESTS => Err(RequestError::TooManyRequests),
+        s if s.is_client_error() => Err(RequestError::BadRequest(format!(
+            "http request to {url} failed, status: {status}, payload: {payload}",
+        ))),
+        _ => Err(RequestError::ServerError(format!(
             "http request to {url} failed, status: {status}, payload: {payload}",
         ))),
     }
@@ -351,10 +358,10 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(RequestError::Error(msg)) => {
+            Err(RequestError::Other(msg)) => {
                 assert!(msg.contains("decode payload failed"));
             }
-            _ => panic!("Expected Error with decode message"),
+            _ => panic!("Expected Other with decode message"),
         }
     }
 
@@ -451,10 +458,32 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(RequestError::Error(msg)) => {
+            Err(RequestError::ServerError(msg)) => {
                 assert!(msg.contains("status: 500"));
             }
-            _ => panic!("Expected Error with status 500"),
+            _ => panic!("Expected ServerError with status 500"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_bad_request() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/bad"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("Bad Request"))
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/api/bad", mock_server.uri());
+        let result: RequestResult<TestResponse> = get(url, None, None).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(RequestError::BadRequest(msg)) => {
+                assert!(msg.contains("status: 400"));
+            }
+            _ => panic!("Expected BadRequest, got: {:?}", result),
         }
     }
 
@@ -568,10 +597,36 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(RequestError::Error(msg)) => {
+            Err(RequestError::ServerError(msg)) => {
                 assert!(msg.contains("status: 503"));
             }
-            _ => panic!("Expected Error with status 503"),
+            _ => panic!("Expected ServerError with status 503"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_download_file_bad_request() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/files/bad.txt"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&mock_server)
+            .await;
+
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("bad.txt");
+        let file_path_str = file_path.to_str().unwrap();
+
+        let url = format!("{}/files/bad.txt", mock_server.uri());
+        let result = download_file(&url, file_path_str).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(RequestError::BadRequest(msg)) => {
+                assert!(msg.contains("status: 403"));
+            }
+            _ => panic!("Expected BadRequest, got: {:?}", result),
         }
     }
 }

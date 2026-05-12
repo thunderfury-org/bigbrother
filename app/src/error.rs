@@ -62,7 +62,11 @@ impl From<RequestError> for AppError {
                 Self::RuleRejected("request error, share audit not pass".to_owned())
             }
             RequestError::ShareCancelled(msg) => Self::NotFound(format!("分享已取消: {msg}")),
-            other => Self::Dependency(format!("request error, {other}")),
+            RequestError::BadRequest(msg) => Self::InvalidParameter(msg),
+            RequestError::ServerError(msg)
+            | RequestError::ConnectError(msg)
+            | RequestError::Timeout(msg) => Self::Dependency(msg),
+            other => Self::Internal(format!("request error, {other}")),
         }
     }
 }
@@ -92,5 +96,40 @@ mod tests {
 
         assert!(matches!(error.kind(), AppErrorKind::NotFound));
         assert!(error.to_string().contains("该分享已被取消"));
+    }
+
+    #[test]
+    fn bad_request_maps_to_invalid_parameter() {
+        let error = AppError::from(RequestError::BadRequest("status: 400".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::InvalidParameter));
+    }
+
+    #[test]
+    fn connect_error_maps_to_dependency() {
+        let error = AppError::from(RequestError::ConnectError("dns failed".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::Dependency));
+    }
+
+    #[test]
+    fn timeout_maps_to_dependency() {
+        let error = AppError::from(RequestError::Timeout("request timed out".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::Dependency));
+    }
+
+    #[test]
+    fn server_error_maps_to_dependency() {
+        let error = AppError::from(RequestError::ServerError("status: 500".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::Dependency));
+    }
+
+    #[test]
+    fn other_maps_to_internal() {
+        let error = AppError::from(RequestError::Other("decode failed".to_owned()));
+
+        assert!(matches!(error.kind(), AppErrorKind::Internal));
     }
 }

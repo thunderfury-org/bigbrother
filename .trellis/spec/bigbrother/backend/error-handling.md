@@ -14,10 +14,10 @@ pub type AppResult<T> = Result<T, AppError>;
 pub enum AppError {
     InvalidParameter(String),
     NotFound(String),
-    Dependency(String),      // External service failures
-    RuleRejected(String),    // Business rule violations
-    Runtime(String),         // Unexpected runtime errors
-    Internal(String),        // Catch-all internal errors
+    Dependency(String),      // External service failures (retryable)
+    RuleRejected(String),    // Business rule violations (not retryable)
+    Runtime(String),         // Unexpected runtime errors (retryable)
+    Internal(String),        // Catch-all internal errors (retryable)
 }
 ```
 
@@ -25,13 +25,55 @@ pub enum AppError {
 
 ---
 
+## RequestError (Infrastructure)
+
+Defined in `infrastructure/client/mod.rs`. Fine-grained error types for HTTP clients:
+
+```rust
+pub enum RequestError {
+    AlreadyExists,
+    ShareAuditNotPass,
+    ShareCancelled(String),
+    Unauthorized,          // HTTP 401
+    NotFound(String),      // HTTP 404
+    TooManyRequests,       // HTTP 429
+    BadRequest(String),    // HTTP 4xx (excl. 401/404/429)
+    ConnectError(String),  // Network connection failure
+    Timeout(String),       // Request timeout
+    ServerError(String),   // HTTP 5xx
+    Other(String),         // Serialization, parse, business logic errors
+}
+```
+
+**Do not use** `Other` as a catch-all for HTTP errors — use the appropriate variant.
+
+### RequestError → AppError Mapping
+
+| RequestError | AppError | Retryable |
+|---|---|---|
+| `ShareAuditNotPass` | `RuleRejected` | No |
+| `ShareCancelled` | `NotFound` | No |
+| `BadRequest` | `InvalidParameter` | No |
+| `ServerError` | `Dependency` | Yes |
+| `ConnectError` | `Dependency` | Yes |
+| `Timeout` | `Dependency` | Yes |
+| `Unauthorized` | `Dependency` | Yes |
+| `NotFound` | `Dependency` | Yes |
+| `TooManyRequests` | `Dependency` | Yes |
+| `AlreadyExists` | `Internal` | No |
+| `Other` | `Internal` | Yes* |
+
+*`Internal` is classified as retryable by `is_permanent_index_source_error`.
+
+---
+
 ## Conversion Rules
 
 `AppError` implements `From` for standard error types:
-- `io::Error` → `Runtime`
-- `serde_json::Error` → `Runtime`
-- `reqwest::Error` (as `RequestError`) → `Dependency`
-- `sea_orm::DbErr` → `Runtime`
+- `io::Error` → `Internal`
+- `serde_json::Error` → `Internal`
+- `RequestError` → varies (see table above)
+- `sea_orm::DbErr` → `Dependency`
 
 Use `?` operator at service/repo boundaries — the `From` impls handle conversion automatically.
 
@@ -51,26 +93,29 @@ Use `?` operator at service/repo boundaries — the `From` impls handle conversi
 
 ---
 
+## Retry Classification
+
+`application/file_index.rs` has `is_permanent_index_source_error`:
+
+- **Permanent** (not retryable): `InvalidParameter`, `NotFound`, `RuleRejected`
+- **Transient** (retryable): `Dependency`, `Runtime`, `Internal`
+
+---
+
 ## Domain-Specific Errors
 
-Complex modules may define their own error types (e.g., `DownloadUrlError`) that convert to `AppError` at the service boundary. Keep these in the domain or application layer.
+Complex modules may define their own error types (e.g., `DownloadUrlError`) that convert to `AppError` at the service boundary. Keep these in the application layer as port types.
 
 ```rust
-// application/resolve_download_url.rs
-enum DownloadUrlError {
-    Expired,
-    QuotaExceeded,
-}
-
-impl From<DownloadUrlError> for AppError {
-    fn from(e: DownloadUrlError) -> Self {
-        match e {
-            DownloadUrlError::Expired => AppError::RuleRejected("链接已过期".into()),
-            DownloadUrlError::QuotaExceeded => AppError::Dependency("配额已满".into()),
-        }
-    }
+// application/ports.rs
+pub enum DownloadUrlError {
+    Unauthorized,
+    NotFound(String),
+    Error(String),
 }
 ```
+
+Conversion happens manually in the application service (e.g., `resolve_download_url.rs`), not via `From` impls.
 
 ---
 
@@ -81,3 +126,4 @@ impl From<DownloadUrlError> for AppError {
 - **Never** `panic!` in business logic
 - User-facing messages should be in **Chinese** (e.g., "未找到匹配文件")
 - Prefer `AppError::NotFound("资源名称".into())` over generic messages
+- Use `RequestError::ServerError` for HTTP 5xx, `RequestError::Other` for non-HTTP errors
