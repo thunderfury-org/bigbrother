@@ -218,10 +218,7 @@ impl ServerRuntime {
             }
             Some(Err(err)) => {
                 tasks.abort_all();
-                Err(AppError::Database(
-                    format!("server task failed: {err}"),
-                    false,
-                ))
+                Err(AppError::Internal(format!("server task failed: {err}")))
             }
             None => Ok(()),
         }

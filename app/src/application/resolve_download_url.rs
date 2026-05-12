@@ -136,8 +136,9 @@ where
         match self.source.get_download_url(file_id).await {
             Ok(url) => {
                 if url.is_empty() {
-                    return Err(AppError::InvalidParameter(
+                    return Err(AppError::ExternalService(
                         "download url source returned empty url".to_owned(),
+                        false,
                     ));
                 }
 
@@ -291,12 +292,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_maps_source_error_to_dependency_error() {
+    async fn resolve_maps_source_error_to_external_service_error() {
         let service =
             ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("boom")));
 
         let error = service.resolve(1).await.unwrap_err();
         assert!(matches!(error, AppError::ExternalService(_, _)));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_empty_source_url_to_external_service_error() {
+        let service =
+            ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Ok(String::new())));
+
+        let error = service.resolve(1).await.unwrap_err();
+        assert!(matches!(error, AppError::ExternalService(_, false)));
     }
 
     #[tokio::test]

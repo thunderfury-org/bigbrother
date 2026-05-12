@@ -16,7 +16,6 @@ use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
 use crate::application::share_crawler::ShareCrawler;
-use crate::domain::import::inner::RawFile;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 
