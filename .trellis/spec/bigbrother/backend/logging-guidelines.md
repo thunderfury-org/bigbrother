@@ -6,7 +6,7 @@
 
 ## Logging Framework
 
-Uses the **tracing** ecosystem (`tracing` + `tracing-subscriber`). Setup in `app/src/logger.rs`.
+Uses the **tracing** ecosystem (`tracing` + `tracing-subscriber`). Setup in `app/src/interface/cli/logger.rs`.
 
 ---
 
@@ -65,7 +65,7 @@ pub async fn import(&self, input: ImportInput) -> AppResult<ImportResult> {
 
 ## Panic Hook
 
-`logger.rs` installs a custom panic hook that logs panics via `tracing::error!` with backtrace. Do not add separate panic handling.
+`interface/cli/logger.rs` installs a custom panic hook that logs panics via `tracing::error!` with backtrace. Do not add separate panic handling.
 
 ---
 
