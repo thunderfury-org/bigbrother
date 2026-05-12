@@ -2,7 +2,7 @@ use tracing::warn;
 
 use crate::{
     application::{
-        file_index::{SeenFile, is_permanent_index_source_error},
+        file_index::SeenFile,
         import::{MetadataLookup, ShareUrl},
         share_crawler::ShareCrawler,
     },
@@ -72,7 +72,7 @@ pub async fn on_process_media_sources(
             Ok(imported) => {
                 send_import_results(&handler.notify_service, reply_to, &imported).await;
             }
-            Err(err) if is_permanent_index_source_error(&err) => {
+            Err(err) if !err.is_retryable() => {
                 send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
             }
             Err(err) => return Err(err),
@@ -110,7 +110,7 @@ async fn fetch_raw_files(
 
     match result {
         Ok(files) => Ok(Some(files)),
-        Err(err) if is_permanent_index_source_error(&err) => {
+        Err(err) if !err.is_retryable() => {
             warn!(error = %err, "skipping permanent error");
             send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
             Ok(None)
@@ -132,8 +132,7 @@ async fn fetch_tg_document(
     let file = handler
         .bot
         .get_file(teloxide::types::FileId(file_id.to_string()))
-        .await
-        .map_err(|e| crate::error::AppError::Dependency(format!("failed to get document: {e}")))?;
+        .await?;
 
     if file.meta.size > 10 * 1024 * 1024 {
         let err = crate::error::AppError::InvalidParameter(format!(
@@ -149,10 +148,7 @@ async fn fetch_tg_document(
     handler
         .bot
         .download_file(&file.path, &mut content)
-        .await
-        .map_err(|e| {
-            crate::error::AppError::Dependency(format!("failed to download document: {e}"))
-        })?;
+        .await?;
 
     match handler.share_crawler.raw_files_from_json(content) {
         Ok(files) => Ok(Some(files)),

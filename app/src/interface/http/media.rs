@@ -11,7 +11,7 @@ use tracing::error;
 
 use crate::{
     application::resolve_download_url::{ResolveDownloadUrlResult, ResolveDownloadUrlService},
-    error::{AppError, AppErrorKind},
+    error::AppError,
     infrastructure::services::MediaDownloadUrlService,
 };
 
@@ -91,16 +91,15 @@ where
 }
 
 pub(crate) fn map_app_error_to_response(error: AppError) -> Response {
-    match error.kind() {
-        AppErrorKind::InvalidParameter => {
+    match &error {
+        AppError::InvalidParameter(_) => {
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
         }
-        AppErrorKind::NotFound => (StatusCode::NOT_FOUND, error.to_string()).into_response(),
-        AppErrorKind::Dependency => (StatusCode::BAD_GATEWAY, error.to_string()).into_response(),
-        AppErrorKind::RuleRejected => {
-            (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()).into_response()
+        AppError::NotFound(_) => (StatusCode::NOT_FOUND, error.to_string()).into_response(),
+        AppError::Database(_, _) | AppError::Network(_, _) | AppError::ExternalService(_, _) => {
+            (StatusCode::BAD_GATEWAY, error.to_string()).into_response()
         }
-        AppErrorKind::Runtime | AppErrorKind::Internal => (
+        AppError::Internal(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to get download url",
         )

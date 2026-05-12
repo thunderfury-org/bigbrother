@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod client;
 pub mod entity;
+mod error_conversions;
 pub mod event;
 pub mod event_bus;
 pub mod fs;

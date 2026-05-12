@@ -6,7 +6,7 @@ use url::Url;
 
 use crate::{
     application::import::{ImportedMedia, ShareUrl, is_fslink},
-    error::{AppError, AppErrorKind},
+    error::AppError,
     infrastructure::event_bus::Event,
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
@@ -166,12 +166,13 @@ pub async fn send_import_error(
     prefix: &str,
     error: &AppError,
 ) {
-    let suffix = match error.kind() {
-        AppErrorKind::InvalidParameter => format!("参数错误：{error}"),
-        AppErrorKind::NotFound => format!("未找到资源：{error}"),
-        AppErrorKind::Dependency => format!("外部依赖失败：{error}"),
-        AppErrorKind::RuleRejected => format!("规则拒绝：{error}"),
-        AppErrorKind::Runtime | AppErrorKind::Internal => format!("系统错误：{error}"),
+    let suffix = match error {
+        AppError::InvalidParameter(_) => format!("参数错误：{error}"),
+        AppError::NotFound(_) => format!("未找到资源：{error}"),
+        AppError::Database(_, _) => format!("数据库错误：{error}"),
+        AppError::ExternalService(_, _) => format!("外部服务失败：{error}"),
+        AppError::Network(_, _) => format!("网络错误：{error}"),
+        AppError::Internal(_) => format!("系统错误：{error}"),
     };
     send_notify(notify_service, reply_to, format!("{prefix}: {suffix}")).await;
 }

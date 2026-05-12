@@ -80,7 +80,7 @@ impl AppContext {
         opt.sqlx_logging(false);
         let db = Database::connect(opt)
             .await
-            .map_err(|err| AppError::Runtime(format!("failed to connect database: {err}")))?;
+            .map_err(|err| AppError::Database(format!("failed to connect database: {err}"), false))?;
         let clients = Client::new(&config);
         let event_bus = EventBus::new(db.clone());
         let bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());

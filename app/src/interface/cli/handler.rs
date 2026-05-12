@@ -167,11 +167,11 @@ async fn connect_db(data_dir: &str) -> AppResult<DatabaseConnection> {
     opt.sqlx_logging(false);
     let db = sea_orm::Database::connect(opt)
         .await
-        .map_err(|err| error::AppError::Runtime(format!("failed to connect database: {err}")))?;
+        .map_err(|err| error::AppError::Database(format!("failed to connect database: {err}"), false))?;
 
     Migrator::up(&db, None)
         .await
-        .map_err(|err| error::AppError::Runtime(format!("failed to run migration: {err}")))?;
+        .map_err(|err| error::AppError::Database(format!("failed to run migration: {err}"), false))?;
 
     Ok(db)
 }
@@ -222,7 +222,7 @@ mod tests {
     fn parse_share_url_rejects_unsupported_provider() {
         let err = parse_share_url("https://example.com/s/test").unwrap_err();
 
-        assert_eq!(err.kind(), crate::error::AppErrorKind::InvalidParameter);
+        assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("unsupported share url"));
     }
 

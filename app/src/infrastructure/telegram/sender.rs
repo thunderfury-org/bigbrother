@@ -6,7 +6,7 @@ use teloxide::{
 
 use crate::{
     application::notify::{SendTelegramMessage, TelegramMessageSender},
-    error::{AppError, AppResult},
+    error::AppResult,
 };
 
 #[derive(Clone)]
@@ -26,22 +26,19 @@ impl TelegramBotSender {
 
 impl TelegramMessageSender for TelegramBotSender {
     async fn send(&self, payload: &SendTelegramMessage) -> AppResult<()> {
-        let result = match payload.reply_to {
+        match payload.reply_to {
             Some(reply_to) => {
                 self.bot
                     .send_message(self.chat_id, payload.message.as_str())
                     .reply_to(MessageId(reply_to))
-                    .await
+                    .await?;
             }
             None => {
                 self.bot
                     .send_message(self.chat_id, payload.message.as_str())
-                    .await
+                    .await?;
             }
         };
-
-        result.map(|_| ()).map_err(|err| {
-            AppError::Dependency(format!("failed to send telegram message: {}", err))
-        })
+        Ok(())
     }
 }
