@@ -58,7 +58,7 @@ Do not add a DI framework. This pattern is intentional and sufficient.
 | `Box<dyn Error>` | Lose type information — use typed `AppError` enum |
 | `println!` outside CLI | Breaks structured logging — use `tracing` macros |
 | Synchronous blocking in async | Blocks the Tokio runtime — use `tokio::task` or async equivalents |
-| Hard-coded secrets/config | Read from YAML config via `config.rs` |
+| Hard-coded secrets/config | Read from YAML config via `interface/cli/config.rs` |
 | SeaORM types in domain/application | Leaks infrastructure — convert at repo boundary |
 | God objects | Keep services single-responsibility |
 

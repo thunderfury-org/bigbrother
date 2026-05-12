@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::error::AppError;
+use crate::error::AppError;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
@@ -74,7 +74,7 @@ pub struct QuarkConfig {
 }
 
 #[derive(Default)]
-pub struct Manager {
+pub(crate) struct Manager {
     data_dir: String,
     app_config: Box<AppConfig>,
 }

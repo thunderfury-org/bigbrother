@@ -1,6 +1,12 @@
+mod config;
 mod handler;
+mod logger;
+pub(crate) mod server;
 
-use crate::error::AppResult;
+use migration::{Migrator, MigratorTrait};
+use sea_orm::DatabaseConnection;
+
+use crate::error::{AppError, AppResult};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -45,14 +51,14 @@ pub struct SearchFilesArgs {
 }
 
 pub async fn run(cli: Cli) -> AppResult<()> {
-    match &cli.command {
-        Commands::Server(_) => unreachable!("server command is handled by main"),
+    match cli.command {
+        Commands::Server(args) => server::run(&args.data_dir).await,
         Commands::ImportShareUrl(args) => {
             handler::run_import_share_url(
                 args.data_dir.data_dir.as_str(),
                 &args.url,
                 args.verbose,
-                args.description.clone(),
+                args.description,
             )
             .await
         }
@@ -61,6 +67,24 @@ pub async fn run(cli: Cli) -> AppResult<()> {
                 .await
         }
     }
+}
+
+async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
+    if !std::fs::exists(db_dir)? {
+        std::fs::create_dir_all(db_dir)?;
+    }
+    let conn_str = format!("sqlite:{db_dir}/data.db?mode=rwc");
+    let mut opt = sea_orm::ConnectOptions::new(conn_str);
+    opt.sqlx_logging(false);
+    let db = sea_orm::Database::connect(opt)
+        .await
+        .map_err(|err| AppError::Database(format!("failed to connect database: {err}"), false))?;
+
+    Migrator::up(&db, None)
+        .await
+        .map_err(|err| AppError::Database(format!("failed to run migration: {err}"), false))?;
+
+    Ok(db)
 }
 
 #[cfg(test)]

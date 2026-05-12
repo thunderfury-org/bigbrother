@@ -14,12 +14,8 @@ The `app` crate follows a **4-layer (hexagonal) architecture** with clear depend
 
 ```
 app/src/
-  main.rs                 # Entry point: CLI parse → server or command
-  config.rs               # YAML config deserialization (Manager struct)
+  main.rs                 # Entry point: CLI parse + run
   error.rs                # AppError enum + AppResult<T> alias
-  logger.rs               # tracing init (file + access log + panic hook)
-  bootstrap/
-    mod.rs                # AppContext, AppRuntime — manual DI wire-up
   domain/                 # Pure models, NO IO dependencies
     import/               # Import models, policies, path logic
     library/              # Sync plan, path mapping
@@ -45,7 +41,12 @@ app/src/
     services.rs           # Type aliases binding generics → concrete types
     telegram/             # Telegram sender
   interface/              # Inbound adapters
-    cli/                  # CLI commands (clap derive)
+    cli/                  # CLI entry — all startup/config/commands
+      mod.rs              # Cli/Commands (clap) + connect_db() helper
+      config.rs           # YAML config deserialization (Manager struct)
+      logger.rs           # tracing init (file + access log + panic hook)
+      server.rs           # server startup (DB, clients, runtimes, concurrent run)
+      handler.rs          # import-share-url, search-files command handlers
     http/                 # Axum routers (media redirect, emby proxy)
     telegram/             # Telegram bot handler
     import.rs             # CLI import orchestration
@@ -82,6 +83,6 @@ infrastructure ─┘
 ## Key Files as Examples
 
 - Layer wire-up: `app/src/infrastructure/services.rs`
-- DI bootstrap: `app/src/bootstrap/mod.rs`
+- Server startup: `app/src/interface/cli/server.rs`
 - Port definitions: `app/src/application/ports.rs`
 - Clean service: `app/src/application/manage_keywords.rs`
