@@ -1,10 +1,7 @@
-use migration::{Migrator, MigratorTrait};
-use sea_orm::DatabaseConnection;
 use url::Url;
 
 use crate::{
     application::{self, import::MetadataLookup, share_crawler::ShareCrawler},
-    config,
     error::{self, AppResult},
     infrastructure::{
         client,
@@ -13,12 +10,13 @@ use crate::{
         repo::file_index::SeaOrmFileIndexRepository,
         services::{FileIndexRuntimeService, ImportService},
     },
-    logger,
 };
 
 use crate::interface::import::{
     NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes,
 };
+
+use super::{config, connect_db, logger};
 
 pub(crate) async fn run_import_share_url(
     data_dir: &str,
@@ -31,8 +29,8 @@ pub(crate) async fn run_import_share_url(
     }
 
     let url = parse_share_url(url)?;
-    let db = connect_db(data_dir).await?;
     let config = config::Manager::try_from(data_dir.trim())?;
+    let db = connect_db(&config.get_db_dir()).await?;
 
     let pan115 = client::pan115::Client::new();
     let pan123 = client::pan123::Client::new(
@@ -130,7 +128,8 @@ pub(crate) async fn run_import_share_url(
 }
 
 pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResult<()> {
-    let db = connect_db(data_dir).await?;
+    let config = config::Manager::try_from(data_dir.trim())?;
+    let db = connect_db(&config.get_db_dir()).await?;
     let service = FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db));
     let results = service.search_files(keyword, limit).await?;
     if results.is_empty() {
@@ -154,26 +153,6 @@ pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) 
     }
 
     Ok(())
-}
-
-async fn connect_db(data_dir: &str) -> AppResult<DatabaseConnection> {
-    let config = config::Manager::try_from(data_dir.trim())?;
-    let db_dir = config.get_db_dir();
-    if !std::fs::exists(db_dir.as_str())? {
-        std::fs::create_dir_all(db_dir.as_str())?;
-    }
-    let conn_str = format!("sqlite:{}/data.db?mode=rwc", db_dir);
-    let mut opt = sea_orm::ConnectOptions::new(conn_str);
-    opt.sqlx_logging(false);
-    let db = sea_orm::Database::connect(opt).await.map_err(|err| {
-        error::AppError::Database(format!("failed to connect database: {err}"), false)
-    })?;
-
-    Migrator::up(&db, None).await.map_err(|err| {
-        error::AppError::Database(format!("failed to run migration: {err}"), false)
-    })?;
-
-    Ok(db)
 }
 
 fn format_file_size(size: u64) -> String {
