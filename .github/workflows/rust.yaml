@@ -28,9 +28,6 @@ jobs:
           channel: stable
           components: rustfmt, clippy
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Lint
         run: |
           cargo fmt --all -- --check
