@@ -153,9 +153,10 @@ where
             }
             Err(DownloadUrlError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
             Err(DownloadUrlError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
-            Err(err) => Err(AppError::ExternalService(format!(
-                "failed to get download url: {err}"
-            ), false)),
+            Err(err) => Err(AppError::ExternalService(
+                format!("failed to get download url: {err}"),
+                false,
+            )),
         }
     }
 }

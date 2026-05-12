@@ -257,7 +257,10 @@ mod tests {
 
         async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
             if *self.fail_download.lock().unwrap() {
-                return Err(AppError::ExternalService("download failed".to_string(), false));
+                return Err(AppError::ExternalService(
+                    "download failed".to_string(),
+                    false,
+                ));
             }
             self.downloads
                 .lock()

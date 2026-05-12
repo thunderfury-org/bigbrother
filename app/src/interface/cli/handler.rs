@@ -165,13 +165,13 @@ async fn connect_db(data_dir: &str) -> AppResult<DatabaseConnection> {
     let conn_str = format!("sqlite:{}/data.db?mode=rwc", db_dir);
     let mut opt = sea_orm::ConnectOptions::new(conn_str);
     opt.sqlx_logging(false);
-    let db = sea_orm::Database::connect(opt)
-        .await
-        .map_err(|err| error::AppError::Database(format!("failed to connect database: {err}"), false))?;
+    let db = sea_orm::Database::connect(opt).await.map_err(|err| {
+        error::AppError::Database(format!("failed to connect database: {err}"), false)
+    })?;
 
-    Migrator::up(&db, None)
-        .await
-        .map_err(|err| error::AppError::Database(format!("failed to run migration: {err}"), false))?;
+    Migrator::up(&db, None).await.map_err(|err| {
+        error::AppError::Database(format!("failed to run migration: {err}"), false)
+    })?;
 
     Ok(db)
 }

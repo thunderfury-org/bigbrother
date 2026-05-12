@@ -145,10 +145,7 @@ async fn fetch_tg_document(
     }
 
     let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
-    handler
-        .bot
-        .download_file(&file.path, &mut content)
-        .await?;
+    handler.bot.download_file(&file.path, &mut content).await?;
 
     match handler.share_crawler.raw_files_from_json(content) {
         Ok(files) => Ok(Some(files)),

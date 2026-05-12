@@ -19,9 +19,7 @@ pub type AppResult<T> = std::result::Result<T, AppError>;
 impl AppError {
     pub fn is_retryable(&self) -> bool {
         match self {
-            Self::InvalidParameter(_)
-            | Self::NotFound(_)
-            | Self::Internal(_) => false,
+            Self::InvalidParameter(_) | Self::NotFound(_) | Self::Internal(_) => false,
             Self::Database(_, retryable)
             | Self::ExternalService(_, retryable)
             | Self::Network(_, retryable) => *retryable,

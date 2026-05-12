@@ -78,9 +78,9 @@ impl AppContext {
         let conn_str = format!("sqlite:{}/data.db?mode=rwc", db_dir);
         let mut opt = ConnectOptions::new(conn_str);
         opt.sqlx_logging(false);
-        let db = Database::connect(opt)
-            .await
-            .map_err(|err| AppError::Database(format!("failed to connect database: {err}"), false))?;
+        let db = Database::connect(opt).await.map_err(|err| {
+            AppError::Database(format!("failed to connect database: {err}"), false)
+        })?;
         let clients = Client::new(&config);
         let event_bus = EventBus::new(db.clone());
         let bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());

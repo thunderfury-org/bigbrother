@@ -274,10 +274,14 @@ where
         .get(url)
         .send()
         .await
-        .map_err(|err| AppError::ExternalService(format!("failed to query emby item: {err}"), false))?
+        .map_err(|err| {
+            AppError::ExternalService(format!("failed to query emby item: {err}"), false)
+        })?
         .json::<serde_json::Value>()
         .await
-        .map_err(|err| AppError::ExternalService(format!("failed to parse emby item response: {err}"), false))
+        .map_err(|err| {
+            AppError::ExternalService(format!("failed to parse emby item response: {err}"), false)
+        })
 }
 
 async fn proxy_playback_info<R>(
@@ -360,10 +364,9 @@ where
     let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
-    let body = upstream_response
-        .bytes()
-        .await
-        .map_err(|err| AppError::ExternalService(format!("failed to read emby response body: {err}"), false))?;
+    let body = upstream_response.bytes().await.map_err(|err| {
+        AppError::ExternalService(format!("failed to read emby response body: {err}"), false)
+    })?;
 
     Ok((status, headers, body))
 }
@@ -389,11 +392,9 @@ where
         request = request.header(name, value);
     }
 
-    request
-        .body(body)
-        .send()
-        .await
-        .map_err(|err| AppError::ExternalService(format!("failed to proxy request to emby: {err}"), false))
+    request.body(body).send().await.map_err(|err| {
+        AppError::ExternalService(format!("failed to proxy request to emby: {err}"), false)
+    })
 }
 
 async fn response_from_reqwest(upstream_response: reqwest::Response) -> AppResult<Response> {

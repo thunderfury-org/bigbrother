@@ -34,10 +34,7 @@ impl From<DbErr> for AppError {
     fn from(e: DbErr) -> Self {
         let retryable = matches!(
             e,
-            DbErr::ConnectionAcquire(_)
-                | DbErr::Conn(_)
-                | DbErr::Exec(_)
-                | DbErr::Query(_)
+            DbErr::ConnectionAcquire(_) | DbErr::Conn(_) | DbErr::Exec(_) | DbErr::Query(_)
         );
         Self::Database(e.to_string(), retryable)
     }
@@ -64,17 +61,13 @@ impl From<RequestError> for AppError {
             RequestError::Unauthorized | RequestError::NotFound(_) => {
                 Self::ExternalService(e.to_string(), false)
             }
-            RequestError::TooManyRequests => {
-                Self::ExternalService(e.to_string(), true)
-            }
+            RequestError::TooManyRequests => Self::ExternalService(e.to_string(), true),
             RequestError::BadRequest(_) => Self::InvalidParameter(e.to_string()),
             RequestError::ServerError(_) => Self::ExternalService(e.to_string(), true),
             RequestError::ConnectError(_) | RequestError::Timeout(_) => {
                 Self::Network(e.to_string(), true)
             }
-            RequestError::AlreadyExists | RequestError::Other(_) => {
-                Self::Internal(e.to_string())
-            }
+            RequestError::AlreadyExists | RequestError::Other(_) => Self::Internal(e.to_string()),
         }
     }
 }

@@ -1602,7 +1602,10 @@ async fn import_from_json_returns_error_when_library_dir_creation_fails() {
 
     let error = service.import_from_json(json).await.unwrap_err();
 
-    assert!(matches!(error, crate::error::AppError::ExternalService(_, _)));
+    assert!(matches!(
+        error,
+        crate::error::AppError::ExternalService(_, _)
+    ));
     assert!(error.to_string().contains("mkdir path failed"));
 
     let _ = fs::remove_dir_all(local_dir);
