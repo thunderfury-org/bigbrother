@@ -28,22 +28,44 @@ pub enum RequestError {
     #[error("too many requests")]
     TooManyRequests,
 
+    #[error("bad request, {0}")]
+    BadRequest(String),
+
+    #[error("connect error, {0}")]
+    ConnectError(String),
+
+    #[error("timeout, {0}")]
+    Timeout(String),
+
+    #[error("server error, {0}")]
+    ServerError(String),
+
     #[error("error, {0}")]
-    Error(String),
+    Other(String),
 }
 
 pub type RequestResult<T> = std::result::Result<T, RequestError>;
 
 impl From<reqwest_middleware::Error> for RequestError {
     fn from(e: reqwest_middleware::Error) -> Self {
-        let url = e.url().map(|u| u.to_string()).unwrap_or_default();
-        Self::Error(format!("http request to {url} error: {e}"))
+        match e {
+            reqwest_middleware::Error::Reqwest(e) => Self::from(e),
+            reqwest_middleware::Error::Middleware(e) => {
+                Self::Other(format!("middleware error: {e}"))
+            }
+        }
     }
 }
 
 impl From<reqwest::Error> for RequestError {
     fn from(e: reqwest::Error) -> Self {
-        let url = e.url().map(|u| u.to_string()).unwrap_or_default();
-        Self::Error(format!("http request to {url} error: {e}"))
+        if e.is_timeout() {
+            Self::Timeout(e.to_string())
+        } else if e.is_connect() {
+            Self::ConnectError(e.to_string())
+        } else {
+            let url = e.url().map(|u| u.to_string()).unwrap_or_default();
+            Self::Other(format!("http request to {url} error: {e}"))
+        }
     }
 }

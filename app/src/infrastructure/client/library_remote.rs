@@ -66,7 +66,11 @@ fn map_download_url_error(err: RequestError) -> DownloadUrlError {
         }
         RequestError::ShareCancelled(msg) => DownloadUrlError::NotFound(msg),
         RequestError::TooManyRequests => DownloadUrlError::Error("too many requests".to_string()),
-        RequestError::Error(message) => DownloadUrlError::Error(message),
+        RequestError::BadRequest(message) => DownloadUrlError::Error(message),
+        RequestError::ConnectError(message) => DownloadUrlError::Error(message),
+        RequestError::Timeout(message) => DownloadUrlError::Error(message),
+        RequestError::ServerError(message) => DownloadUrlError::Error(message),
+        RequestError::Other(message) => DownloadUrlError::Error(message),
     }
 }
 
@@ -134,6 +138,18 @@ mod tests {
         assert!(matches!(
             map_download_url_error(RequestError::ShareAuditNotPass),
             DownloadUrlError::Error(message) if message == "share audit not pass"
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::BadRequest("bad".to_string())),
+            DownloadUrlError::Error(message) if message.contains("bad")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::ConnectError("conn".to_string())),
+            DownloadUrlError::Error(message) if message.contains("conn")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::Timeout("timeout".to_string())),
+            DownloadUrlError::Error(message) if message.contains("timeout")
         ));
     }
 

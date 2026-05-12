@@ -211,13 +211,13 @@ impl Client {
             if is_share_audit_not_pass_payload(&payload) {
                 return Err(RequestError::ShareAuditNotPass);
             }
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "http request to {url} failed, status: {status}, payload: {payload}",
             )));
         }
 
         let info: ShareInfo = serde_json::from_str(&payload).map_err(|err| {
-            RequestError::Error(format!(
+            RequestError::Other(format!(
                 "http request to {url} failed, decode payload failed, {err}, payload: {payload}",
             ))
         })?;
@@ -225,7 +225,7 @@ impl Client {
             if is_share_audit_not_pass(&info.res_message) {
                 return Err(RequestError::ShareAuditNotPass);
             }
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "get share info failed, res_code: {}, res_message: {}",
                 info.res_code, info.res_message
             )));
@@ -267,7 +267,7 @@ impl Client {
             )
             .await?;
             if response.res_code != 0 {
-                return Err(RequestError::Error(format!(
+                return Err(RequestError::Other(format!(
                     "list share files failed, res_code: {}, res_message: {}",
                     response.res_code, response.res_message
                 )));
@@ -372,7 +372,7 @@ impl Client {
 
     async fn login_pc(&self) -> RequestResult<CachedPcSession> {
         if self.username.is_empty() || self.password.is_empty() {
-            return Err(RequestError::Error(
+            return Err(RequestError::Other(
                 "pan189.username and pan189.password are required to download shared CAS files"
                     .into(),
             ));
@@ -415,12 +415,12 @@ impl Client {
         let login: PcLoginResponse = process_json_response(response).await?;
         if login.result != 0 || login.to_url.is_empty() {
             if login.result == -133 || login.msg.contains("设备ID不存在") {
-                return Err(RequestError::Error(format!(
+                return Err(RequestError::Other(format!(
                     "pan189 pc login requires secondary device verification, result: {}, msg: {}; 请先在天翼云盘 App 或天翼账号安全设置中完成设备校验/关闭设备锁后重试",
                     login.result, login.msg
                 )));
             }
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "pan189 pc login failed, result: {}, msg: {}",
                 login.result, login.msg
             )));
@@ -443,7 +443,7 @@ impl Client {
             || session.session_key.is_empty()
             || session.session_secret.is_empty()
         {
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "get pan189 pc session failed, res_code: {}, res_message: {}",
                 session.res_code, session.res_message
             )));
@@ -467,7 +467,7 @@ impl Client {
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map_err(|e| RequestError::Error(format!("create pan189 cookie client failed: {e}")))?;
+            .map_err(|e| RequestError::Other(format!("create pan189 cookie client failed: {e}")))?;
         let response = client
             .get(self.build_api_url("/api/portal/ssoLogin.action"))
             .query(&[
@@ -484,7 +484,7 @@ impl Client {
             let status = response.status();
             let url = response.url().to_string();
             let payload = response.text().await?;
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "http request to {url} failed, status: {status}, payload: {payload}"
             )));
         }
@@ -502,7 +502,7 @@ impl Client {
             .iter()
             .any(|cookie| cookie.starts_with("COOKIE_LOGIN_USER="))
         {
-            return Err(RequestError::Error(
+            return Err(RequestError::Other(
                 "get pan189 web cookie from pc session failed, COOKIE_LOGIN_USER missing".into(),
             ));
         }
@@ -528,7 +528,7 @@ impl Client {
         let url = response.url().to_string();
         let payload = response.text().await?;
         if !status.is_success() {
-            return Err(RequestError::Error(format!(
+            return Err(RequestError::Other(format!(
                 "http request to {url} failed, status: {status}, payload: {payload}"
             )));
         }
@@ -585,7 +585,7 @@ impl Client {
         if status.is_success() {
             Ok(payload.to_vec())
         } else {
-            Err(RequestError::Error(format!(
+            Err(RequestError::Other(format!(
                 "download pan189 file failed, status: {status}, payload: {payload:?}"
             )))
         }
@@ -617,7 +617,7 @@ impl Client {
         }
 
         let content = fs::read_to_string(&path).map_err(|e| {
-            RequestError::Error(format!(
+            RequestError::Other(format!(
                 "read pan189 session cache file [{path}] failed, {e}"
             ))
         })?;
@@ -639,7 +639,7 @@ impl Client {
         let path = format!("{}/{}", self.cache_dir, SESSION_CACHE_FILE);
         if !Path::new(&self.cache_dir).exists() {
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
-                RequestError::Error(format!(
+                RequestError::Other(format!(
                     "create pan189 cache dir [{}] failed, {}",
                     self.cache_dir, e
                 ))
@@ -647,10 +647,10 @@ impl Client {
         }
 
         serde_json::to_string(session)
-            .map_err(|e| RequestError::Error(format!("serialize pan189 session failed, {e}")))
+            .map_err(|e| RequestError::Other(format!("serialize pan189 session failed, {e}")))
             .and_then(|content| {
                 fs::write(&path, content).map_err(|e| {
-                    RequestError::Error(format!(
+                    RequestError::Other(format!(
                         "write pan189 session cache file [{path}] failed, {e}"
                     ))
                 })
@@ -666,7 +666,7 @@ impl Client {
         let path = format!("{}/{}", self.cache_dir, SESSION_CACHE_FILE);
         if Path::new(&path).exists() {
             fs::remove_file(&path).map_err(|e| {
-                RequestError::Error(format!(
+                RequestError::Other(format!(
                     "remove pan189 session cache file [{path}] failed, {e}"
                 ))
             })?;
@@ -690,10 +690,10 @@ impl Client {
 
 fn capture_login_param(payload: &str, pattern: &str) -> RequestResult<String> {
     let captures = regex::Regex::new(pattern)
-        .map_err(|e| RequestError::Error(format!("invalid pan189 login regex: {e}")))?
+        .map_err(|e| RequestError::Other(format!("invalid pan189 login regex: {e}")))?
         .captures(payload)
         .ok_or_else(|| {
-            RequestError::Error(format!(
+            RequestError::Other(format!(
                 "parse pan189 login page failed, pattern not found: {pattern}"
             ))
         })?;
@@ -701,7 +701,7 @@ fn capture_login_param(payload: &str, pattern: &str) -> RequestResult<String> {
         .get(1)
         .map(|value| value.as_str().to_owned())
         .ok_or_else(|| {
-            RequestError::Error(format!(
+            RequestError::Other(format!(
                 "parse pan189 login page failed, capture group missing: {pattern}"
             ))
         })
@@ -710,18 +710,18 @@ fn capture_login_param(payload: &str, pattern: &str) -> RequestResult<String> {
 fn rsa_encrypt_hex(public_key: &str, value: &str) -> RequestResult<String> {
     let public_key = if public_key.contains("BEGIN PUBLIC KEY") {
         RsaPublicKey::from_public_key_pem(public_key)
-            .map_err(|e| RequestError::Error(format!("parse pan189 rsa public key failed: {e}")))?
+            .map_err(|e| RequestError::Other(format!("parse pan189 rsa public key failed: {e}")))?
     } else {
         let der = STANDARD.decode(public_key).map_err(|e| {
-            RequestError::Error(format!("decode pan189 rsa public key failed: {e}"))
+            RequestError::Other(format!("decode pan189 rsa public key failed: {e}"))
         })?;
         RsaPublicKey::from_public_key_der(&der)
-            .map_err(|e| RequestError::Error(format!("parse pan189 rsa public key failed: {e}")))?
+            .map_err(|e| RequestError::Other(format!("parse pan189 rsa public key failed: {e}")))?
     };
     let mut rng = OsRng;
     let encrypted = public_key
         .encrypt(&mut rng, Pkcs1v15Encrypt, value.as_bytes())
-        .map_err(|e| RequestError::Error(format!("encrypt pan189 login field failed: {e}")))?;
+        .map_err(|e| RequestError::Other(format!("encrypt pan189 login field failed: {e}")))?;
     Ok(format!("{{RSA}}{}", hex::encode_upper(encrypted)))
 }
 
@@ -732,12 +732,12 @@ async fn process_json_response<T: for<'de> Deserialize<'de>>(
     let url = response.url().to_string();
     let payload = response.text().await?;
     if !status.is_success() {
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "http request to {url} failed, status: {status}, payload: {payload}"
         )));
     }
     serde_json::from_str(&payload).map_err(|e| {
-        RequestError::Error(format!(
+        RequestError::Other(format!(
             "http request to {url} failed, decode payload failed, {e}, payload: {payload}"
         ))
     })
@@ -754,7 +754,7 @@ async fn process_download_url_response(
         if is_pan189_auth_error_payload(&payload) {
             return Err(RequestError::Unauthorized);
         }
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "http request to {url} failed, status: {status}, payload: {payload}"
         )));
     }
@@ -767,20 +767,20 @@ async fn process_download_url_response(
         if response.res_code == 0 && !response.file_download_url.is_empty() {
             return Ok(response.file_download_url);
         }
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "{context} failed, res_code: {}, res_message: {}",
             response.res_code, response.res_message
         )));
     }
 
     let Some(start) = payload.find("<fileDownloadUrl>") else {
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "{context} failed, payload does not contain fileDownloadUrl: {payload}"
         )));
     };
     let value_start = start + "<fileDownloadUrl>".len();
     let Some(end) = payload[value_start..].find("</fileDownloadUrl>") else {
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "{context} failed, malformed fileDownloadUrl payload: {payload}"
         )));
     };
@@ -789,7 +789,7 @@ async fn process_download_url_response(
         .trim()
         .to_owned();
     if url.is_empty() {
-        return Err(RequestError::Error(format!(
+        return Err(RequestError::Other(format!(
             "{context} failed, fileDownloadUrl is empty"
         )));
     }
@@ -941,7 +941,7 @@ mod tests {
         let error = client(&server).get_share_info("abc123").await.unwrap_err();
 
         match error {
-            RequestError::Error(message) => {
+            RequestError::Other(message) => {
                 assert!(message.contains("get share info failed"));
                 assert!(message.contains("boom"));
             }
@@ -1083,7 +1083,7 @@ mod tests {
             .unwrap_err();
 
         match error {
-            RequestError::Error(message) => {
+            RequestError::Other(message) => {
                 assert!(message.contains("list share files failed"));
                 assert!(message.contains("denied"));
             }
@@ -1470,7 +1470,7 @@ mod tests {
             .unwrap_err();
 
         match error {
-            RequestError::Error(message) => assert!(message.contains("PermissionDenied")),
+            RequestError::Other(message) => assert!(message.contains("PermissionDenied")),
             other => panic!("expected permission error, got {other:?}"),
         }
     }
@@ -1493,7 +1493,7 @@ mod tests {
             .unwrap_err();
 
         match error {
-            RequestError::Error(message) => {
+            RequestError::Other(message) => {
                 assert!(message.contains("pan189.username"));
             }
             other => panic!("expected business error, got {other:?}"),
