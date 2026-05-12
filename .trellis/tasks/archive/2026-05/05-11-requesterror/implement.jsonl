@@ -1,0 +1,8 @@
+{"type":"spec","source":".trellis/spec/bigbrother/backend/error-handling.md","purpose":"error handling conventions"}
+{"type":"spec","source":".trellis/spec/bigbrother/backend/index.md","purpose":"backend coding conventions"}
+{"type":"spec","source":".trellis/spec/bigbrother/backend/directory-structure.md","purpose":"layer structure"}
+{"type":"research","source":"app/src/error.rs","purpose":"AppError definition and From impls"}
+{"type":"research","source":"app/src/infrastructure/client/mod.rs","purpose":"RequestError definition and From impls"}
+{"type":"research","source":"app/src/infrastructure/client/http.rs","purpose":"HTTP client functions, process_response, download_file"}
+{"type":"research","source":"app/src/infrastructure/client/library_remote.rs","purpose":"LibraryRemote impl, map_download_url_error"}
+{"type":"research","source":"app/src/application/ports.rs","purpose":"DownloadUrlError and port traits"}
