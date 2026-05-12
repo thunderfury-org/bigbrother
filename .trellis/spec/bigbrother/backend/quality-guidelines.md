@@ -10,6 +10,7 @@
 - **Line endings**: LF
 - **Encoding**: UTF-8
 - **No `rustfmt.toml`** — rely on defaults + `.editorconfig`
+- **Always run `cargo fmt` before commit** — trellis check 必须包含 fmt
 
 ---
 

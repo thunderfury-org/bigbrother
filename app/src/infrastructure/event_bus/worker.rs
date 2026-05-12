@@ -74,12 +74,22 @@ impl EventWorker {
                         }
                         break;
                     }
-                    Err(err) => {
+                    Err(err) if err.is_retryable() => {
                         error!(
                             "Error processing event '{}', id {}, will retry after 5 seconds, {}",
                             self.event_name, record.id, err
                         );
                         sleep(self.retry_delay).await;
+                    }
+                    Err(err) => {
+                        error!(
+                            "Non-retryable error processing event '{}', id {}, acking: {}",
+                            self.event_name, record.id, err
+                        );
+                        if let Err(ack_err) = self.store.ack(record.id).await {
+                            error!("Failed to ack non-retryable event, {}", ack_err);
+                        }
+                        break;
                     }
                 }
             }
@@ -136,7 +146,7 @@ mod tests {
                 &|attempts, _event| async move {
                     let current = attempts.fetch_add(1, Ordering::SeqCst);
                     if current == 0 {
-                        Err(AppError::Internal("retry once".into()))
+                        Err(AppError::Network("retry once".into(), true))
                     } else {
                         Ok(())
                     }
@@ -176,6 +186,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            store
+                .list_pending(SampleEvent::NAME, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_acks_non_retryable_error_without_retry() {
+        let store = test_store().await;
+        let payload = serde_json::to_string(&SampleEvent { value: 42 }).unwrap();
+        store.append(SampleEvent::NAME, &payload).await.unwrap();
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        worker
+            .drain_with_handler::<Arc<AtomicUsize>, SampleEvent, _, _>(
+                attempts.clone(),
+                &|attempts, _event| async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err(AppError::InvalidParameter("bad input".into()))
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
         assert!(
             store
                 .list_pending(SampleEvent::NAME, 10)

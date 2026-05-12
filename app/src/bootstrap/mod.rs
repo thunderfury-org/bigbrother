@@ -185,7 +185,7 @@ impl AppRuntime {
 
         Migrator::up(&self.db, None)
             .await
-            .map_err(|err| AppError::Runtime(format!("failed to run migration: {err}")))?;
+            .map_err(|err| AppError::Database(format!("failed to run migration: {err}"), false))?;
         let (server_result, event_result, _) = tokio::join!(
             self.server.run(),
             self.event_delivery.run(),
@@ -218,7 +218,7 @@ impl ServerRuntime {
             }
             Some(Err(err)) => {
                 tasks.abort_all();
-                Err(AppError::Runtime(format!("server task failed: {err}")))
+                Err(AppError::Internal(format!("server task failed: {err}")))
             }
             None => Ok(()),
         }

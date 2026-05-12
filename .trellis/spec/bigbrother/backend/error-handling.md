@@ -12,16 +12,16 @@ Defined in `app/src/error.rs`:
 pub type AppResult<T> = Result<T, AppError>;
 
 pub enum AppError {
-    InvalidParameter(String),
-    NotFound(String),
-    Dependency(String),      // External service failures (retryable)
-    RuleRejected(String),    // Business rule violations (not retryable)
-    Runtime(String),         // Unexpected runtime errors (retryable)
-    Internal(String),        // Catch-all internal errors (retryable)
+    InvalidParameter(String),              // Always not retryable
+    NotFound(String),                      // Always not retryable
+    Database(String, bool),                // (message, retryable)
+    ExternalService(String, bool),         // (message, retryable)
+    Network(String, bool),                 // (message, retryable)
+    Internal(String),                      // Catch-all, always not retryable
 }
 ```
 
-`AppErrorKind` mirrors the variants without message — use for pattern matching when you don't need the message text.
+`is_retryable()` method returns the retryable flag for Database/ExternalService/Network variants; returns `false` for InvalidParameter/NotFound/Internal.
 
 ---
 
@@ -51,29 +51,31 @@ pub enum RequestError {
 
 | RequestError | AppError | Retryable |
 |---|---|---|
-| `ShareAuditNotPass` | `RuleRejected` | No |
-| `ShareCancelled` | `NotFound` | No |
+| `ShareAuditNotPass` | `ExternalService` | No |
+| `ShareCancelled` | `ExternalService` | No |
+| `Unauthorized` | `ExternalService` | No |
+| `NotFound` | `ExternalService` | No |
 | `BadRequest` | `InvalidParameter` | No |
-| `ServerError` | `Dependency` | Yes |
-| `ConnectError` | `Dependency` | Yes |
-| `Timeout` | `Dependency` | Yes |
-| `Unauthorized` | `Dependency` | Yes |
-| `NotFound` | `Dependency` | Yes |
-| `TooManyRequests` | `Dependency` | Yes |
+| `TooManyRequests` | `ExternalService` | Yes |
+| `ServerError` | `ExternalService` | Yes |
+| `ConnectError` | `Network` | Yes |
+| `Timeout` | `Network` | Yes |
 | `AlreadyExists` | `Internal` | No |
-| `Other` | `Internal` | Yes* |
-
-*`Internal` is classified as retryable by `is_permanent_index_source_error`.
+| `Other` | `Internal` | No |
 
 ---
 
 ## Conversion Rules
 
-`AppError` implements `From` for standard error types:
-- `io::Error` → `Internal`
-- `serde_json::Error` → `Internal`
+All `From` impls are in `infrastructure/error_conversions.rs`. `error.rs` has zero external dependencies.
+
+Supported conversions:
+- `sea_orm::DbErr` → `Database` (ConnectionAcquire/Conn/Exec/Query → retryable, others → not retryable)
 - `RequestError` → varies (see table above)
-- `sea_orm::DbErr` → `Dependency`
+- `std::io::Error` → `Internal`
+- `serde_json::Error` → `Internal`
+- `teloxide::RequestError` → `Network` (retryable) for Network/RetryAfter variants, `ExternalService` (not retryable) for Api/InvalidJson/Io/MigrateToChatId
+- `teloxide::DownloadError` → `Network` (retryable) for Network variant, `Internal` for Io
 
 Use `?` operator at service/repo boundaries — the `From` impls handle conversion automatically.
 
@@ -81,24 +83,27 @@ Use `?` operator at service/repo boundaries — the `From` impls handle conversi
 
 ## HTTP Mapping
 
-`interface/http/media.rs` has `map_app_error_to_response`:
+`interface/http/media.rs` has `map_app_error_to_response` (matches directly on variant, no AppErrorKind):
 
 | AppError variant | HTTP Status |
 |---|---|
 | `InvalidParameter` | 400 Bad Request |
 | `NotFound` | 404 Not Found |
-| `Dependency` | 502 Bad Gateway |
-| `RuleRejected` | 422 Unprocessable Entity |
-| `Runtime` / `Internal` | 500 Internal Server Error |
+| `Database` / `Network` / `ExternalService` | 502 Bad Gateway |
+| `Internal` | 500 Internal Server Error |
 
 ---
 
 ## Retry Classification
 
-`application/file_index.rs` has `is_permanent_index_source_error`:
+`is_retryable()` method on AppError:
 
-- **Permanent** (not retryable): `InvalidParameter`, `NotFound`, `RuleRejected`
-- **Transient** (retryable): `Dependency`, `Runtime`, `Internal`
+- **Not retryable**: `InvalidParameter`, `NotFound`, `Internal`, `Database(_, false)`, `ExternalService(_, false)`, `Network(_, false)`
+- **Retryable**: `Database(_, true)`, `ExternalService(_, true)`, `Network(_, true)`
+
+Event worker (`infrastructure/event_bus/worker.rs`) checks `is_retryable()`:
+- Retryable errors → retry after delay
+- Non-retryable errors → ack event and skip
 
 ---
 
@@ -127,3 +132,4 @@ Conversion happens manually in the application service (e.g., `resolve_download_
 - User-facing messages should be in **Chinese** (e.g., "未找到匹配文件")
 - Prefer `AppError::NotFound("资源名称".into())` over generic messages
 - Use `RequestError::ServerError` for HTTP 5xx, `RequestError::Other` for non-HTTP errors
+- `error_conversions.rs` is the single source of truth for all `From` impls

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
     domain::import::inner::{Etag, RawFile},
-    error::{AppErrorKind, AppResult},
+    error::AppResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,16 +73,6 @@ where
         limit: u64,
     ) -> AppResult<Vec<FileSearchRecord>> {
         self.repo.search_files(keyword.trim(), limit).await
-    }
-}
-
-pub fn is_permanent_index_source_error(error: &crate::error::AppError) -> bool {
-    match error.kind() {
-        AppErrorKind::InvalidParameter | AppErrorKind::NotFound | AppErrorKind::RuleRejected => {
-            true
-        }
-        AppErrorKind::Dependency => false,
-        AppErrorKind::Runtime | AppErrorKind::Internal => false,
     }
 }
 

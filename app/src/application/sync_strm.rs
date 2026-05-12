@@ -257,7 +257,10 @@ mod tests {
 
         async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
             if *self.fail_download.lock().unwrap() {
-                return Err(AppError::Dependency("download failed".to_string()));
+                return Err(AppError::ExternalService(
+                    "download failed".to_string(),
+                    false,
+                ));
             }
             self.downloads
                 .lock()
@@ -544,7 +547,7 @@ mod tests {
         let error = service.execute().await.unwrap_err();
 
         assert!(
-            matches!(error, AppError::Dependency(message) if message.contains("download failed"))
+            matches!(error, AppError::ExternalService(message, _) if message.contains("download failed"))
         );
     }
 

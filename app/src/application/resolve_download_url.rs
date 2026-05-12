@@ -136,8 +136,9 @@ where
         match self.source.get_download_url(file_id).await {
             Ok(url) => {
                 if url.is_empty() {
-                    return Err(AppError::RuleRejected(
+                    return Err(AppError::ExternalService(
                         "download url source returned empty url".to_owned(),
+                        false,
                     ));
                 }
 
@@ -153,9 +154,10 @@ where
             }
             Err(DownloadUrlError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
             Err(DownloadUrlError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
-            Err(err) => Err(AppError::Dependency(format!(
-                "failed to get download url: {err}"
-            ))),
+            Err(err) => Err(AppError::ExternalService(
+                format!("failed to get download url: {err}"),
+                false,
+            )),
         }
     }
 }
@@ -290,12 +292,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_maps_source_error_to_dependency_error() {
+    async fn resolve_maps_source_error_to_external_service_error() {
         let service =
             ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("boom")));
 
         let error = service.resolve(1).await.unwrap_err();
-        assert!(matches!(error, AppError::Dependency(_)));
+        assert!(matches!(error, AppError::ExternalService(_, _)));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_empty_source_url_to_external_service_error() {
+        let service = ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            FakeSource::new(Ok(String::new())),
+        );
+
+        let error = service.resolve(1).await.unwrap_err();
+        assert!(matches!(error, AppError::ExternalService(_, false)));
     }
 
     #[tokio::test]
@@ -379,16 +392,16 @@ mod tests {
 
         assert!(matches!(
             first.await.unwrap().unwrap_err(),
-            AppError::Dependency(_)
+            AppError::ExternalService(_, _)
         ));
         assert!(matches!(
             second.await.unwrap().unwrap_err(),
-            AppError::Dependency(_)
+            AppError::ExternalService(_, _)
         ));
         assert_eq!(source.calls(), 1);
 
         let retry = service.resolve(1).await.unwrap_err();
-        assert!(matches!(retry, AppError::Dependency(_)));
+        assert!(matches!(retry, AppError::ExternalService(_, _)));
         assert_eq!(source.calls(), 2);
     }
 }

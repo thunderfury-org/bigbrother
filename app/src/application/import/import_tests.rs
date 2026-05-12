@@ -16,7 +16,6 @@ use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
 };
 use crate::application::share_crawler::ShareCrawler;
-use crate::domain::import::inner::RawFile;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 
@@ -188,7 +187,7 @@ impl LibraryGateway for FakeLibraryGateway {
     }
     async fn mkdir_library_path(&self, path: &str) -> AppResult<i64> {
         if self.state.lock().unwrap().fail_mkdir_path {
-            return Err(AppError::Dependency("mkdir path failed".into()));
+            return Err(AppError::ExternalService("mkdir path failed".into(), false));
         }
         self.state
             .lock()
@@ -212,7 +211,7 @@ impl LibraryGateway for FakeLibraryGateway {
     }
     async fn mkdir_library_dir(&self, parent_dir_id: i64, folder_name: &str) -> AppResult<i64> {
         if self.state.lock().unwrap().fail_mkdir_dir {
-            return Err(AppError::Dependency("mkdir dir failed".into()));
+            return Err(AppError::ExternalService("mkdir dir failed".into(), false));
         }
         self.state
             .lock()
@@ -1602,7 +1601,10 @@ async fn import_from_json_returns_error_when_library_dir_creation_fails() {
 
     let error = service.import_from_json(json).await.unwrap_err();
 
-    assert_eq!(error.kind(), crate::error::AppErrorKind::Dependency);
+    assert!(matches!(
+        error,
+        crate::error::AppError::ExternalService(_, _)
+    ));
     assert!(error.to_string().contains("mkdir path failed"));
 
     let _ = fs::remove_dir_all(local_dir);
@@ -1696,7 +1698,7 @@ async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() 
 
     let error = service.import_from_json(json).await.unwrap_err();
 
-    assert_eq!(error.kind(), crate::error::AppErrorKind::Internal);
+    assert!(matches!(error, crate::error::AppError::Internal(_)));
     assert!(error.to_string().contains("remove local file failed"));
 
     let _ = fs::remove_dir_all(local_dir);
