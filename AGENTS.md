@@ -1,21 +1,27 @@
-<!-- TRELLIS:START -->
-# Trellis Instructions
+# Repository Guidelines
 
-These instructions are for AI assistants working in this project.
+## Project Structure & Module Organization
+This repository is a Rust workspace with two crates: `app/` for the runtime application and `migration/` for SeaORM migrations. The main code lives under `app/src/` and is split by layer: `domain/` for pure rules, `application/` for use cases, `infrastructure/` for external adapters, and `interface/` for CLI, Telegram, and HTTP entrypoints. Configuration samples live in `config/`, helper scripts in `tools/`, and longer design notes in `docs/`.
 
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+## Build, Test, and Development Commands
+Use the `Makefile` for common tasks:
 
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+- `make build` builds the default workspace target.
+- `make build-release` builds optimized binaries.
+- `make test` runs all Rust tests with `cargo test`.
+- `make fmt` formats the workspace with `cargo fmt --all`.
+- `make lint` enforces formatting and runs `cargo clippy -- -D warnings`.
 
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+Run the app locally with `cargo run -- server --data-dir ./data`.
 
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
+## Coding Style & Naming Conventions
+Follow `.editorconfig`: use spaces, LF line endings, and a final newline; Rust files use 4-space indentation. Keep modules focused and aligned with the existing layer boundaries rather than adding cross-layer helpers. Use `snake_case` for files, modules, and functions, `PascalCase` for types, and verb-led names for services such as `SyncStrmService`. Format with `cargo fmt` and treat Clippy warnings as errors.
 
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+## Testing Guidelines
+Tests are primarily Rust unit/integration-style module tests placed close to the code, for example `app/src/application/import/metadata/tests.rs` and `app/src/application/import/group/tests.rs`. Prefer small, targeted tests for domain parsing, import grouping, and transfer path rules. Name tests by behavior, such as `parses_tv_episode_title`. Run all tests with `make test` before opening a PR.
 
-<!-- TRELLIS:END -->
+## Commit & Pull Request Guidelines
+Recent history follows Conventional Commit-style prefixes like `feat:`, `refactor:`, and `support:`. Keep subjects imperative and specific, for example `feat: add quark share importer`. Pull requests should include a short summary, linked issue or context, test evidence (`make test`, `make lint`), and sample bot/API behavior when user-visible flows change.
+
+## Security & Configuration Tips
+Do not commit real credentials. Keep runtime config under `<data-dir>/config/config.yaml`, and treat `data/` as local state for SQLite, cache, and logs. When changing import or redirect behavior, verify both Telegram-triggered flows and local HTTP playback paths.
