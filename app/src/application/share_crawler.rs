@@ -6,10 +6,10 @@ use crate::domain::import::{
         collect_pan189_directory_entries, collect_quark_directory_entries,
     },
     share_walk::ShareTraversal,
+    source::{parse_fslink_to_raw_files, parse_json_to_raw_files, parse_json_to_raw_files_with_context},
 };
 use crate::domain::share::RawFile;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::share::file_parser::ShareFileParser;
 
 #[derive(Clone)]
 pub struct ShareCrawler<S> {
@@ -59,12 +59,14 @@ impl<S: ShareSource> ShareCrawler<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn raw_files_from_fslink(&self, fslink: &str) -> AppResult<Vec<RawFile>> {
-        ShareFileParser::parse_fslink(fslink)
+        parse_fslink_to_raw_files(fslink)
     }
 
+    #[allow(dead_code)]
     pub fn raw_files_from_json(&self, json: Vec<u8>) -> AppResult<Vec<RawFile>> {
-        ShareFileParser::parse_json_bytes(json)
+        parse_json_to_raw_files(json)
     }
 
     async fn raw_files_from_pan123_share(
@@ -129,7 +131,7 @@ impl<S: ShareSource> ShareCrawler<S> {
                             "检测到天翼 CAS 秒传分享，需要使用自己的天翼云盘账号登录后读取 CAS 内容；请确认 pan189.username / pan189.password 可正常登录且账号未触发设备校验后重试: {e}"
                         ))
                     })?;
-                cas_raw_files.extend(ShareFileParser::parse_json_bytes_with_context(
+                cas_raw_files.extend(parse_json_to_raw_files_with_context(
                     json,
                     &cas_context_path(&candidate.file.name),
                 )?);

@@ -1,8 +1,8 @@
-use std::path::Path;
-
 use crate::{
     domain::{
-        import::source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
+        import::source::{
+            parse_fslink_to_raw_files, parse_json_to_raw_files, parse_json_to_raw_files_with_context,
+        },
         share::RawFile,
     },
     error::AppResult,
@@ -12,72 +12,20 @@ pub struct ShareFileParser;
 
 impl ShareFileParser {
     pub fn parse_fslink(fslink: &str) -> AppResult<Vec<RawFile>> {
-        let resource = parse_fslink_resource(fslink)?;
-        Ok(raw_files_from_resource_with_context(&resource, ""))
+        parse_fslink_to_raw_files(fslink)
     }
 
     pub fn parse_json_bytes(content: Vec<u8>) -> AppResult<Vec<RawFile>> {
-        Self::parse_json_bytes_with_context(content, "")
+        parse_json_to_raw_files(content)
     }
 
+    #[allow(dead_code)]
     pub fn parse_json_bytes_with_context(
         content: Vec<u8>,
         fallback_common_path: &str,
     ) -> AppResult<Vec<RawFile>> {
-        let resource = parse_files_from_json(content)?;
-        Ok(raw_files_from_resource_with_context(
-            &resource,
-            fallback_common_path,
-        ))
+        parse_json_to_raw_files_with_context(content, fallback_common_path)
     }
-}
-
-fn parse_fslink_resource(fslink: &str) -> AppResult<ResourceJson> {
-    let mut resource = ResourceJson::default();
-
-    let mut fslink = fslink.find('$').map(|i| &fslink[i + 1..]).unwrap_or(fslink);
-    if let Some(i) = fslink.find('%') {
-        resource.common_path = fslink[..i].to_owned();
-        fslink = &fslink[i + 1..];
-    }
-    resource.files = parse_files_from_fslink(fslink)?;
-    Ok(resource)
-}
-
-fn raw_files_from_resource_with_context(
-    resource: &ResourceJson,
-    fallback_common_path: &str,
-) -> Vec<RawFile> {
-    let common_path = if resource.common_path.trim().is_empty() {
-        fallback_common_path
-    } else {
-        resource.common_path.as_str()
-    };
-
-    resource
-        .files
-        .iter()
-        .map(|file| {
-            let full_path = format!("{common_path}/{}", file.path);
-            let path = Path::new(full_path.as_str());
-            let parent_path = path
-                .parent()
-                .map(|p| p.to_str().unwrap_or_default())
-                .unwrap_or_default();
-            let name = path
-                .file_name()
-                .map(|p| p.to_str().unwrap_or_default())
-                .unwrap_or_default();
-
-            RawFile {
-                id: None,
-                name: name.to_owned(),
-                etag: file.etag.as_str().into(),
-                size: file.size,
-                path: parent_path.to_owned(),
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]

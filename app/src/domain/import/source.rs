@@ -1,9 +1,13 @@
 use base64::{Engine, engine::general_purpose};
 use serde::{Deserialize, de::Deserializer};
+use std::path::Path;
 use tracing::info;
 use url::Url;
 
-use crate::error::{AppError, AppResult};
+use crate::{
+    domain::share::RawFile,
+    error::{AppError, AppResult},
+};
 
 pub(crate) enum ShareUrl<'a> {
     Pan123(&'a Url),
@@ -200,6 +204,26 @@ pub(crate) fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
     })
 }
 
+pub(crate) fn parse_fslink_to_raw_files(fslink: &str) -> AppResult<Vec<RawFile>> {
+    let resource = parse_fslink_resource(fslink)?;
+    Ok(raw_files_from_resource_with_context(&resource, ""))
+}
+
+pub(crate) fn parse_json_to_raw_files(json: Vec<u8>) -> AppResult<Vec<RawFile>> {
+    parse_json_to_raw_files_with_context(json, "")
+}
+
+pub(crate) fn parse_json_to_raw_files_with_context(
+    json: Vec<u8>,
+    fallback_common_path: &str,
+) -> AppResult<Vec<RawFile>> {
+    let resource = parse_files_from_json(json)?;
+    Ok(raw_files_from_resource_with_context(
+        &resource,
+        fallback_common_path,
+    ))
+}
+
 fn deserialize_u64_from_string_or_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -237,6 +261,54 @@ fn decode_base64_json_if_needed(json: Vec<u8>) -> Vec<u8> {
         Ok(decoded) => decoded,
         Err(_) => json,
     }
+}
+
+fn parse_fslink_resource(fslink: &str) -> AppResult<ResourceJson> {
+    let mut resource = ResourceJson::default();
+
+    let mut fslink = fslink.find('$').map(|i| &fslink[i + 1..]).unwrap_or(fslink);
+    if let Some(i) = fslink.find('%') {
+        resource.common_path = fslink[..i].to_owned();
+        fslink = &fslink[i + 1..];
+    }
+    resource.files = parse_files_from_fslink(fslink)?;
+    Ok(resource)
+}
+
+fn raw_files_from_resource_with_context(
+    resource: &ResourceJson,
+    fallback_common_path: &str,
+) -> Vec<RawFile> {
+    let common_path = if resource.common_path.trim().is_empty() {
+        fallback_common_path
+    } else {
+        resource.common_path.as_str()
+    };
+
+    resource
+        .files
+        .iter()
+        .map(|file| {
+            let full_path = format!("{common_path}/{}", file.path);
+            let path = Path::new(full_path.as_str());
+            let parent_path = path
+                .parent()
+                .map(|p| p.to_str().unwrap_or_default())
+                .unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|p| p.to_str().unwrap_or_default())
+                .unwrap_or_default();
+
+            RawFile {
+                id: None,
+                name: name.to_owned(),
+                etag: file.etag.as_str().into(),
+                size: file.size,
+                path: parent_path.to_owned(),
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -352,6 +424,38 @@ mod tests {
     fn share_url_rejects_unknown_host() {
         let url = Url::parse("https://example.com/s/abc123").unwrap();
         assert!(ShareUrl::from(&url).is_none());
+    }
+
+    #[test]
+    fn parses_fslink_to_raw_files_with_common_path() {
+        let raw_files = parse_fslink_to_raw_files(
+            "123FSLinkV2$/Media/Movies%MovieHash#1024#Movie.2026.mkv$SubHash#12#Movie.2026.srt",
+        )
+        .unwrap();
+
+        assert_eq!(raw_files.len(), 2);
+        assert_eq!(raw_files[0].name, "Movie.2026.mkv");
+        assert_eq!(raw_files[0].path, "/Media/Movies");
+        assert_eq!(raw_files[1].name, "Movie.2026.srt");
+        assert_eq!(raw_files[1].path, "/Media/Movies");
+    }
+
+    #[test]
+    fn parses_base64_single_file_cas_with_fallback_context() {
+        let cas = general_purpose::STANDARD.encode(
+            serde_json::json!({
+                "fileName": "S01E01.mp4",
+                "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 1001
+            })
+            .to_string(),
+        );
+
+        let raw_files = parse_json_to_raw_files_with_context(cas.into_bytes(), "Show").unwrap();
+
+        assert_eq!(raw_files.len(), 1);
+        assert_eq!(raw_files[0].name, "S01E01.mp4");
+        assert_eq!(raw_files[0].path, "Show");
     }
 
     #[test]
