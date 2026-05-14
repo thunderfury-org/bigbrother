@@ -17,11 +17,13 @@ use crate::{
             local_store::FilesystemImportLocalStore,
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        share::resolver::ShareResolverService,
     },
 };
 
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareSourceService = ShareImportGateway;
+pub type ShareResolverRuntimeService = ShareResolverService<ShareImportGateway>;
 pub type ImportService =
     TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
 pub type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
