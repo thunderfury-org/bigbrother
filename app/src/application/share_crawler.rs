@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::application::import_ports::ShareSource;
 use crate::domain::import::{
     Pan189File, ShareUrl,
-    inner::RawFile,
     share_collect::{
         collect_pan115_directory_entries, collect_pan123_directory_entries,
         collect_pan189_directory_entries, collect_quark_directory_entries,
@@ -11,6 +10,7 @@ use crate::domain::import::{
     share_walk::ShareTraversal,
     source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
+use crate::domain::share::RawFile;
 use crate::error::{AppError, AppResult};
 
 #[derive(Clone)]

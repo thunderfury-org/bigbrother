@@ -1,4 +1,4 @@
-use crate::domain::import::inner::{MediaFile, RawFile};
+use crate::domain::{import::inner::MediaFile, share::RawFile};
 
 pub(in crate::application::import) fn build_local_cleanup_paths(
     local_parent_path: &str,

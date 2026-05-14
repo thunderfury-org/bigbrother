@@ -1,4 +1,4 @@
-use crate::domain::import::inner::Etag;
+use crate::domain::share::Etag;
 
 use super::TransferWorkflow;
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};

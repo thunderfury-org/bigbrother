@@ -1,7 +1,7 @@
 use crate::{
     application::import::group::resolve_tv_episode_slot,
     application::import::{Genre, Season, TvDetail},
-    domain::import::inner::{Etag, MediaFile, RawFile},
+    domain::{import::inner::MediaFile, share::{Etag, RawFile}},
     domain::import::policy::group_video_and_subtitle_files,
     domain::media::{FileType, Metadata},
 };

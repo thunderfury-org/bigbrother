@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::domain::media::Metadata;
-pub(crate) use crate::domain::share::{Etag, RawFile};
+use crate::domain::share::RawFile;
 
 use super::{MovieDetail, TvDetail};
 

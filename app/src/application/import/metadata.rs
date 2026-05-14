@@ -4,10 +4,11 @@ use std::collections::HashMap;
 
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
 use crate::domain::import::{
-    inner::{MediaFile, RawFile},
+    inner::MediaFile,
     policy::group_video_and_subtitle_files,
 };
 use crate::domain::media::Metadata;
+use crate::domain::share::RawFile;
 
 use super::TransferWorkflow;
 

@@ -6,7 +6,7 @@ use crate::{
         import::{MetadataLookup, ShareUrl},
         share_crawler::ShareCrawler,
     },
-    domain::import::inner::RawFile,
+    domain::share::RawFile,
     error::AppResult,
     infrastructure::services::{
         FileIndexRuntimeService, ImportService, KeywordService, NotifyService, ShareSourceService,
