@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use base64::Engine;
 use url::Url;
 
 use super::*;
@@ -929,6 +930,54 @@ async fn import_from_json_writes_strm_and_records_upload() {
         strm_content,
         "http://localhost/d/remote/电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.mkv?file_id=42"
     );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_json_accepts_base64_single_file_cas_through_share_crawler() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let mut service = TestImportService::new(
+        gateway.clone(),
+        FakeShareSource::default(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let json = base64::engine::general_purpose::STANDARD.encode(
+        serde_json::json!({
+            "fileName": "Inception.2010.1080p.mkv",
+            "md5": "0123456789abcdef0123456789abcdef",
+            "size": 1234u64
+        })
+        .to_string(),
+    );
+
+    let imported = service.import_from_json(json.into_bytes()).await.unwrap();
+
+    assert!(matches!(
+        imported.as_slice(),
+        [ImportedMedia::Movie {
+            title,
+            year,
+            size,
+            has_failed,
+            ..
+        }] if title == "Inception" && year == "2010" && *size == 1234 && !has_failed
+    ));
+
+    let state = gateway.state.lock().unwrap();
+    assert_eq!(
+        state.fast_uploads,
+        vec![(
+            1,
+            "Inception.2010.1080p.mkv".to_string(),
+            "0123456789abcdef0123456789abcdef".to_string(),
+            1234
+        )]
+    );
+    drop(state);
 
     let _ = fs::remove_dir_all(local_dir);
 }

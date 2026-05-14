@@ -13,12 +13,22 @@ pub struct ShareFileParser;
 impl ShareFileParser {
     pub fn parse_fslink(fslink: &str) -> AppResult<Vec<RawFile>> {
         let resource = parse_fslink_resource(fslink)?;
-        Ok(raw_files_from_resource(&resource))
+        Ok(raw_files_from_resource_with_context(&resource, ""))
     }
 
     pub fn parse_json_bytes(content: Vec<u8>) -> AppResult<Vec<RawFile>> {
+        Self::parse_json_bytes_with_context(content, "")
+    }
+
+    pub fn parse_json_bytes_with_context(
+        content: Vec<u8>,
+        fallback_common_path: &str,
+    ) -> AppResult<Vec<RawFile>> {
         let resource = parse_files_from_json(content)?;
-        Ok(raw_files_from_resource(&resource))
+        Ok(raw_files_from_resource_with_context(
+            &resource,
+            fallback_common_path,
+        ))
     }
 }
 
@@ -34,12 +44,21 @@ fn parse_fslink_resource(fslink: &str) -> AppResult<ResourceJson> {
     Ok(resource)
 }
 
-fn raw_files_from_resource(resource: &ResourceJson) -> Vec<RawFile> {
+fn raw_files_from_resource_with_context(
+    resource: &ResourceJson,
+    fallback_common_path: &str,
+) -> Vec<RawFile> {
+    let common_path = if resource.common_path.trim().is_empty() {
+        fallback_common_path
+    } else {
+        resource.common_path.as_str()
+    };
+
     resource
         .files
         .iter()
         .map(|file| {
-            let full_path = format!("{}/{}", resource.common_path, file.path);
+            let full_path = format!("{common_path}/{}", file.path);
             let path = Path::new(full_path.as_str());
             let parent_path = path
                 .parent()
@@ -139,5 +158,22 @@ mod tests {
 
         assert!(matches!(err, AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("etag is empty"));
+    }
+
+    #[test]
+    fn uses_fallback_common_path_for_single_file_cas() {
+        let cas = serde_json::json!({
+            "fileName": "S01E01.mp4",
+            "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size": 1001
+        });
+
+        let raw_files =
+            ShareFileParser::parse_json_bytes_with_context(cas.to_string().into_bytes(), "Show")
+                .unwrap();
+
+        assert_eq!(raw_files.len(), 1);
+        assert_eq!(raw_files[0].name, "S01E01.mp4");
+        assert_eq!(raw_files[0].path, "Show");
     }
 }

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use crate::application::import_ports::ShareSource;
 use crate::domain::import::{
     Pan189File, ShareUrl,
@@ -8,10 +6,10 @@ use crate::domain::import::{
         collect_pan189_directory_entries, collect_quark_directory_entries,
     },
     share_walk::ShareTraversal,
-    source::{ResourceJson, parse_files_from_fslink, parse_files_from_json},
 };
 use crate::domain::share::RawFile;
 use crate::error::{AppError, AppResult};
+use crate::infrastructure::share::file_parser::ShareFileParser;
 
 #[derive(Clone)]
 pub struct ShareCrawler<S> {
@@ -62,13 +60,11 @@ impl<S: ShareSource> ShareCrawler<S> {
     }
 
     pub fn raw_files_from_fslink(&self, fslink: &str) -> AppResult<Vec<RawFile>> {
-        let resource = parse_fslink_resource(fslink)?;
-        Ok(raw_files_from_resource(&resource))
+        ShareFileParser::parse_fslink(fslink)
     }
 
     pub fn raw_files_from_json(&self, json: Vec<u8>) -> AppResult<Vec<RawFile>> {
-        let resource: ResourceJson = parse_files_from_json(json)?;
-        Ok(raw_files_from_resource(&resource))
+        ShareFileParser::parse_json_bytes(json)
     }
 
     async fn raw_files_from_pan123_share(
@@ -133,11 +129,10 @@ impl<S: ShareSource> ShareCrawler<S> {
                             "检测到天翼 CAS 秒传分享，需要使用自己的天翼云盘账号登录后读取 CAS 内容；请确认 pan189.username / pan189.password 可正常登录且账号未触发设备校验后重试: {e}"
                         ))
                     })?;
-                let resource = parse_files_from_json(json)?;
-                cas_raw_files.extend(raw_files_from_resource_with_context(
-                    &resource,
+                cas_raw_files.extend(ShareFileParser::parse_json_bytes_with_context(
+                    json,
                     &cas_context_path(&candidate.file.name),
-                ));
+                )?);
             }
             Ok(cas_raw_files)
         } else {
@@ -252,55 +247,4 @@ fn cas_context_path(name: &str) -> String {
     } else {
         name.to_owned()
     }
-}
-
-fn parse_fslink_resource(fslink: &str) -> AppResult<ResourceJson> {
-    let mut resource = ResourceJson::default();
-
-    let mut fslink = fslink.find('$').map(|i| &fslink[i + 1..]).unwrap_or(fslink);
-    if let Some(i) = fslink.find('%') {
-        resource.common_path = fslink[..i].to_owned();
-        fslink = &fslink[i + 1..];
-    }
-    resource.files = parse_files_from_fslink(fslink)?;
-    Ok(resource)
-}
-
-fn raw_files_from_resource(resource: &ResourceJson) -> Vec<RawFile> {
-    raw_files_from_resource_with_context(resource, "")
-}
-
-fn raw_files_from_resource_with_context(
-    resource: &ResourceJson,
-    fallback_common_path: &str,
-) -> Vec<RawFile> {
-    let mut raw_files = Vec::new();
-    let common_path = if resource.common_path.trim().is_empty() {
-        fallback_common_path
-    } else {
-        resource.common_path.as_str()
-    };
-
-    for file in &resource.files {
-        let full_path = format!("{common_path}/{}", &file.path);
-        let path = Path::new(full_path.as_str());
-        let parent_path = path
-            .parent()
-            .map(|p| p.to_str().unwrap_or_default())
-            .unwrap_or_default();
-        let name = path
-            .file_name()
-            .map(|p| p.to_str().unwrap_or_default())
-            .unwrap_or_default();
-
-        raw_files.push(RawFile {
-            id: None,
-            name: name.to_owned(),
-            etag: file.etag.as_str().into(),
-            size: file.size,
-            path: parent_path.to_owned(),
-        });
-    }
-
-    raw_files
 }
