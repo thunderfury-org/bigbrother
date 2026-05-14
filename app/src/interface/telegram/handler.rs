@@ -11,6 +11,7 @@ use crate::{
     infrastructure::services::{
         FileIndexRuntimeService, ImportService, KeywordService, NotifyService, ShareSourceService,
     },
+    infrastructure::share::file_parser::ShareFileParser,
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
@@ -102,7 +103,7 @@ async fn fetch_raw_files(
                 .raw_files_from_share_url(&share_url)
                 .await
         }
-        MediaSource::Fslink(fslink) => handler.share_crawler.raw_files_from_fslink(fslink),
+        MediaSource::Fslink(fslink) => ShareFileParser::parse_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
             return fetch_tg_document(handler, file_id, file_name, reply_to, error_prefix).await;
         }
@@ -147,7 +148,7 @@ async fn fetch_tg_document(
     let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
     handler.bot.download_file(&file.path, &mut content).await?;
 
-    match handler.share_crawler.raw_files_from_json(content) {
+    match ShareFileParser::parse_json_bytes(content) {
         Ok(files) => Ok(Some(files)),
         Err(err) => {
             warn!(file_name = %file_name, error = %err, "failed to parse document");
