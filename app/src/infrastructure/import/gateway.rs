@@ -7,7 +7,7 @@ use crate::{
         Season, TvDetail,
     },
     application::{
-        import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
+        import_ports::{LibraryGateway, MetadataCatalog},
         ports::{MediaDirectoryRecord, MediaSearchSource},
     },
     error::AppResult,
@@ -20,12 +20,14 @@ pub struct PanLibraryGateway {
 }
 
 #[derive(Clone)]
-pub struct ShareImportGateway {
+pub struct ShareClientGateway {
     pan115: pan115::Client,
     pan123: pan123::Client,
     pan189: pan189::Client,
     quark: quark::Client,
 }
+
+pub type ShareImportGateway = ShareClientGateway;
 
 #[derive(Clone)]
 pub struct TmdbMetadataGateway {
@@ -43,7 +45,53 @@ impl PanLibraryGateway {
     }
 }
 
-impl ShareImportGateway {
+pub trait ShareSource: Clone {
+    async fn list_pan123_share_files(
+        &self,
+        share_key: &str,
+        share_password: &str,
+        parent_id: i64,
+    ) -> AppResult<Vec<LibraryFile>>;
+    async fn get_pan189_share_info(&self, share_code: &str) -> AppResult<Pan189ShareInfo>;
+    async fn list_pan189_share_files(
+        &self,
+        share_id: i64,
+        share_mode: i32,
+        parent_id: &str,
+    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)>;
+    async fn download_pan189_share_file(
+        &self,
+        share_id: i64,
+        file: &Pan189File,
+    ) -> AppResult<Vec<u8>>;
+    async fn list_pan115_share_files(
+        &self,
+        share_code: &str,
+        receive_code: &str,
+        cid: &str,
+    ) -> AppResult<Vec<Pan115FileEntry>>;
+    async fn get_quark_share_info(
+        &self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<QuarkShareInfo>;
+    async fn list_quark_share_files(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        pdir_fid: &str,
+    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)>;
+    async fn batch_get_quark_file_md5s(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        file_infos: &[(String, String)],
+    ) -> AppResult<HashMap<String, String>>;
+}
+
+impl ShareClientGateway {
     pub fn new(
         pan115: pan115::Client,
         pan123: pan123::Client,
@@ -282,7 +330,7 @@ impl LibraryGateway for PanLibraryGateway {
     }
 }
 
-impl ShareSource for ShareImportGateway {
+impl ShareSource for ShareClientGateway {
     async fn list_pan123_share_files(
         &self,
         share_key: &str,

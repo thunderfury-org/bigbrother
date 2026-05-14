@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use crate::{
     application::import::{
-        LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-        QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, TvDetail,
+        LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
     },
     error::AppResult,
 };
+
+pub use crate::infrastructure::import::gateway::ShareSource;
 
 pub trait LibraryGateway: Clone {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>>;
@@ -30,52 +31,6 @@ pub trait LibraryGateway: Clone {
         size: u64,
     ) -> AppResult<Option<i64>>;
     async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()>;
-}
-
-pub trait ShareSource: Clone {
-    async fn list_pan123_share_files(
-        &self,
-        share_key: &str,
-        share_password: &str,
-        parent_id: i64,
-    ) -> AppResult<Vec<LibraryFile>>;
-    async fn get_pan189_share_info(&self, share_code: &str) -> AppResult<Pan189ShareInfo>;
-    async fn list_pan189_share_files(
-        &self,
-        share_id: i64,
-        share_mode: i32,
-        parent_id: &str,
-    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)>;
-    async fn download_pan189_share_file(
-        &self,
-        share_id: i64,
-        file: &Pan189File,
-    ) -> AppResult<Vec<u8>>;
-    async fn list_pan115_share_files(
-        &self,
-        share_code: &str,
-        receive_code: &str,
-        cid: &str,
-    ) -> AppResult<Vec<Pan115FileEntry>>;
-    async fn get_quark_share_info(
-        &self,
-        share_id: &str,
-        password: &str,
-    ) -> AppResult<QuarkShareInfo>;
-    async fn list_quark_share_files(
-        &self,
-        share_id: &str,
-        password: &str,
-        stoken: &str,
-        pdir_fid: &str,
-    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)>;
-    async fn batch_get_quark_file_md5s(
-        &self,
-        share_id: &str,
-        password: &str,
-        stoken: &str,
-        file_infos: &[(String, String)],
-    ) -> AppResult<HashMap<String, String>>;
 }
 
 pub trait MetadataCatalog: Clone {
