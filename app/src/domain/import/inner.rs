@@ -1,35 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::domain::media::Metadata;
+pub(crate) use crate::domain::share::{Etag, RawFile};
 
 use super::{MovieDetail, TvDetail};
-
-#[derive(Debug, Clone)]
-pub(crate) struct RawFile {
-    pub id: Option<i64>,
-    pub name: String,
-    pub etag: Etag,
-    pub size: u64,
-    pub path: String,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Etag {
-    Md5(String),
-    Sha1(String),
-}
-
-impl From<&str> for Etag {
-    fn from(s: &str) -> Self {
-        // sha1 is 40 chars hex string, md5 is 32 chars hex string.
-        // some etag from 123pan is not a standard md5, but a 32 chars hex string.
-        if s.len() == 40 {
-            Etag::Sha1(s.to_lowercase())
-        } else {
-            Etag::Md5(s.to_lowercase())
-        }
-    }
-}
 
 /// 表示一个媒体文件，包含视频文件和字幕文件
 #[derive(Debug)]
