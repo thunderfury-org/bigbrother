@@ -3,6 +3,14 @@
 ## Project Structure & Module Organization
 This repository is a Rust workspace with two crates: `app/` for the runtime application and `migration/` for SeaORM migrations. The main code lives under `app/src/` and is split by layer: `domain/` for pure rules, `application/` for use cases, `infrastructure/` for external adapters, and `interface/` for CLI, Telegram, and HTTP entrypoints. Configuration samples live in `config/`, helper scripts in `tools/`, and longer design notes in `docs/`.
 
+### Module Dependency Constraints
+
+- `domain` 不能依赖 `application`、`infrastructure`、`interface`
+- `application` 可以依赖 `domain`，不能依赖 `interface`
+- `infrastructure` 可以依赖 `domain` 和 `application`，用于实现端口和外部适配
+- `interface` 可以依赖 `application`，必要时通过 `application` 暴露的端口使用 `infrastructure` 组装出的服务
+- `infrastructure/client` 只承载底层 API 调用，不依赖其他模块
+
 ## Build, Test, and Development Commands
 Use the `Makefile` for common tasks:
 

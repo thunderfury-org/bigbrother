@@ -60,6 +60,17 @@
 
 当前 `infrastructure/import/gateway.rs` 充当了多网盘聚合适配层，但其接口形态仍然受旧的 `ShareSource` 设计影响，无法体现“client 只做底层 API，share 层负责完整分享解析流程”的边界。
 
+### 5. `RawFile` 归属不合理
+
+当前 `RawFile` 位于 `domain/import/inner.rs`，但它表达的是分享来源解析后的原始文件模型，不是 import 专属概念。
+
+目标归属：
+
+- 将 `RawFile` 迁移到 `app/src/domain/share.rs`
+- `domain` 保持对 `RawFile` 的所有权
+- `infrastructure/share` 负责产出 `RawFile`
+- `application` 与 `domain/import` 作为消费者使用 `RawFile`
+
 ## 重构目标
 
 ### 核心目标
@@ -88,20 +99,29 @@
 ```rust
 pub trait ShareResolver: Clone {
     async fn raw_files_from_url(&self, url: &url::Url) -> AppResult<Option<Vec<RawFile>>>;
-    // url 类型也可以是 &str 这个要看下具体用哪个更好
 }
 ```
 
 语义：
 
 - 输入原始分享 URL
-- 输出标准化的 `Vec<RawFile>`
+- 输出标准化的 `Option<Vec<RawFile>>`
 - 不再暴露 provider-specific 的分享能力接口
+
+返回值约定：
+
+- `Ok(Some(files))`
+  - 该 resolver 识别并成功解析了分享 URL
+- `Ok(None)`
+  - 输入不是支持的分享链接
+- `Err(e)`
+  - 已识别为支持的分享链接，但解析过程中失败
 
 说明：
 
 - application 层不再感知 pan123 / pan189 / pan115 / quark 的差异
 - application 层也不再持有 `ShareUrl` 这类中间抽象
+- `ShareResolver` 放在 `app/src/application/ports/share.rs`
 
 ## 二、分享解析实现集中到 `infrastructure/share`
 
@@ -123,6 +143,8 @@ pub trait ShareResolver: Clone {
   - 定义 URL 匹配函数
   - 完整实现该 provider 的分享解析流程
   - 输出统一 `Vec<RawFile>`
+- `ShareFileParser`
+  - 独立承载 fslink / JSON 到 `Vec<RawFile>` 的解析
 
 ## 三、中心 Resolver 采用集中式路由
 
@@ -140,7 +162,7 @@ pub struct ShareResolverService {
 伪代码：
 
 ```rust
-async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
+async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
     if pan123::match_url(url) {
         self.pan123.raw_files_from_url(url).await
     } else if pan189::match_url(url) {
@@ -150,7 +172,7 @@ async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
     } else if quark::match_url(url) {
         self.quark.raw_files_from_url(url).await
     } else {
-        Err(AppError::InvalidParameter(format!("unsupported share url: {url}")))
+        Ok(None)
     }
 }
 ```
@@ -256,14 +278,19 @@ pub fn match_url(url: &Url) -> bool
 
 ### 保留
 
-- `app/src/domain/import/inner.rs`
-- `app/src/domain/import/share_walk.rs`
-- `app/src/domain/import/source.rs` 中与 fslink / JSON 解析相关的内容
 - `app/src/infrastructure/client/*`
 - `app/src/application/import/*`
+- `app/src/domain/share.rs`
+  - 承载 `RawFile` 等分享原始文件模型
 
 ### 删除或迁移
 
+- `app/src/domain/import/inner.rs`
+  - 删除或收缩，`RawFile` 迁移到 `app/src/domain/share.rs`
+- `app/src/domain/import/share_walk.rs`
+  - 迁移到 `infrastructure/share/*` 相关位置
+- `app/src/domain/import/source.rs` 中与 fslink / JSON 解析相关的内容
+  - 迁移到独立的 `ShareFileParser`
 - `app/src/application/share_crawler.rs`
   - 删除，能力迁移到 `infrastructure/share/*`
 - `app/src/application/import_ports.rs` 中的 `ShareSource`
@@ -291,7 +318,8 @@ pub fn match_url(url: &Url) -> bool
 
 - 直接构造 `Url`
 - 使用新的 `ShareResolver`
-- unsupported 校验由 `ShareResolver` 统一负责，或由 resolver 暴露统一校验能力
+- unsupported 校验由 `ShareResolver` 返回 `Ok(None)` 统一处理
+- fslink / JSON 继续通过独立的 `ShareFileParser` 处理
 
 ### Telegram
 
@@ -304,7 +332,9 @@ pub fn match_url(url: &Url) -> bool
 目标：
 
 - 直接将 `Url` 传给新的 `ShareResolver`
+- unsupported 分享链接由 resolver 返回 `Ok(None)`
 - 分享处理错误统一由 resolver 返回
+- fslink / JSON 继续通过独立的 `ShareFileParser` 处理
 
 ### Runtime wiring
 
@@ -343,7 +373,7 @@ pub fn match_url(url: &Url) -> bool
 
 3. resolver 路由测试
    - 测试不同 URL 正确分发到对应 provider
-   - 测试 unsupported URL 错误
+   - 测试 unsupported URL 返回 `Ok(None)`
 
 ### 测试原则
 
@@ -354,7 +384,7 @@ pub fn match_url(url: &Url) -> bool
 
 ### Step 1
 
-在 `application/import_ports.rs` 中引入新的 `ShareResolver` trait。
+在 `application/ports/share.rs` 中引入新的 `ShareResolver` trait，并在 `domain/share.rs` 中安置 `RawFile`。
 
 ### Step 2
 
@@ -374,7 +404,7 @@ pub fn match_url(url: &Url) -> bool
 
 ### Step 4
 
-将 `share_collect.rs` 中的 provider-specific 逻辑迁移到各 provider 模块。
+将 `share_collect.rs` 中的 provider-specific 逻辑迁移到各 provider 模块，并将 fslink / JSON 解析迁移到独立的 `ShareFileParser`。
 
 ### Step 5
 
@@ -420,86 +450,6 @@ pub fn match_url(url: &Url) -> bool
 
 虽然接受 `if / else if` 路由，但必须严格限制 resolver 只做匹配和分发，不能重新吸纳 provider-specific 流程。
 
-## 待确认问题
-
-以下问题尚未完全定稿，需要在实现前确认。
-
-### 1. `ShareResolver` trait 的放置位置
-
-候选：
-
-- 继续放在 `app/src/application/import_ports.rs`
-- 新建更贴切的端口文件，例如 `app/src/application/share_ports.rs`
-
-当前建议：
-
-- 如果本次只做分享解析链路重构，可先放在 `import_ports.rs`
-- 如果希望 application 边界更清晰，建议拆出 `share_ports.rs`
-
-### 2. `raw_files_from_json` / `raw_files_from_fslink` 的归属
-
-当前这些能力在 `ShareCrawler` 中：
-
-- `raw_files_from_fslink`
-- `raw_files_from_json`
-
-待确认它们未来属于：
-
-- A. 继续并入 `ShareResolver`
-- B. 单独拆成 `ShareSourceParser` / `ResourceParser`
-- C. 先留在一个新的通用解析 service 中，由 CLI / Telegram 继续调用
-
-当前倾向：
-
-- `fslink/json` 不属于“分享 URL 解析”
-- 更适合作为独立解析能力保留，不强行并入 `ShareResolver`
-
-### 3. 旧 `domain/import/source.rs` 的保留范围
-
-待确认：
-
-- 是否仅保留 fslink / JSON 解析相关内容
-- 是否顺手更名，避免 `source.rs` 继续承载“分享源”和“资源文件格式”两类职责
-
-当前倾向：
-
-- provider-specific URL 内容迁走
-- fslink / JSON 解析保留，但可以考虑后续拆分命名
-
-### 4. share 模块的数据模型是否要立即本地化
-
-当前 provider 逻辑复用了多个 domain/import 模型：
-
-- `Pan189ShareInfo`
-- `Pan189Folder`
-- `Pan189File`
-- `Pan115FileEntry`
-- `QuarkShareInfo`
-- `QuarkFolder`
-- `QuarkFile`
-
-待确认：
-
-- A. 本次先继续复用这些模型，降低重构风险
-- B. 顺手把这些 provider-specific 模型迁到 `infrastructure/share` 或 `infrastructure/client`
-
-当前倾向：
-
-- 先选 A，避免本轮改造面继续扩大
-
-### 5. unsupported URL 的前置校验是否仍需保留
-
-当前 CLI 中 `parse_share_url` 会在真正抓取前先校验是否为支持的分享 URL。
-
-待确认：
-
-- A. 继续保留单独的前置校验函数
-- B. 直接调用 `ShareResolver::raw_files_from_url`，由 resolver 返回 unsupported 错误
-
-当前倾向：
-
-- 选 B，更统一，避免重复一套识别逻辑
-
 ## 建议结论
 
 本次重构建议以“分享解析链路中心化”为唯一主目标，先完成以下结构收敛：
@@ -507,6 +457,8 @@ pub fn match_url(url: &Url) -> bool
 - application 只保留统一 `ShareResolver`
 - infrastructure/share 集中承载 provider-specific 分享解析
 - client 保持纯底层 API 适配器
+- fslink / JSON 解析独立为 `ShareFileParser`
+- `RawFile` 迁移到 `domain/share.rs`
 - 删除 `ShareSource` / `ShareCrawler` / `ShareUrl`
 
 在此基础上，后续如果再新增网盘分享源，改动将主要局限在 share 层，而不会再跨多个架构层级扩散。
