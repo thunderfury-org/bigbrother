@@ -24,7 +24,7 @@ struct CommonResponse<T> {
     data: Option<T>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct File {
     #[serde(rename = "FileId")]
     pub file_id: i64,

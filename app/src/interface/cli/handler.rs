@@ -1,22 +1,14 @@
-use url::Url;
-
 use crate::{
-    application::{self, import::MetadataLookup, share_crawler::ShareCrawler},
+    application::{file_index::SeenFile, import::MetadataLookup},
     error::{self, AppResult},
-    infrastructure::{
-        client,
-        import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
-        import::local_store::FilesystemImportLocalStore,
-        repo::file_index::SeaOrmFileIndexRepository,
-        services::{FileIndexRuntimeService, ImportService},
-    },
+    infrastructure::share::resolver::ShareResolver,
 };
 
 use crate::interface::import::{
     NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes,
 };
 
-use super::{config, connect_db, logger};
+use super::{context::CliContext, logger};
 
 pub(crate) async fn run_import_share_url(
     data_dir: &str,
@@ -28,66 +20,18 @@ pub(crate) async fn run_import_share_url(
         logger::init_console();
     }
 
-    let url = parse_share_url(url)?;
-    let config = config::Manager::try_from(data_dir.trim())?;
-    let db = connect_db(&config.get_db_dir()).await?;
-
-    let pan115 = client::pan115::Client::new();
-    let pan123 = client::pan123::Client::new(
-        &config.get_pan123_config().passport,
-        &config.get_pan123_config().password,
-        &format!("{}/pan123", config.get_cache_dir()),
-    );
-    let pan189 = client::pan189::Client::new(client::pan189::AuthConfig {
-        username: config.get_pan189_config().username.clone(),
-        password: config.get_pan189_config().password.clone(),
-        cache_dir: format!("{}/pan189", config.get_cache_dir()),
-    });
-    let quark = client::quark::Client::new(&config.get_quark_config().cookie);
-    let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
-
-    let share_crawler = ShareCrawler::new(ShareImportGateway::new(
-        pan115,
-        pan123.clone(),
-        pan189,
-        quark,
-    ));
-
-    let mut import_service = ImportService::new(
-        PanLibraryGateway::new(pan123),
-        TmdbMetadataGateway::new(tmdb),
-        FilesystemImportLocalStore::new(
-            config.get_library_config().remote_path.clone(),
-            config.get_library_config().local_path.clone(),
-            config.get_media_server_config().get_strm_download_url(),
-        ),
-    );
+    let ctx = CliContext::new(data_dir)?;
+    let share_resolver = ctx.share_resolver();
+    let mut import_service = ctx.import_service();
     let mut metadata_lookup = MetadataLookup::default();
-
-    let file_index_service =
-        FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db.clone()));
-
-    let share_url = application::import::ShareUrl::from(&url).ok_or_else(|| {
-        error::AppError::InvalidParameter(format!(
-            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
-        ))
-    })?;
+    let file_index_service = ctx.file_index_service().await?;
 
     // Fetch raw files once
-    let raw_files = match share_crawler.raw_files_from_share_url(&share_url).await {
-        Ok(files) => files,
-        Err(err) => {
-            eprintln!("Warning: failed to fetch raw files for indexing: {err}");
-            vec![]
-        }
-    };
+    let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
 
     // Index: reuse raw files
     if !raw_files.is_empty() {
-        let seen: Vec<application::file_index::SeenFile> = raw_files
-            .iter()
-            .map(application::file_index::SeenFile::from_raw_file)
-            .collect();
+        let seen: Vec<SeenFile> = raw_files.iter().map(SeenFile::from_raw_file).collect();
         if let Err(err) = file_index_service
             .record_seen_files(seen, description)
             .await
@@ -127,10 +71,21 @@ pub(crate) async fn run_import_share_url(
     Ok(())
 }
 
+pub(crate) async fn run_share_list(data_dir: &str, url: &str) -> AppResult<()> {
+    let ctx = CliContext::new(data_dir)?;
+    let share_resolver = ctx.share_resolver();
+    let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
+
+    for line in format_share_list_output(&raw_files) {
+        println!("{line}");
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResult<()> {
-    let config = config::Manager::try_from(data_dir.trim())?;
-    let db = connect_db(&config.get_db_dir()).await?;
-    let service = FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db));
+    let ctx = CliContext::new(data_dir)?;
+    let service = ctx.file_index_service().await?;
     let results = service.search_files(keyword, limit).await?;
     if results.is_empty() {
         println!("未找到匹配文件");
@@ -172,34 +127,81 @@ fn format_file_size(size: u64) -> String {
     }
 }
 
-fn parse_share_url(raw_url: &str) -> AppResult<Url> {
-    let url = Url::parse(raw_url).map_err(|err| {
-        error::AppError::InvalidParameter(format!("invalid share url '{raw_url}': {err}"))
-    })?;
+fn format_share_list_output(raw_files: &[crate::domain::share::RawFile]) -> Vec<String> {
+    if raw_files.is_empty() {
+        return vec!["未找到任何文件".to_owned()];
+    }
 
-    application::import::ShareUrl::from(&url).ok_or_else(|| {
+    let mut lines = Vec::new();
+    let mut total_size = 0_u64;
+
+    for (index, file) in raw_files.iter().enumerate() {
+        total_size += file.size;
+        lines.push(format!("{}. {}", index + 1, file.name));
+        lines.push(format!("   path: {}", display_share_path(&file.path)));
+        lines.push(format!("   size: {}", format_file_size(file.size)));
+        match &file.etag {
+            crate::domain::share::Etag::Md5(value) => lines.push(format!("   md5: {value}")),
+            crate::domain::share::Etag::Sha1(value) => lines.push(format!("   sha1: {value}")),
+        }
+        if index + 1 < raw_files.len() {
+            lines.push(String::new());
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!(
+        "共 {} 个文件，总大小 {}",
+        raw_files.len(),
+        format_file_size(total_size)
+    ));
+
+    lines
+}
+
+fn display_share_path(path: &str) -> &str {
+    if path.is_empty() { "/" } else { path }
+}
+
+async fn resolve_share_url_raw_files<R: ShareResolver>(
+    resolver: &R,
+    url: &str,
+) -> AppResult<Vec<crate::domain::share::RawFile>> {
+    resolver.raw_files_from_url(url).await?.ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
-            "unsupported share url '{raw_url}', expected pan123, pan189, pan115, or quark share link"
+            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
         ))
-    })?;
-
-    Ok(url)
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, parse_share_url};
+    use super::{format_file_size, format_share_list_output, resolve_share_url_raw_files};
+    use crate::{
+        domain::share::{Etag, RawFile},
+        error::AppResult,
+        infrastructure::share::resolver::ShareResolver,
+    };
 
-    #[test]
-    fn parse_share_url_accepts_supported_provider() {
-        let share_url = parse_share_url("https://www.123pan.com/s/test?pwd=pass").unwrap();
-
-        assert_eq!(share_url.as_str(), "https://www.123pan.com/s/test?pwd=pass");
+    #[derive(Clone)]
+    struct FakeShareResolver {
+        result: Option<Vec<RawFile>>,
     }
 
-    #[test]
-    fn parse_share_url_rejects_unsupported_provider() {
-        let err = parse_share_url("https://example.com/s/test").unwrap_err();
+    impl ShareResolver for FakeShareResolver {
+        async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
+            Ok(self.result.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_share_url_raw_files_rejects_unsupported_provider() {
+        let err = resolve_share_url_raw_files(
+            &FakeShareResolver { result: None },
+            "https://example.com/s/test",
+        )
+        .await
+        .unwrap_err();
 
         assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("unsupported share url"));
@@ -212,5 +214,47 @@ mod tests {
             "6.07 GiB (6517230688 bytes)"
         );
         assert_eq!(format_file_size(512), "512 B");
+    }
+
+    #[test]
+    fn format_share_list_output_uses_expected_text_layout() {
+        let output = format_share_list_output(&[
+            RawFile {
+                id: Some(1),
+                name: "Movie.mkv".into(),
+                etag: Etag::Md5("abcdef0123456789abcdef0123456789".into()),
+                size: 6_517_230_688,
+                path: String::new(),
+            },
+            RawFile {
+                id: None,
+                name: "Episode 01.mkv".into(),
+                etag: Etag::Sha1("abcdef0123456789abcdef0123456789abcdef01".into()),
+                size: 512,
+                path: "/Show/Season 01".into(),
+            },
+        ]);
+
+        assert_eq!(
+            output,
+            vec![
+                "1. Movie.mkv",
+                "   path: /",
+                "   size: 6.07 GiB (6517230688 bytes)",
+                "   md5: abcdef0123456789abcdef0123456789",
+                "",
+                "2. Episode 01.mkv",
+                "   path: /Show/Season 01",
+                "   size: 512 B",
+                "   sha1: abcdef0123456789abcdef0123456789abcdef01",
+                "",
+                "共 2 个文件，总大小 6.07 GiB (6517231200 bytes)",
+            ]
+        );
+    }
+
+    #[test]
+    fn format_share_list_output_reports_empty_result() {
+        assert_eq!(format_share_list_output(&[]), vec!["未找到任何文件"]);
     }
 }

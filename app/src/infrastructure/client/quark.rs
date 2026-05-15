@@ -27,13 +27,13 @@ pub struct Client {
     cookie: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Folder {
     pub fid: String,
     pub file_name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct File {
     pub fid: String,
     pub file_name: String,

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::info;
 
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
-use crate::domain::import::inner::{MediaFile, RawFile};
+use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::error::AppResult;
 
 use super::TransferWorkflow;

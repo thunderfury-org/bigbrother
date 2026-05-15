@@ -4,9 +4,10 @@ use tracing::info;
 
 use super::{
     MovieDetail, TvDetail,
-    inner::{Media, MediaFile, RawFile},
+    inner::{Media, MediaFile},
 };
 use crate::domain::media::Metadata;
+use crate::domain::share::RawFile;
 use crate::error::{AppError, AppResult};
 
 pub(crate) fn should_skip_existing_media(
@@ -217,8 +218,8 @@ pub(crate) fn select_largest_media_file<'a>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        domain::import::inner::{Etag, RawFile},
         domain::media::Metadata,
+        domain::share::{Etag, RawFile},
     };
 
     use super::*;

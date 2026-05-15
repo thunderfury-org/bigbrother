@@ -1,19 +1,19 @@
-use crate::domain::import::inner::RawFile;
-
-use super::{
-    LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, QuarkFile, QuarkFolder,
-    share_walk::{DirectoryEntries, child_share_path},
+use crate::{
+    domain::share::RawFile,
+    infrastructure::client::{pan115, pan123, pan189, quark},
 };
 
+use super::traversal::{DirectoryEntries, child_share_path};
+
 pub(crate) fn collect_pan123_directory_entries(
-    files: &[LibraryFile],
+    files: &[pan123::File],
     parent_path: &str,
 ) -> DirectoryEntries<i64> {
     let mut child_dirs = Vec::new();
     let mut raw_files = Vec::new();
 
     for file in files {
-        if file.is_dir {
+        if file.is_dir() {
             child_dirs.push((file.file_id, child_share_path(parent_path, &file.file_name)));
         } else {
             raw_files.push(RawFile {
@@ -30,8 +30,8 @@ pub(crate) fn collect_pan123_directory_entries(
 }
 
 pub(crate) fn collect_pan189_directory_entries(
-    folders: &[Pan189Folder],
-    files: &[Pan189File],
+    folders: &[pan189::Folder],
+    files: &[pan189::File],
     parent_path: &str,
 ) -> DirectoryEntries<String> {
     let child_dirs = folders
@@ -59,7 +59,7 @@ pub(crate) fn collect_pan189_directory_entries(
 }
 
 pub(crate) fn collect_pan115_directory_entries(
-    entries: &[Pan115FileEntry],
+    entries: &[pan115::FileEntry],
     parent_path: &str,
 ) -> DirectoryEntries<String> {
     let mut child_dirs = Vec::new();
@@ -83,8 +83,8 @@ pub(crate) fn collect_pan115_directory_entries(
 }
 
 pub(crate) fn collect_quark_directory_entries(
-    folders: &[QuarkFolder],
-    files: &[QuarkFile],
+    folders: &[quark::Folder],
+    files: &[quark::File],
     parent_path: &str,
 ) -> DirectoryEntries<String> {
     let child_dirs = folders
@@ -92,7 +92,7 @@ pub(crate) fn collect_quark_directory_entries(
         .map(|folder| {
             (
                 folder.fid.to_owned(),
-                child_share_path(parent_path, &folder.name),
+                child_share_path(parent_path, &folder.file_name),
             )
         })
         .collect();
@@ -101,8 +101,8 @@ pub(crate) fn collect_quark_directory_entries(
         .iter()
         .map(|file| RawFile {
             id: None,
-            name: file.name.to_owned(),
-            etag: String::new().as_str().into(),
+            name: file.file_name.to_owned(),
+            etag: "".into(),
             size: file.size,
             path: parent_path.to_owned(),
         })
@@ -114,24 +114,30 @@ pub(crate) fn collect_quark_directory_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::import::inner::Etag;
+    use crate::domain::share::Etag;
 
     #[test]
     fn collect_pan123_directory_entries_splits_dirs_and_files() {
         let files = vec![
-            LibraryFile {
+            pan123::File {
                 file_id: 1,
                 file_name: "Season 01".into(),
-                is_dir: true,
+                file_type: 1,
                 size: 0,
+                _created_at: time::OffsetDateTime::UNIX_EPOCH,
+                _updated_at: time::OffsetDateTime::UNIX_EPOCH,
                 etag: String::new(),
+                abs_path: String::new(),
             },
-            LibraryFile {
+            pan123::File {
                 file_id: 2,
                 file_name: "movie.mkv".into(),
-                is_dir: false,
+                file_type: 0,
                 size: 100,
+                _created_at: time::OffsetDateTime::UNIX_EPOCH,
+                _updated_at: time::OffsetDateTime::UNIX_EPOCH,
                 etag: "etag".into(),
+                abs_path: String::new(),
             },
         ];
 
@@ -144,11 +150,11 @@ mod tests {
 
     #[test]
     fn collect_pan189_directory_entries_tracks_folders_and_files() {
-        let folders = vec![Pan189Folder {
+        let folders = vec![pan189::Folder {
             id: "next".into(),
             name: "folder".into(),
         }];
-        let files = vec![Pan189File {
+        let files = vec![pan189::File {
             id: "file".into(),
             name: "episode.mkv".into(),
             size: 200,
@@ -168,14 +174,14 @@ mod tests {
     #[test]
     fn collect_pan115_directory_entries_tracks_cids_and_files() {
         let entries = vec![
-            Pan115FileEntry {
+            pan115::FileEntry {
                 cid: Some("child".into()),
                 fid: None,
                 name: "dir".into(),
                 size: 0,
                 sha: None,
             },
-            Pan115FileEntry {
+            pan115::FileEntry {
                 cid: None,
                 fid: Some("file".into()),
                 name: "subtitle.srt".into(),

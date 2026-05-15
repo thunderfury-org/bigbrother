@@ -1,5 +1,5 @@
 use crate::application::import::metadata::MetadataLookup;
-use crate::domain::import::inner::{Etag, RawFile};
+use crate::domain::share::{Etag, RawFile};
 
 fn raw_file(name: &str, path: &str) -> RawFile {
     RawFile {

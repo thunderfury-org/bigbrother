@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
 use super::{RequestError, RequestResult, http};
 
@@ -60,7 +61,7 @@ struct ListResponse {
     errno: i32,
 
     #[serde(rename = "data")]
-    data: Option<ListResponseData>,
+    data: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,15 +116,13 @@ impl Client {
             .await?;
 
             if !response.state {
-                return Err(RequestError::Other(format!(
-                    "list share files failed, errno: {}, error: {}",
-                    response.errno, response.error
-                )));
+                return Err(map_list_error(response.errno, &response.error));
             }
 
             let data = response
                 .data
-                .ok_or_else(|| RequestError::Other("no data in response".to_string()))?;
+                .ok_or_else(|| RequestError::Other("no data in response".to_string()))
+                .and_then(decode_list_response_data)?;
 
             files.extend(data.list);
 
@@ -136,6 +135,22 @@ impl Client {
         }
 
         Ok(files)
+    }
+}
+
+fn decode_list_response_data(data: Value) -> RequestResult<ListResponseData> {
+    serde_json::from_value(data)
+        .map_err(|err| RequestError::Other(format!("decode share list data failed, {err}")))
+}
+
+fn map_list_error(errno: i32, error: &str) -> RequestError {
+    match errno {
+        4100012 => RequestError::BadRequest(format!(
+            "pan115 share requires receive code, errno: {errno}, error: {error}"
+        )),
+        _ => RequestError::Other(format!(
+            "list share files failed, errno: {errno}, error: {error}"
+        )),
     }
 }
 
@@ -259,10 +274,38 @@ mod tests {
         let response: ListResponse = serde_json::from_str(json).unwrap();
         assert!(response.state);
         assert_eq!(response.errno, 0);
-        let data = response.data.unwrap();
+        let data = decode_list_response_data(response.data.unwrap()).unwrap();
         assert_eq!(data.count, 1);
         assert_eq!(data.list.len(), 1);
         assert_eq!(data.list[0].name, "新狂蟒之灾 Anaconda (2025)");
+    }
+
+    #[test]
+    fn test_deserialize_list_response_requires_receive_code() {
+        let json = r#"{
+            "state": false,
+            "error": "请输入访问码",
+            "errno": 4100012,
+            "data": {
+                "userinfo": {
+                    "user_id": "309192325",
+                    "user_name": "星***视"
+                },
+                "is_access": 0
+            },
+            "errtype": ""
+        }"#;
+
+        let response: ListResponse = serde_json::from_str(json).unwrap();
+        assert!(!response.state);
+
+        match map_list_error(response.errno, &response.error) {
+            RequestError::BadRequest(message) => {
+                assert!(message.contains("requires receive code"));
+                assert!(message.contains("4100012"));
+            }
+            other => panic!("Expected BadRequest, got: {other:?}"),
+        }
     }
 
     #[test]

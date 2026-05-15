@@ -18,7 +18,7 @@ const PC_RETURN_URL: &str = "https://m.cloud.189.cn/zhuanti/2020/loginErrorPc/in
 const SESSION_CACHE_FILE: &str = "session.json";
 const WEB_COOKIE_CACHE_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ShareInfo {
     #[serde(rename = "res_code")]
     res_code: i32,
@@ -35,7 +35,21 @@ pub struct ShareInfo {
     pub share_mode: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[cfg(test)]
+impl ShareInfo {
+    pub(crate) fn fake(file_id: &str, file_name: &str, share_id: i64, share_mode: i32) -> Self {
+        Self {
+            res_code: 0,
+            res_message: String::new(),
+            file_id: file_id.to_owned(),
+            file_name: file_name.to_owned(),
+            share_id,
+            share_mode,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct File {
     #[serde(rename = "id")]
     pub id: String,
@@ -47,7 +61,7 @@ pub struct File {
     pub md5: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Folder {
     #[serde(rename = "id")]
     pub id: String,

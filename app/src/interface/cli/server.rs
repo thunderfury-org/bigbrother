@@ -1,33 +1,26 @@
 use std::time::Duration;
 
-use migration::{Migrator, MigratorTrait};
 use tracing::{error, info};
 
 use crate::{
     application::{
         delete_media::DeleteMediaService,
         import::MetadataLookup,
-        manage_keywords::ManageKeywordsService,
         notify::PublishTelegramMessageService,
-        share_crawler::ShareCrawler,
         sync_strm::{SyncStrmConfig, SyncStrmService},
     },
     error::{AppError, AppResult},
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
-        client::{self, library_remote::Pan123LibraryRemote},
+        client::library_remote::Pan123LibraryRemote,
         event::publisher::EventBusPublisher,
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{
-                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
-                TmdbMetadataGateway,
-            },
+            gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
             local_store::FilesystemImportLocalStore,
         },
-        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
-        services::{FileIndexRuntimeService, ImportService, MediaDownloadUrlService},
+        services::MediaDownloadUrlService,
     },
     interface::{
         http,
@@ -41,34 +34,21 @@ use crate::{
     util::signal::shutdown_signal,
 };
 
-use super::{config, connect_db, logger};
+use super::{context::CliContext, logger};
 
 pub(super) async fn run(data_dir: &str) -> AppResult<()> {
-    let config = config::Manager::try_from(data_dir.trim())?;
+    let ctx = CliContext::new(data_dir)?;
+    let config = ctx.config();
 
     logger::init(config.get_log_dir().as_str());
 
-    let db = connect_db(&config.get_db_dir()).await?;
+    let db = ctx.db().await?.clone();
 
     // Infrastructure
     let event_bus = EventBus::new(db.clone());
     let bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());
     let cache = Cache::new(db.clone());
-
-    // API clients
-    let pan115 = client::pan115::Client::new();
-    let pan123 = client::pan123::Client::new(
-        &config.get_pan123_config().passport,
-        &config.get_pan123_config().password,
-        &format!("{}/pan123", config.get_cache_dir()),
-    );
-    let pan189 = client::pan189::Client::new(client::pan189::AuthConfig {
-        username: config.get_pan189_config().username.clone(),
-        password: config.get_pan189_config().password.clone(),
-        cache_dir: format!("{}/pan189", config.get_cache_dir()),
-    });
-    let quark = client::quark::Client::new(&config.get_quark_config().cookie);
-    let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
+    let pan123 = ctx.pan123();
 
     // Telegram
     let user_id = config
@@ -118,11 +98,6 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         .get_strm_path_prefix()
         .to_string();
 
-    // Database migration
-    Migrator::up(&db, None)
-        .await
-        .map_err(|err| AppError::Database(format!("failed to run migration: {err}"), false))?;
-
     // Media server
     let media_server = media::new_router(MediaServerContext::new(
         media_server_strm_path_prefix,
@@ -135,7 +110,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     // Telegram bot runtime
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
-        keyword_service: ManageKeywordsService::new(SeaOrmKeywordRepository::new(db.clone())),
+        keyword_service: ctx.keyword_service().await?,
         notify_service: PublishTelegramMessageService::new(EventBusPublisher::new(
             event_bus.clone(),
         )),
@@ -162,28 +137,13 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         bot: bot.clone(),
         user_id: config.get_telegram_config().user_id,
     };
-    let keyword_service = ManageKeywordsService::new(SeaOrmKeywordRepository::new(db.clone()));
+    let keyword_service = ctx.keyword_service().await?;
     let notify_service =
         PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone()));
     let event_delivery_media_handler = ProcessMediaSourcesHandler {
-        file_index_service: FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(
-            db.clone(),
-        )),
-        share_crawler: ShareCrawler::new(ShareImportGateway::new(
-            pan115,
-            pan123.clone(),
-            pan189,
-            quark,
-        )),
-        import_service: ImportService::new(
-            PanLibraryGateway::new(pan123.clone()),
-            TmdbMetadataGateway::new(tmdb),
-            FilesystemImportLocalStore::new(
-                library.remote_path,
-                library.local_path,
-                library.strm_download_url,
-            ),
-        ),
+        file_index_service: ctx.file_index_service().await?,
+        share_resolver: ctx.share_resolver(),
+        import_service: ctx.import_service(),
         metadata_lookup: MetadataLookup::default(),
         notify_service,
         keyword_service,

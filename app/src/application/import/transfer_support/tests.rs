@@ -2,9 +2,9 @@ use super::*;
 use crate::{
     application::import::transfer_support::paths::renamed_subtitle_file_name,
     application::import::{Genre, Season},
-    domain::import::inner::{Etag, RawFile},
     domain::import::policy::should_skip_existing_media,
     domain::media::Metadata,
+    domain::share::{Etag, RawFile},
 };
 
 fn create_media_file(name: &str, size: u64) -> MediaFile {

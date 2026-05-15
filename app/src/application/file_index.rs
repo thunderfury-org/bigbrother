@@ -2,7 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
-    domain::import::inner::{Etag, RawFile},
+    domain::share::{Etag, RawFile},
     error::AppResult,
 };
 

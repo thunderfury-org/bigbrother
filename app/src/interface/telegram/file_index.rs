@@ -5,9 +5,10 @@ use teloxide::types::{InlineKeyboardButtonKind, Message, MessageEntityKind};
 use url::Url;
 
 use crate::{
-    application::import::{ImportedMedia, ShareUrl, is_fslink},
+    application::import::ImportedMedia,
     error::AppError,
     infrastructure::event_bus::Event,
+    infrastructure::share::file_parser::ShareFileParser,
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
@@ -44,16 +45,14 @@ pub fn extract_media_sources(msg: &Message) -> Vec<MediaSource> {
     let urls = extract_urls_from_msg(msg);
     let mut processed_urls = HashSet::new();
     for url in urls {
-        if let Some(share_url) = ShareUrl::from(&url)
-            && processed_urls.insert(share_url.get_url().to_string())
-        {
+        if processed_urls.insert(url.to_string()) {
             sources.push(MediaSource::ShareUrl(url.to_string()));
         }
     }
 
     // Fslines
     for line in text.lines() {
-        if is_fslink(line) {
+        if ShareFileParser::is_fslink(line) {
             sources.push(MediaSource::Fslink(line.to_owned()));
         }
     }
@@ -83,7 +82,7 @@ fn message_description_from_text(text: &str) -> Option<String> {
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .filter(|line| !is_fslink(line))
+        .filter(|line| !ShareFileParser::is_fslink(line))
         .collect::<Vec<_>>()
         .join("\n");
     let description = description.trim();
