@@ -1,5 +1,19 @@
 # Repository Guidelines
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs for this repo live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. See `docs/agents/domain.md`.
+
 ## Project Structure & Module Organization
 This repository is a Rust workspace with two crates: `app/` for the runtime application and `migration/` for SeaORM migrations. The main code lives under `app/src/` and is split by layer: `domain/` for pure rules, `application/` for use cases, `infrastructure/` for external adapters, and `interface/` for CLI, Telegram, and HTTP entrypoints. Configuration samples live in `config/`, helper scripts in `tools/`, and longer design notes in `docs/`.
 
