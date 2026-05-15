@@ -9,7 +9,8 @@ use super::{ShareClient, collect::collect_pan123_directory_entries, traversal::S
 
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
     if !(url.host_str().is_some_and(|host| {
-        (host.starts_with("www.123") || host.contains(".share.123")) && host.ends_with(".com")
+        (host.starts_with("www.123") || host.contains(".share.123") || host.contains(".mshare.123"))
+            && (host.ends_with(".com") || host.ends_with(".cn"))
     }) && (url.path().starts_with("/s/") || url.path().starts_with("/123")))
     {
         return None;
@@ -81,5 +82,12 @@ mod tests {
             parse_share_parts(&url),
             Some(("share-key".into(), "pass".into()))
         );
+    }
+
+    #[test]
+    fn parses_share_123865_subdomain_url() {
+        let url = Url::parse("https://1846369609.share.123pan.cn/123pan/key?pwd=pass#").unwrap();
+
+        assert_eq!(parse_share_parts(&url), Some(("key".into(), "pass".into())));
     }
 }
