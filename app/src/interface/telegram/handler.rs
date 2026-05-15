@@ -1,14 +1,14 @@
 use tracing::warn;
 
 use crate::{
-    application::{file_index::SeenFile, import::MetadataLookup, ports::share::ShareResolver},
+    application::{file_index::SeenFile, import::MetadataLookup},
     domain::share::RawFile,
     error::AppResult,
     infrastructure::services::{
         FileIndexRuntimeService, ImportService, KeywordService, NotifyService,
         ShareResolverRuntimeService,
     },
-    infrastructure::share::file_parser::ShareFileParser,
+    infrastructure::share::{file_parser::ShareFileParser, resolver::ShareResolver},
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
@@ -178,9 +178,9 @@ async fn should_import(
 mod tests {
     use super::resolve_share_url_raw_files;
     use crate::{
-        application::ports::share::ShareResolver,
         domain::share::RawFile,
         error::{AppError, AppResult},
+        infrastructure::share::resolver::ShareResolver,
     };
     use url::Url;
 

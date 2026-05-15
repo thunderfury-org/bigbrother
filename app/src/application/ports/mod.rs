@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use crate::error::AppResult;
 
-pub mod share;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeywordRecord {
     pub id: i64,

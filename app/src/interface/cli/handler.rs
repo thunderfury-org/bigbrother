@@ -1,7 +1,7 @@
 use url::Url;
 
 use crate::{
-    application::{file_index::SeenFile, import::MetadataLookup, ports::share::ShareResolver},
+    application::{file_index::SeenFile, import::MetadataLookup},
     error::{self, AppResult},
     infrastructure::{
         client,
@@ -9,6 +9,7 @@ use crate::{
         import::local_store::FilesystemImportLocalStore,
         repo::file_index::SeaOrmFileIndexRepository,
         services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
+        share::resolver::ShareResolver,
     },
 };
 
@@ -178,7 +179,7 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 mod tests {
     use super::{format_file_size, parse_share_url, resolve_share_url_raw_files};
     use crate::{
-        application::ports::share::ShareResolver, domain::share::RawFile, error::AppResult,
+        domain::share::RawFile, error::AppResult, infrastructure::share::resolver::ShareResolver,
     };
     use url::Url;
 

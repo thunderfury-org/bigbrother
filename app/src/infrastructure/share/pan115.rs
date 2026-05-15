@@ -91,4 +91,12 @@ mod tests {
             Some(("share115".into(), "recv".into()))
         );
     }
+
+    #[test]
+    fn accepts_pan115_url_shape_but_rejects_missing_share_code() {
+        let url = Url::parse("https://115.com/s/").unwrap();
+
+        assert!(match_url(&url));
+        assert_eq!(parse_share_parts(&url), None);
+    }
 }

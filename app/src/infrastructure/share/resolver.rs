@@ -1,7 +1,6 @@
 use url::Url;
 
 use crate::{
-    application::ports::share::ShareResolver,
     domain::share::RawFile,
     error::AppResult,
     infrastructure::share::{
@@ -13,6 +12,10 @@ use crate::{
 };
 
 use super::ShareClient;
+
+pub trait ShareResolver: Clone {
+    async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>>;
+}
 
 #[derive(Clone)]
 pub struct ShareResolverService<S> {
@@ -56,16 +59,13 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::ShareResolverService;
+    use super::{ShareResolver, ShareResolverService};
     use url::Url;
 
     use crate::{
-        application::{
-            import::{
-                LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
-                QuarkFolder, QuarkShareInfo,
-            },
-            ports::share::ShareResolver,
+        application::import::{
+            LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
+            QuarkFolder, QuarkShareInfo,
         },
         error::AppResult,
     };

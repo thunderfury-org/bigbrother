@@ -9,123 +9,35 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use base64::Engine;
-use url::Url;
-
 use super::*;
-use crate::application::{
-    import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog},
-    ports::share::ShareResolver,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::domain::share::{Etag, RawFile};
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
-use crate::{
-    domain::share::RawFile,
-    infrastructure::share::{file_parser::ShareFileParser, pan115, pan189},
-};
 
-pub(crate) struct TestImportService<L, R, M, F> {
-    pub share_resolver: R,
+pub(crate) struct TestImportService<L, M, F> {
     pub transfer: TransferWorkflow<L, M, F>,
     pub metadata_lookup: MetadataLookup,
 }
 
-impl<L, R, M, F> TestImportService<L, R, M, F>
+impl<L, M, F> TestImportService<L, M, F>
 where
     L: LibraryGateway,
-    R: ShareResolver,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub fn new(library_gateway: L, share_resolver: R, metadata_catalog: M, local_store: F) -> Self {
+    pub fn new(library_gateway: L, metadata_catalog: M, local_store: F) -> Self {
         Self {
-            share_resolver,
             transfer: TransferWorkflow::new(library_gateway, metadata_catalog, local_store),
             metadata_lookup: MetadataLookup::default(),
         }
     }
 
-    pub async fn import_from_share_url(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = self
-            .share_resolver
-            .raw_files_from_url(url)
-            .await?
-            .ok_or_else(|| AppError::InvalidParameter(format!("unsupported share url: {url}")))?;
+    pub async fn import_from_raw_files(
+        &mut self,
+        raw_files: Vec<RawFile>,
+    ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self.metadata_lookup.build_media_files(raw_files);
         self.transfer.transfer_media_files(&media_files).await
-    }
-
-    pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = ShareFileParser::parse_fslink(fslink)?;
-        let media_files = self.metadata_lookup.build_media_files(raw_files);
-        self.transfer.transfer_media_files(&media_files).await
-    }
-
-    pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = ShareFileParser::parse_json_bytes(json)?;
-        let media_files = self.metadata_lookup.build_media_files(raw_files);
-        self.transfer.transfer_media_files(&media_files).await
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum ImportedMediaSummary {
-    Movie {
-        title: String,
-        year: String,
-        size: u64,
-        has_failed: bool,
-    },
-    Tv {
-        name: String,
-        year: String,
-        season: u32,
-        episodes: Vec<u32>,
-        missing_episodes: Vec<u32>,
-        max_episode_number: u32,
-        total_size: u64,
-        number_of_episodes: u32,
-        has_failed: bool,
-    },
-}
-
-fn summarize_imported(media: ImportedMedia) -> ImportedMediaSummary {
-    match media {
-        ImportedMedia::Movie {
-            title,
-            year,
-            size,
-            has_failed,
-            ..
-        } => ImportedMediaSummary::Movie {
-            title,
-            year,
-            size,
-            has_failed,
-        },
-        ImportedMedia::Tv {
-            name,
-            year,
-            season,
-            episodes,
-            missing_episodes,
-            max_episode_number,
-            total_size,
-            number_of_episodes,
-            has_failed,
-            ..
-        } => ImportedMediaSummary::Tv {
-            name,
-            year,
-            season,
-            episodes,
-            missing_episodes,
-            max_episode_number,
-            total_size,
-            number_of_episodes,
-            has_failed,
-        },
-        ImportedMedia::Skipped { .. } => panic!("unexpected Skipped in summarize_imported"),
     }
 }
 
@@ -146,12 +58,6 @@ struct FakeLibraryState {
     fail_mkdir_path: bool,
     fail_mkdir_dir: bool,
     md5_upload_returns_none: bool,
-}
-
-#[derive(Clone, Default)]
-struct FakeShareResolver {
-    calls: Arc<Mutex<Vec<String>>>,
-    raw_files_by_url: Arc<Mutex<HashMap<String, Vec<RawFile>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -263,27 +169,6 @@ impl LibraryGateway for FakeLibraryGateway {
     }
     async fn download_library_file(&self, _file_id: i64, _local_path: &str) -> AppResult<()> {
         Ok(())
-    }
-}
-
-impl FakeShareResolver {
-    fn with_raw_files(url: &str, raw_files: Vec<RawFile>) -> Self {
-        Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            raw_files_by_url: Arc::new(Mutex::new(HashMap::from([(url.to_string(), raw_files)]))),
-        }
-    }
-}
-
-impl ShareResolver for FakeShareResolver {
-    async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
-        self.calls.lock().unwrap().push("share".to_string());
-        Ok(self
-            .raw_files_by_url
-            .lock()
-            .unwrap()
-            .get(url.as_str())
-            .cloned())
     }
 }
 
@@ -423,123 +308,6 @@ impl ImportLocalStore for FakeLocalStore {
     }
 }
 
-#[tokio::test]
-async fn service_delegates_to_gateway() {
-    let share_resolver =
-        FakeShareResolver::with_raw_files("https://www.123684.com/s/test", Vec::new());
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        share_resolver.clone(),
-        FakeMetadataCatalog,
-        FilesystemImportLocalStore::new(
-            "/remote".into(),
-            "/local".into(),
-            "http://localhost".into(),
-        ),
-    );
-    let url = Url::parse("https://www.123684.com/s/test").unwrap();
-
-    service.import_from_share_url(&url).await.unwrap();
-
-    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
-}
-
-#[tokio::test]
-async fn import_from_share_url_imports_tv_from_resolved_raw_files() {
-    let local_dir = unique_temp_dir();
-    let gateway = FakeLibraryGateway::default();
-    let share_resolver = FakeShareResolver::with_raw_files(
-        "https://cloud.189.cn/t/share189",
-        vec![RawFile {
-            id: None,
-            name: "Breaking.Bad.S01E01.1080p.mkv".into(),
-            etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-            size: 1001,
-            path: "Breaking Bad (2008) {tmdb-1396}/Season 01".into(),
-        }],
-    );
-    let mut service = TestImportService::new(
-        gateway.clone(),
-        share_resolver.clone(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
-
-    let imported = service.import_from_share_url(&url).await.unwrap();
-
-    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
-            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
-    ));
-
-    let state = gateway.state.lock().unwrap();
-    assert_eq!(
-        state.mkdir_paths,
-        vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
-    );
-    assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_share_url_imports_sha1_tv_from_resolved_raw_files() {
-    let local_dir = unique_temp_dir();
-    let gateway = FakeLibraryGateway::default();
-    let share_resolver = FakeShareResolver::with_raw_files(
-        "https://115.com/s/share115?password=recv",
-        vec![RawFile {
-            id: None,
-            name: "Breaking.Bad.S01E01.1080p.mkv".into(),
-            etag: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-            size: 1001,
-            path: "Breaking Bad (2008) {tmdb-1396}/Season 01".into(),
-        }],
-    );
-    let mut service = TestImportService::new(
-        gateway.clone(),
-        share_resolver.clone(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://115.com/s/share115?password=recv").unwrap();
-
-    let imported = service.import_from_share_url(&url).await.unwrap();
-
-    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
-            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
-    ));
-
-    let state = gateway.state.lock().unwrap();
-    assert_eq!(
-        state.mkdir_paths,
-        vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
-    );
-    assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_share_url_rejects_pan189_web_share_without_code() {
-    let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
-
-    assert!(pan189::match_url(&url));
-    assert_eq!(pan189::parse_share_code(&url), None);
-}
-
-#[tokio::test]
-async fn import_from_share_url_rejects_pan115_share_without_code() {
-    let url = Url::parse("https://115.com/s/").unwrap();
-
-    assert!(pan115::match_url(&url));
-    assert_eq!(pan115::parse_share_parts(&url), None);
-}
-
 static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn unique_temp_dir() -> PathBuf {
@@ -554,12 +322,27 @@ fn unique_temp_dir() -> PathBuf {
     ))
 }
 
-fn local_store_for(local_dir: &Path) -> FilesystemImportLocalStore {
-    FilesystemImportLocalStore::new(
-        "/remote".into(),
-        local_dir.to_string_lossy().into_owned(),
-        "http://localhost/d".into(),
-    )
+fn local_store_for(local_dir: &Path) -> FakeLocalStore {
+    FakeLocalStore::new(local_dir.to_path_buf())
+}
+fn raw_file(path: &str, etag: &str, size: u64) -> RawFile {
+    let path = Path::new(path);
+    let parent_path = path
+        .parent()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+
+    RawFile {
+        id: None,
+        name: name.to_string(),
+        etag: Etag::from(etag),
+        size,
+        path: parent_path.to_string(),
+    }
 }
 
 fn existing_library_file(file_id: i64, file_name: &str, size: u64, etag: &str) -> LibraryFile {
@@ -586,26 +369,22 @@ fn existing_season_dir(
 }
 
 #[tokio::test]
-async fn import_from_json_writes_strm_and_records_upload() {
+async fn import_from_raw_files_writes_strm_and_records_upload() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
@@ -646,81 +425,29 @@ async fn import_from_json_writes_strm_and_records_upload() {
 }
 
 #[tokio::test]
-async fn import_from_json_accepts_base64_single_file_cas() {
+async fn import_from_raw_files_groups_tv_episodes_and_writes_season_strms() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = base64::engine::general_purpose::STANDARD.encode(
-        serde_json::json!({
-            "fileName": "Inception.2010.1080p.mkv",
-            "md5": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        })
-        .to_string(),
-    );
-
-    let imported = service.import_from_json(json.into_bytes()).await.unwrap();
-
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Movie {
-            title,
-            year,
-            size,
-            has_failed,
-            ..
-        }] if title == "Inception" && year == "2010" && *size == 1234 && !has_failed
-    ));
-
-    let state = gateway.state.lock().unwrap();
-    assert_eq!(
-        state.fast_uploads,
-        vec![(
-            1,
-            "Inception.2010.1080p.mkv".to_string(),
-            "0123456789abcdef0123456789abcdef".to_string(),
-            1234
-        )]
-    );
-    drop(state);
-
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
-    let local_dir = unique_temp_dir();
-    let gateway = FakeLibraryGateway::default();
-    let mut service = TestImportService::new(
-        gateway.clone(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [
-            {
-                "path": "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
-                "etag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "size": 1001u64
-            },
-            {
-                "path": "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
-                "etag": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "size": 1002u64
-            }
-        ]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                1001,
+            ),
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                1002,
+            ),
+        ])
+        .await
+        .unwrap();
 
     let ImportedMedia::Tv {
         name,
@@ -792,36 +519,30 @@ async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
 }
 
 #[tokio::test]
-async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
+async fn import_from_raw_files_imports_movie() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let share_resolver = FakeShareResolver::with_raw_files(
-        "https://www.123684.com/s/test?pwd=pass",
-        vec![RawFile {
+    let mut service = TestImportService::new(
+        gateway.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+    let imported = service
+        .import_from_raw_files(vec![RawFile {
             id: None,
             name: "Inception.2010.1080p.mkv".into(),
             etag: "fedcba9876543210fedcba9876543210".into(),
             size: 2234,
             path: "Movies".into(),
-        }],
-    );
-    let mut service = TestImportService::new(
-        gateway.clone(),
-        share_resolver.clone(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-
-    let imported = service.import_from_share_url(&url).await.unwrap();
+        }])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
         [ImportedMedia::Movie { title, year, size, has_failed, .. }]
             if title == "Inception" && year == "2010" && *size == 2234 && !has_failed
     ));
-    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
-
     let state = gateway.state.lock().unwrap();
     assert_eq!(
         state.mkdir_paths,
@@ -846,60 +567,7 @@ async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
 }
 
 #[tokio::test]
-async fn import_from_fslink_parses_prefixed_common_path_and_writes_strm() {
-    let local_dir = unique_temp_dir();
-    let gateway = FakeLibraryGateway::default();
-    let mut service = TestImportService::new(
-        gateway.clone(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-
-    let fslink = "123FSLinkV2$共享目录/Movies%0123456789abcdef0123456789abcdef#1234#Inception.2010.1080p.mkv";
-
-    let imported = service.import_from_fslink(fslink).await.unwrap();
-
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Movie {
-            title,
-            year,
-            size,
-            has_failed,
-            ..
-        }] if title == "Inception" && year == "2010" && *size == 1234 && !has_failed
-    ));
-
-    let state = gateway.state.lock().unwrap();
-    assert_eq!(
-        state.mkdir_paths,
-        vec!["/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string()]
-    );
-    assert_eq!(
-        state.fast_uploads,
-        vec![(
-            1,
-            "Inception.2010.1080p.mkv".to_string(),
-            "0123456789abcdef0123456789abcdef".to_string(),
-            1234
-        )]
-    );
-    drop(state);
-
-    let strm_path =
-        local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.strm");
-    let strm_content = fs::read_to_string(&strm_path).unwrap();
-    assert_eq!(
-        strm_content,
-        "http://localhost/d/remote/电影/欧美/Inception (2010) {tmdb-27205}/Inception.2010.1080p.mkv?file_id=42"
-    );
-
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_json_skips_when_existing_movie_is_not_smaller() {
+async fn import_from_raw_files_skips_when_existing_movie_is_not_smaller() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
@@ -918,21 +586,17 @@ async fn import_from_json_skips_when_existing_movie_is_not_smaller() {
     }
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
 
     assert!(imported.is_empty());
 
@@ -950,7 +614,7 @@ async fn import_from_json_skips_when_existing_movie_is_not_smaller() {
 }
 
 #[tokio::test]
-async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
+async fn import_from_raw_files_overwrites_when_incoming_movie_is_larger() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
@@ -974,21 +638,17 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
 
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
@@ -1022,143 +682,7 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
 }
 
 #[tokio::test]
-async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
-    let mut json_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-    let mut share_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::with_raw_files(
-            "https://www.123684.com/s/test?pwd=pass",
-            vec![RawFile {
-                id: None,
-                name: "Inception.2010.1080p.mkv".into(),
-                etag: "fedcba9876543210fedcba9876543210".into(),
-                size: 2234,
-                path: String::new(),
-            }],
-        ),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-    let mut fslink_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "fedcba9876543210fedcba9876543210",
-            "size": 2234u64
-        }]
-    }))
-    .unwrap();
-    let share_url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-    let fslink = "123FSLinkV2$共享目录/Movies%fedcba9876543210fedcba9876543210#2234#Inception.2010.1080p.mkv";
-
-    let from_json = json_service.import_from_json(json).await.unwrap();
-    let from_share = share_service
-        .import_from_share_url(&share_url)
-        .await
-        .unwrap();
-    let from_fslink = fslink_service.import_from_fslink(fslink).await.unwrap();
-
-    assert_eq!(from_json.len(), 1);
-    assert_eq!(from_share.len(), 1);
-    assert_eq!(from_fslink.len(), 1);
-
-    let from_json = summarize_imported(from_json.into_iter().next().unwrap());
-    let from_share = summarize_imported(from_share.into_iter().next().unwrap());
-    let from_fslink = summarize_imported(from_fslink.into_iter().next().unwrap());
-
-    assert_eq!(from_json, from_share);
-    assert_eq!(from_json, from_fslink);
-}
-
-#[tokio::test]
-async fn tv_import_contract_is_consistent_across_json_share_and_fslink() {
-    let mut json_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-    let mut share_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::with_raw_files(
-            "https://www.123684.com/s/test?pwd=pass",
-            vec![
-                RawFile {
-                    id: None,
-                    name: "Breaking.Bad.2008.S01E01.1080p.mkv".into(),
-                    etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-                    size: 1001,
-                    path: String::new(),
-                },
-                RawFile {
-                    id: None,
-                    name: "Breaking.Bad.2008.S01E02.1080p.mkv".into(),
-                    etag: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-                    size: 1002,
-                    path: String::new(),
-                },
-            ],
-        ),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-    let mut fslink_service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&unique_temp_dir()),
-    );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [
-            {
-                "path": "Breaking.Bad.2008.S01E01.1080p.mkv",
-                "etag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "size": 1001u64
-            },
-            {
-                "path": "Breaking.Bad.2008.S01E02.1080p.mkv",
-                "etag": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "size": 1002u64
-            }
-        ]
-    }))
-    .unwrap();
-    let share_url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-    let fslink = "123FSLinkV2$共享目录/TV%aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#1001#Breaking.Bad.2008.S01E01.1080p.mkv$bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#1002#Breaking.Bad.2008.S01E02.1080p.mkv";
-
-    let from_json = json_service.import_from_json(json).await.unwrap();
-    let from_share = share_service
-        .import_from_share_url(&share_url)
-        .await
-        .unwrap();
-    let from_fslink = fslink_service.import_from_fslink(fslink).await.unwrap();
-
-    assert_eq!(from_json.len(), 1);
-    assert_eq!(from_share.len(), 1);
-    assert_eq!(from_fslink.len(), 1);
-
-    let from_json = summarize_imported(from_json.into_iter().next().unwrap());
-    let from_share = summarize_imported(from_share.into_iter().next().unwrap());
-    let from_fslink = summarize_imported(from_fslink.into_iter().next().unwrap());
-
-    assert_eq!(from_json, from_share);
-    assert_eq!(from_json, from_fslink);
-}
-
-#[tokio::test]
-async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller() {
+async fn import_from_raw_files_skips_existing_tv_episode_when_existing_is_not_smaller() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let tv_path = "/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string();
@@ -1178,21 +702,17 @@ async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller
     }
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Breaking.Bad.2008.S01E01.1080p.mkv",
-            "etag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "size": 1001u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Breaking.Bad.2008.S01E01.1080p.mkv",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            1001,
+        )])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
@@ -1223,7 +743,7 @@ async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller
 }
 
 #[tokio::test]
-async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger() {
+async fn import_from_raw_files_overwrites_existing_tv_episode_when_incoming_is_larger() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let tv_path = "/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string();
@@ -1252,21 +772,17 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
 
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Breaking.Bad.2008.S01E01.1080p.mkv",
-            "etag": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "size": 1001u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Breaking.Bad.2008.S01E01.1080p.mkv",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            1001,
+        )])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
@@ -1309,27 +825,20 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
 }
 
 #[tokio::test]
-async fn import_from_json_returns_error_when_library_dir_creation_fails() {
+async fn import_from_raw_files_returns_error_when_library_dir_creation_fails() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().fail_mkdir_path = true;
-    let mut service = TestImportService::new(
-        gateway,
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let error = service.import_from_json(json).await.unwrap_err();
+    let mut service =
+        TestImportService::new(gateway, FakeMetadataCatalog, local_store_for(&local_dir));
+    let error = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap_err();
 
     assert!(matches!(
         error,
@@ -1341,27 +850,23 @@ async fn import_from_json_returns_error_when_library_dir_creation_fails() {
 }
 
 #[tokio::test]
-async fn import_from_json_marks_movie_failed_when_upload_returns_none() {
+async fn import_from_raw_files_marks_movie_failed_when_upload_returns_none() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().md5_upload_returns_none = true;
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let imported = service.import_from_json(json).await.unwrap();
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
 
     assert!(matches!(
         imported.as_slice(),
@@ -1386,7 +891,7 @@ async fn import_from_json_marks_movie_failed_when_upload_returns_none() {
 }
 
 #[tokio::test]
-async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() {
+async fn import_from_raw_files_returns_error_when_local_cleanup_fails_on_overwrite() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
@@ -1410,23 +915,15 @@ async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() 
 
     let mut local_store = FakeLocalStore::new(local_dir.clone());
     local_store.fail_remove = true;
-    let mut service = TestImportService::new(
-        gateway,
-        FakeShareResolver::default(),
-        FakeMetadataCatalog,
-        local_store,
-    );
-
-    let json = serde_json::to_vec(&serde_json::json!({
-        "files": [{
-            "path": "Inception.2010.1080p.mkv",
-            "etag": "0123456789abcdef0123456789abcdef",
-            "size": 1234u64
-        }]
-    }))
-    .unwrap();
-
-    let error = service.import_from_json(json).await.unwrap_err();
+    let mut service = TestImportService::new(gateway, FakeMetadataCatalog, local_store);
+    let error = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap_err();
 
     assert!(matches!(error, crate::error::AppError::Internal(_)));
     assert!(error.to_string().contains("remove local file failed"));
