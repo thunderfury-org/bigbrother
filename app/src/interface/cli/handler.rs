@@ -3,11 +3,14 @@ use crate::{
     error::{self, AppResult},
     infrastructure::{
         client,
-        import::gateway::{PanLibraryGateway, ShareClientGateway, TmdbMetadataGateway},
+        import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
         import::local_store::FilesystemImportLocalStore,
         repo::file_index::SeaOrmFileIndexRepository,
         services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
-        share::resolver::ShareResolver,
+        share::{
+            pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
+            quark::QuarkShareService, resolver::ShareResolver,
+        },
     },
 };
 
@@ -44,12 +47,12 @@ pub(crate) async fn run_import_share_url(
     let quark = client::quark::Client::new(&config.get_quark_config().cookie);
     let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
 
-    let share_resolver = ShareResolverRuntimeService::new(ShareClientGateway::new(
-        pan115,
-        pan123.clone(),
-        pan189,
-        quark,
-    ));
+    let share_resolver = ShareResolverRuntimeService::new(
+        Pan123ShareService::new(pan123.clone()),
+        Pan189ShareService::new(pan189),
+        Pan115ShareService::new(pan115),
+        QuarkShareService::new(quark),
+    );
 
     let mut import_service = ImportService::new(
         PanLibraryGateway::new(pan123),

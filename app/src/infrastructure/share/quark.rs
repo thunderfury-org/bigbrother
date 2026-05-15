@@ -3,9 +3,10 @@ use url::Url;
 use crate::{
     domain::share::RawFile,
     error::{AppError, AppResult},
+    infrastructure::client::quark,
 };
 
-use super::{ShareClient, collect::collect_quark_directory_entries, traversal::ShareTraversal};
+use super::{collect::collect_quark_directory_entries, traversal::ShareTraversal};
 
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
     if !(url.host_str().is_some_and(|host| host == "pan.quark.cn") && url.path().starts_with("/s/"))
@@ -31,7 +32,64 @@ pub struct QuarkShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareClient> QuarkShareService<S> {
+pub(crate) trait QuarkShareSource: Clone {
+    async fn get_share_info(&self, share_id: &str, password: &str) -> AppResult<String>;
+    async fn list_share_files(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        pdir_fid: &str,
+    ) -> AppResult<(Vec<quark::Folder>, Vec<quark::File>)>;
+    async fn batch_get_file_md5s(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        file_infos: &[(String, String)],
+    ) -> AppResult<std::collections::HashMap<String, String>>;
+}
+
+impl QuarkShareSource for quark::Client {
+    async fn get_share_info(&self, share_id: &str, password: &str) -> AppResult<String> {
+        Ok(self.get_share_info(share_id, password).await?)
+    }
+
+    async fn list_share_files(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        pdir_fid: &str,
+    ) -> AppResult<(Vec<quark::Folder>, Vec<quark::File>)> {
+        let (folders, files) = self
+            .list_share_files(share_id, password, stoken, pdir_fid, 1, 1000)
+            .await?;
+        if folders.len() + files.len() >= 1000 {
+            tracing::warn!(
+                "quark directory {} has >= 1000 entries, results may be truncated",
+                pdir_fid
+            );
+        }
+        Ok((folders, files))
+    }
+
+    async fn batch_get_file_md5s(
+        &self,
+        share_id: &str,
+        password: &str,
+        stoken: &str,
+        file_infos: &[(String, String)],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        let fids: Vec<String> = file_infos.iter().map(|(fid, _)| fid.clone()).collect();
+        let fid_tokens: Vec<String> = file_infos.iter().map(|(_, token)| token.clone()).collect();
+        Ok(self
+            .batch_download_info(share_id, password, stoken, &fids, &fid_tokens)
+            .await?)
+    }
+}
+
+impl<S: QuarkShareSource> QuarkShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
@@ -49,7 +107,7 @@ impl<S: ShareClient> QuarkShareService<S> {
 
         let share_info = self
             .share_source
-            .get_quark_share_info(share_id, password)
+            .get_share_info(share_id, password)
             .await?;
 
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
@@ -58,14 +116,14 @@ impl<S: ShareClient> QuarkShareService<S> {
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
                 .share_source
-                .list_quark_share_files(share_id, password, &share_info.stoken, &parent_id)
+                .list_share_files(share_id, password, &share_info, &parent_id)
                 .await?;
 
             for file in &files {
                 file_infos.push((
                     file.fid.clone(),
                     file.share_fid_token.clone(),
-                    file.name.clone(),
+                    file.file_name.clone(),
                     file.size,
                     parent_path.clone(),
                 ));
@@ -84,7 +142,7 @@ impl<S: ShareClient> QuarkShareService<S> {
             .collect();
         let md5_map = self
             .share_source
-            .batch_get_quark_file_md5s(share_id, password, &share_info.stoken, &md5_pairs)
+            .batch_get_file_md5s(share_id, password, &share_info, &md5_pairs)
             .await?;
 
         Ok(file_infos
@@ -124,15 +182,10 @@ mod tests {
     use url::Url;
 
     use crate::{
-        application::import::{
-            LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
-            QuarkFolder, QuarkShareInfo,
-        },
+        infrastructure::client::quark,
         domain::share::Etag,
         error::AppResult,
     };
-
-    use super::super::ShareClient;
 
     #[test]
     fn matches_supported_quark_urls_and_parses_share_parts() {
@@ -144,7 +197,7 @@ mod tests {
         );
     }
 
-    type QuarkFilesByParent = HashMap<String, (Vec<QuarkFolder>, Vec<QuarkFile>)>;
+    type QuarkFilesByParent = HashMap<String, (Vec<quark::Folder>, Vec<quark::File>)>;
 
     #[derive(Clone, Default)]
     struct FakeShareClient {
@@ -152,63 +205,22 @@ mod tests {
         quark_md5s: Arc<Mutex<HashMap<String, String>>>,
     }
 
-    impl ShareClient for FakeShareClient {
-        async fn list_pan123_share_files(
-            &self,
-            _share_key: &str,
-            _share_password: &str,
-            _parent_id: i64,
-        ) -> AppResult<Vec<LibraryFile>> {
-            Ok(Vec::new())
-        }
-
-        async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
-            Ok(Pan189ShareInfo::default())
-        }
-
-        async fn list_pan189_share_files(
-            &self,
-            _share_id: i64,
-            _share_mode: i32,
-            _parent_id: &str,
-        ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
-            Ok((Vec::new(), Vec::new()))
-        }
-
-        async fn download_pan189_share_file(
-            &self,
-            _share_id: i64,
-            _file: &Pan189File,
-        ) -> AppResult<Vec<u8>> {
-            Ok(Vec::new())
-        }
-
-        async fn list_pan115_share_files(
-            &self,
-            _share_code: &str,
-            _receive_code: &str,
-            _cid: &str,
-        ) -> AppResult<Vec<Pan115FileEntry>> {
-            Ok(Vec::new())
-        }
-
-        async fn get_quark_share_info(
+    impl super::QuarkShareSource for FakeShareClient {
+        async fn get_share_info(
             &self,
             _share_id: &str,
             _password: &str,
-        ) -> AppResult<QuarkShareInfo> {
-            Ok(QuarkShareInfo {
-                stoken: "stoken".into(),
-            })
+        ) -> AppResult<String> {
+            Ok("stoken".into())
         }
 
-        async fn list_quark_share_files(
+        async fn list_share_files(
             &self,
             _share_id: &str,
             _password: &str,
             _stoken: &str,
             pdir_fid: &str,
-        ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
+        ) -> AppResult<(Vec<quark::Folder>, Vec<quark::File>)> {
             Ok(self
                 .quark_files
                 .lock()
@@ -218,7 +230,7 @@ mod tests {
                 .unwrap_or((Vec::new(), Vec::new())))
         }
 
-        async fn batch_get_quark_file_md5s(
+        async fn batch_get_file_md5s(
             &self,
             _share_id: &str,
             _password: &str,
@@ -236,9 +248,9 @@ mod tests {
                 (
                     "0".to_string(),
                     (
-                        vec![QuarkFolder {
+                        vec![quark::Folder {
                             fid: "dir-1".into(),
-                            name: "Show".into(),
+                            file_name: "Show".into(),
                         }],
                         Vec::new(),
                     ),
@@ -247,11 +259,12 @@ mod tests {
                     "dir-1".to_string(),
                     (
                         Vec::new(),
-                        vec![QuarkFile {
+                        vec![quark::File {
                             fid: "file-1".into(),
-                            name: "Episode 01.mkv".into(),
+                            file_name: "Episode 01.mkv".into(),
                             size: 42,
                             share_fid_token: "token-1".into(),
+                            dir: false,
                         }],
                     ),
                 ),

@@ -19,16 +19,17 @@ use crate::{
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{
-                Pan123MediaSearchGateway, PanLibraryGateway, ShareClientGateway,
-                TmdbMetadataGateway,
-            },
+            gateway::{Pan123MediaSearchGateway, PanLibraryGateway, TmdbMetadataGateway},
             local_store::FilesystemImportLocalStore,
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
         services::{
             FileIndexRuntimeService, ImportService, MediaDownloadUrlService,
             ShareResolverRuntimeService,
+        },
+        share::{
+            pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
+            quark::QuarkShareService,
         },
     },
     interface::{
@@ -171,12 +172,12 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         file_index_service: FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(
             db.clone(),
         )),
-        share_resolver: ShareResolverRuntimeService::new(ShareClientGateway::new(
-            pan115,
-            pan123.clone(),
-            pan189,
-            quark,
-        )),
+        share_resolver: ShareResolverRuntimeService::new(
+            Pan123ShareService::new(pan123.clone()),
+            Pan189ShareService::new(pan189),
+            Pan115ShareService::new(pan115),
+            QuarkShareService::new(quark),
+        ),
         import_service: ImportService::new(
             PanLibraryGateway::new(pan123.clone()),
             TmdbMetadataGateway::new(tmdb),

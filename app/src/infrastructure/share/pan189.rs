@@ -1,14 +1,13 @@
 use url::Url;
 
 use crate::{
-    application::import::Pan189File,
     domain::share::RawFile,
     error::{AppError, AppResult},
+    infrastructure::client::pan189,
 };
 
 use super::{
-    ShareClient, collect::collect_pan189_directory_entries, file_parser::ShareFileParser,
-    traversal::ShareTraversal,
+    collect::collect_pan189_directory_entries, file_parser::ShareFileParser, traversal::ShareTraversal,
 };
 
 pub(crate) fn parse_share_code(url: &Url) -> Option<String> {
@@ -38,7 +37,37 @@ pub struct Pan189ShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareClient> Pan189ShareService<S> {
+pub(crate) trait Pan189ShareSource: Clone {
+    async fn get_share_info(&self, share_code: &str) -> AppResult<pan189::ShareInfo>;
+    async fn list_share_files(
+        &self,
+        share_id: i64,
+        share_mode: i32,
+        parent_id: &str,
+    ) -> AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)>;
+    async fn download_share_file(&self, share_id: i64, file: &pan189::File) -> AppResult<Vec<u8>>;
+}
+
+impl Pan189ShareSource for pan189::Client {
+    async fn get_share_info(&self, share_code: &str) -> AppResult<pan189::ShareInfo> {
+        Ok(self.get_share_info(share_code).await?)
+    }
+
+    async fn list_share_files(
+        &self,
+        share_id: i64,
+        share_mode: i32,
+        parent_id: &str,
+    ) -> AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)> {
+        Ok(self.list_share_files(share_id, share_mode, parent_id).await?)
+    }
+
+    async fn download_share_file(&self, share_id: i64, file: &pan189::File) -> AppResult<Vec<u8>> {
+        Ok(self.download_share_file(share_id, file).await?)
+    }
+}
+
+impl<S: Pan189ShareSource> Pan189ShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
@@ -50,7 +79,7 @@ impl<S: ShareClient> Pan189ShareService<S> {
             ));
         }
 
-        let share_info = self.share_source.get_pan189_share_info(share_code).await?;
+        let share_info = self.share_source.get_share_info(share_code).await?;
         let mut traversal =
             ShareTraversal::new((share_info.file_id, share_info.file_name.to_owned()));
         let mut cas_files = Vec::new();
@@ -58,7 +87,7 @@ impl<S: ShareClient> Pan189ShareService<S> {
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
                 .share_source
-                .list_pan189_share_files(share_info.share_id, share_info.share_mode, &parent_id)
+                .list_share_files(share_info.share_id, share_info.share_mode, &parent_id)
                 .await?;
             cas_files.extend(
                 files
@@ -83,7 +112,7 @@ impl<S: ShareClient> Pan189ShareService<S> {
             for candidate in &cas_files {
                 let json = self
                     .share_source
-                    .download_pan189_share_file(share_info.share_id, &candidate.file)
+                    .download_share_file(share_info.share_id, &candidate.file)
                     .await
                     .map_err(|e| {
                         AppError::InvalidParameter(format!(
@@ -104,7 +133,7 @@ impl<S: ShareClient> Pan189ShareService<S> {
 
 #[derive(Clone)]
 struct CasFileCandidate {
-    file: Pan189File,
+    file: pan189::File,
 }
 
 fn is_cas_file(name: &str) -> bool {
@@ -138,14 +167,9 @@ mod tests {
     use url::Url;
 
     use crate::{
-        application::import::{
-            Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile, QuarkFolder,
-            QuarkShareInfo,
-        },
+        infrastructure::client::pan189,
         error::{AppError, AppResult},
     };
-
-    use super::super::ShareClient;
 
     #[test]
     fn matches_supported_pan189_urls_and_parses_share_code() {
@@ -158,26 +182,17 @@ mod tests {
         assert_eq!(parse_share_code(&missing_code_url), None);
     }
 
-    type Pan189FilesByParent = HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>;
+    type Pan189FilesByParent = HashMap<String, (Vec<pan189::Folder>, Vec<pan189::File>)>;
 
     #[derive(Clone, Default)]
     struct FakeShareClient {
-        pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
+        pan189_share_info: Arc<Mutex<Option<pan189::ShareInfo>>>,
         pan189_files: Arc<Mutex<Pan189FilesByParent>>,
         pan189_downloads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     }
 
-    impl ShareClient for FakeShareClient {
-        async fn list_pan123_share_files(
-            &self,
-            _share_key: &str,
-            _share_password: &str,
-            _parent_id: i64,
-        ) -> AppResult<Vec<crate::application::import::LibraryFile>> {
-            Ok(Vec::new())
-        }
-
-        async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
+    impl super::Pan189ShareSource for FakeShareClient {
+        async fn get_share_info(&self, _share_code: &str) -> AppResult<pan189::ShareInfo> {
             self.pan189_share_info
                 .lock()
                 .unwrap()
@@ -185,12 +200,12 @@ mod tests {
                 .ok_or_else(|| AppError::NotFound("missing fake share info".into()))
         }
 
-        async fn list_pan189_share_files(
+        async fn list_share_files(
             &self,
             _share_id: i64,
             _share_mode: i32,
             parent_id: &str,
-        ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
+        ) -> AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)> {
             Ok(self
                 .pan189_files
                 .lock()
@@ -200,10 +215,10 @@ mod tests {
                 .unwrap_or((Vec::new(), Vec::new())))
         }
 
-        async fn download_pan189_share_file(
+        async fn download_share_file(
             &self,
             _share_id: i64,
-            file: &Pan189File,
+            file: &pan189::File,
         ) -> AppResult<Vec<u8>> {
             self.pan189_downloads
                 .lock()
@@ -213,58 +228,22 @@ mod tests {
                 .ok_or_else(|| AppError::InvalidParameter("missing fake pan189 download".into()))
         }
 
-        async fn list_pan115_share_files(
-            &self,
-            _share_code: &str,
-            _receive_code: &str,
-            _cid: &str,
-        ) -> AppResult<Vec<Pan115FileEntry>> {
-            Ok(Vec::new())
-        }
-
-        async fn get_quark_share_info(
-            &self,
-            _share_id: &str,
-            _password: &str,
-        ) -> AppResult<QuarkShareInfo> {
-            Ok(QuarkShareInfo::default())
-        }
-
-        async fn list_quark_share_files(
-            &self,
-            _share_id: &str,
-            _password: &str,
-            _stoken: &str,
-            _pdir_fid: &str,
-        ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
-            Ok((Vec::new(), Vec::new()))
-        }
-
-        async fn batch_get_quark_file_md5s(
-            &self,
-            _share_id: &str,
-            _password: &str,
-            _stoken: &str,
-            _file_infos: &[(String, String)],
-        ) -> AppResult<HashMap<String, String>> {
-            Ok(HashMap::new())
-        }
     }
 
     #[tokio::test]
     async fn expands_cas_only_share_with_context_path() {
         let source = FakeShareClient {
-            pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
-                file_id: "root".into(),
-                file_name: "share-root".into(),
-                share_id: 1,
-                share_mode: 3,
-            }))),
+            pan189_share_info: Arc::new(Mutex::new(Some(pan189::ShareInfo::fake(
+                "root",
+                "share-root",
+                1,
+                3,
+            )))),
             pan189_files: Arc::new(Mutex::new(HashMap::from([(
                 "root".to_string(),
                 (
                     Vec::new(),
-                    vec![Pan189File {
+                    vec![pan189::File {
                         id: "cas-1".into(),
                         name: "Breaking Bad (2008) {tmdb-1396}.cas".into(),
                         size: 288,

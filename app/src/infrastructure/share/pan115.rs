@@ -3,9 +3,10 @@ use url::Url;
 use crate::{
     domain::share::RawFile,
     error::{AppError, AppResult},
+    infrastructure::client::pan115,
 };
 
-use super::{ShareClient, collect::collect_pan115_directory_entries, traversal::ShareTraversal};
+use super::{collect::collect_pan115_directory_entries, traversal::ShareTraversal};
 
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
     if !(url
@@ -34,7 +35,27 @@ pub struct Pan115ShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareClient> Pan115ShareService<S> {
+pub(crate) trait Pan115ShareSource: Clone {
+    async fn list_share_files(
+        &self,
+        share_code: &str,
+        receive_code: &str,
+        cid: &str,
+    ) -> AppResult<Vec<pan115::FileEntry>>;
+}
+
+impl Pan115ShareSource for pan115::Client {
+    async fn list_share_files(
+        &self,
+        share_code: &str,
+        receive_code: &str,
+        cid: &str,
+    ) -> AppResult<Vec<pan115::FileEntry>> {
+        Ok(self.list_share_files(share_code, receive_code, cid).await?)
+    }
+}
+
+impl<S: Pan115ShareSource> Pan115ShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
@@ -55,7 +76,7 @@ impl<S: ShareClient> Pan115ShareService<S> {
         while let Some((cid, parent_path)) = traversal.next_dir() {
             let entries = self
                 .share_source
-                .list_pan115_share_files(share_code, receive_code, &cid)
+                .list_share_files(share_code, receive_code, &cid)
                 .await?;
             traversal.extend(collect_pan115_directory_entries(&entries, &parent_path));
         }

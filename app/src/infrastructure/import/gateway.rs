@@ -2,32 +2,19 @@ use std::collections::HashMap;
 
 use crate::{
     application::import::{
-        Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder,
-        Pan189ShareInfo, QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult,
-        Season, TvDetail,
+        Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
     application::{
         import_ports::{LibraryGateway, MetadataCatalog},
         ports::{MediaDirectoryRecord, MediaSearchSource},
     },
     error::AppResult,
-    infrastructure::{
-        client::{pan115, pan123, pan189, quark, tmdb},
-        share::ShareClient,
-    },
+    infrastructure::client::{pan123, tmdb},
 };
 
 #[derive(Clone)]
 pub struct PanLibraryGateway {
     pan123: pan123::Client,
-}
-
-#[derive(Clone)]
-pub struct ShareClientGateway {
-    pan115: pan115::Client,
-    pan123: pan123::Client,
-    pan189: pan189::Client,
-    quark: quark::Client,
 }
 
 #[derive(Clone)]
@@ -43,22 +30,6 @@ pub struct Pan123MediaSearchGateway {
 impl PanLibraryGateway {
     pub fn new(pan123: pan123::Client) -> Self {
         Self { pan123 }
-    }
-}
-
-impl ShareClientGateway {
-    pub fn new(
-        pan115: pan115::Client,
-        pan123: pan123::Client,
-        pan189: pan189::Client,
-        quark: quark::Client,
-    ) -> Self {
-        Self {
-            pan115,
-            pan123,
-            pan189,
-            quark,
-        }
     }
 }
 
@@ -159,70 +130,6 @@ impl From<pan123::File> for LibraryFile {
     }
 }
 
-impl From<pan189::ShareInfo> for Pan189ShareInfo {
-    fn from(value: pan189::ShareInfo) -> Self {
-        Self {
-            file_id: value.file_id,
-            file_name: value.file_name,
-            share_id: value.share_id,
-            share_mode: value.share_mode,
-        }
-    }
-}
-
-impl From<pan189::Folder> for Pan189Folder {
-    fn from(value: pan189::Folder) -> Self {
-        Self {
-            id: value.id,
-            name: value.name,
-        }
-    }
-}
-
-impl From<pan189::File> for Pan189File {
-    fn from(value: pan189::File) -> Self {
-        Self {
-            id: value.id,
-            name: value.name,
-            size: value.size,
-            md5: value.md5,
-        }
-    }
-}
-
-impl From<pan115::FileEntry> for Pan115FileEntry {
-    fn from(value: pan115::FileEntry) -> Self {
-        let is_file = value.is_file();
-        Self {
-            fid: if is_file { value.fid } else { None },
-            cid: value.cid,
-            name: value.name,
-            size: value.size,
-            sha: value.sha,
-        }
-    }
-}
-
-impl From<quark::Folder> for QuarkFolder {
-    fn from(value: quark::Folder) -> Self {
-        Self {
-            fid: value.fid,
-            name: value.file_name,
-        }
-    }
-}
-
-impl From<quark::File> for QuarkFile {
-    fn from(value: quark::File) -> Self {
-        Self {
-            fid: value.fid,
-            name: value.file_name,
-            size: value.size,
-            share_fid_token: value.share_fid_token,
-        }
-    }
-}
-
 impl LibraryGateway for PanLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
         Ok(self
@@ -282,124 +189,6 @@ impl LibraryGateway for PanLibraryGateway {
 
     async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
         Ok(self.pan123.download_file(file_id, local_path).await?)
-    }
-}
-
-impl ShareClient for ShareClientGateway {
-    async fn list_pan123_share_files(
-        &self,
-        share_key: &str,
-        share_password: &str,
-        parent_id: i64,
-    ) -> AppResult<Vec<LibraryFile>> {
-        Ok(self
-            .pan123
-            .list_share_files(share_key, share_password, parent_id)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
-    }
-
-    async fn get_pan189_share_info(&self, share_code: &str) -> AppResult<Pan189ShareInfo> {
-        Ok(self.pan189.get_share_info(share_code).await?.into())
-    }
-
-    async fn list_pan189_share_files(
-        &self,
-        share_id: i64,
-        share_mode: i32,
-        parent_id: &str,
-    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
-        let (folders, files) = self
-            .pan189
-            .list_share_files(share_id, share_mode, parent_id)
-            .await?;
-        Ok((
-            folders.into_iter().map(Into::into).collect(),
-            files.into_iter().map(Into::into).collect(),
-        ))
-    }
-
-    async fn download_pan189_share_file(
-        &self,
-        share_id: i64,
-        file: &Pan189File,
-    ) -> AppResult<Vec<u8>> {
-        Ok(self
-            .pan189
-            .download_share_file(
-                share_id,
-                &pan189::File {
-                    id: file.id.clone(),
-                    name: file.name.clone(),
-                    size: file.size,
-                    md5: file.md5.clone(),
-                },
-            )
-            .await?)
-    }
-
-    async fn list_pan115_share_files(
-        &self,
-        share_code: &str,
-        receive_code: &str,
-        cid: &str,
-    ) -> AppResult<Vec<Pan115FileEntry>> {
-        Ok(self
-            .pan115
-            .list_share_files(share_code, receive_code, cid)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
-    }
-
-    async fn get_quark_share_info(
-        &self,
-        share_id: &str,
-        password: &str,
-    ) -> AppResult<QuarkShareInfo> {
-        let stoken = self.quark.get_share_info(share_id, password).await?;
-        Ok(QuarkShareInfo { stoken })
-    }
-
-    async fn list_quark_share_files(
-        &self,
-        share_id: &str,
-        password: &str,
-        stoken: &str,
-        pdir_fid: &str,
-    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
-        let (folders, files) = self
-            .quark
-            .list_share_files(share_id, password, stoken, pdir_fid, 1, 1000)
-            .await?;
-        if folders.len() + files.len() >= 1000 {
-            tracing::warn!(
-                "quark directory {} has >= 1000 entries, results may be truncated",
-                pdir_fid
-            );
-        }
-        Ok((
-            folders.into_iter().map(Into::into).collect(),
-            files.into_iter().map(Into::into).collect(),
-        ))
-    }
-
-    async fn batch_get_quark_file_md5s(
-        &self,
-        share_id: &str,
-        password: &str,
-        stoken: &str,
-        file_infos: &[(String, String)],
-    ) -> AppResult<std::collections::HashMap<String, String>> {
-        let fids: Vec<String> = file_infos.iter().map(|(fid, _)| fid.clone()).collect();
-        let fid_tokens: Vec<String> = file_infos.iter().map(|(_, token)| token.clone()).collect();
-        Ok(self
-            .quark
-            .batch_download_info(share_id, password, stoken, &fids, &fid_tokens)
-            .await?)
     }
 }
 

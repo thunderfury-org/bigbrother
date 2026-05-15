@@ -4,6 +4,5 @@ pub(crate) mod paths;
 pub(crate) mod policy;
 
 pub(crate) use model::{
-    Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
-    QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
+    Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
