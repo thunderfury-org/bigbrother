@@ -71,6 +71,8 @@ Use the `Makefile` for common tasks:
 
 Use `cargo run -- server --data-dir ./data` as the default local startup example.
 
+When running package-scoped Cargo commands, use the real crate package name instead of the directory name. In this workspace, the crate under `app/` is packaged as `bigbrother`, so prefer commands like `cargo test -p bigbrother` and `cargo clippy -p bigbrother --all-targets -- -D warnings` rather than `-p app`.
+
 ## Coding Style & Naming Conventions
 Follow `.editorconfig`: use spaces, LF line endings, and a final newline; Rust files use 4-space indentation. Keep modules focused and aligned with the existing layer boundaries rather than adding cross-layer helpers. Use `snake_case` for files, modules, and functions, `PascalCase` for types, and verb-led names for services such as `SyncStrmService`. Format with `cargo fmt` and treat Clippy warnings as errors.
 
