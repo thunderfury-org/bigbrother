@@ -39,21 +39,20 @@ impl<S: ShareClient> QuarkShareService<S> {
         Self { share_source }
     }
 
-    pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        if !match_url(url) {
-            return Err(AppError::InvalidParameter(format!(
-                "unsupported quark share url: {url}"
-            )));
+    pub async fn raw_files_from_share(
+        &self,
+        share_id: &str,
+        password: &str,
+    ) -> AppResult<Vec<RawFile>> {
+        if share_id.is_empty() {
+            return Err(AppError::NotFound(
+                "Can not extract share id from URL".into(),
+            ));
         }
-        let Some((share_id, password)) = parse_share_parts(url) else {
-            return Err(AppError::NotFound(format!(
-                "Can not extract share id from URL: {url}"
-            )));
-        };
 
         let share_info = self
             .share_source
-            .get_quark_share_info(&share_id, &password)
+            .get_quark_share_info(share_id, password)
             .await?;
 
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
@@ -62,7 +61,7 @@ impl<S: ShareClient> QuarkShareService<S> {
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let (folders, files) = self
                 .share_source
-                .list_quark_share_files(&share_id, &password, &share_info.stoken, &parent_id)
+                .list_quark_share_files(share_id, password, &share_info.stoken, &parent_id)
                 .await?;
 
             for file in &files {
@@ -88,7 +87,7 @@ impl<S: ShareClient> QuarkShareService<S> {
             .collect();
         let md5_map = self
             .share_source
-            .batch_get_quark_file_md5s(&share_id, &password, &share_info.stoken, &md5_pairs)
+            .batch_get_quark_file_md5s(share_id, password, &share_info.stoken, &md5_pairs)
             .await?;
 
         Ok(file_infos
@@ -268,7 +267,7 @@ mod tests {
         };
 
         let raw_files = QuarkShareService::new(source)
-            .raw_files_from_url(&Url::parse("https://pan.quark.cn/s/share-id").unwrap())
+            .raw_files_from_share("share-id", "")
             .await
             .unwrap();
 

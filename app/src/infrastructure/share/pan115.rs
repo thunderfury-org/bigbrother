@@ -41,24 +41,23 @@ impl<S: ShareClient> Pan115ShareService<S> {
         Self { share_source }
     }
 
-    pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        if !match_url(url) {
-            return Err(AppError::InvalidParameter(format!(
-                "unsupported pan115 share url: {url}"
-            )));
+    pub async fn raw_files_from_share(
+        &self,
+        share_code: &str,
+        receive_code: &str,
+    ) -> AppResult<Vec<RawFile>> {
+        if share_code.is_empty() {
+            return Err(AppError::NotFound(
+                "Can not extract share code from URL".into(),
+            ));
         }
-        let Some((share_code, receive_code)) = parse_share_parts(url) else {
-            return Err(AppError::NotFound(format!(
-                "Can not extract share code from URL: {url}"
-            )));
-        };
 
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
 
         while let Some((cid, parent_path)) = traversal.next_dir() {
             let entries = self
                 .share_source
-                .list_pan115_share_files(&share_code, &receive_code, &cid)
+                .list_pan115_share_files(share_code, receive_code, &cid)
                 .await?;
             traversal.extend(collect_pan115_directory_entries(&entries, &parent_path));
         }

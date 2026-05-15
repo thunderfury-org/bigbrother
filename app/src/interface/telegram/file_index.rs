@@ -8,7 +8,7 @@ use crate::{
     application::import::ImportedMedia,
     error::AppError,
     infrastructure::event_bus::Event,
-    infrastructure::share::{file_parser::ShareFileParser, pan115, pan123, pan189, quark},
+    infrastructure::share::file_parser::ShareFileParser,
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
@@ -45,7 +45,7 @@ pub fn extract_media_sources(msg: &Message) -> Vec<MediaSource> {
     let urls = extract_urls_from_msg(msg);
     let mut processed_urls = HashSet::new();
     for url in urls {
-        if is_potential_share_url(&url) && processed_urls.insert(url.to_string()) {
+        if processed_urls.insert(url.to_string()) {
             sources.push(MediaSource::ShareUrl(url.to_string()));
         }
     }
@@ -140,13 +140,6 @@ fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
     }
 }
 
-fn is_potential_share_url(url: &Url) -> bool {
-    pan123::match_url(url)
-        || pan189::match_url(url)
-        || pan115::match_url(url)
-        || quark::match_url(url)
-}
-
 // --- Notification helpers ---
 
 pub async fn send_import_results(
@@ -213,53 +206,5 @@ mod tests {
         );
 
         assert_eq!(description, None);
-    }
-
-    #[test]
-    fn potential_share_url_ignores_plain_web_links() {
-        let url = Url::parse("https://example.com/docs/page").unwrap();
-
-        assert!(!is_potential_share_url(&url));
-    }
-
-    #[test]
-    fn potential_share_url_ignores_lookalike_non_provider_domains() {
-        let quarkus = Url::parse("https://quarkus.io/s/demo").unwrap();
-        let fake_189 = Url::parse("https://example189.com/t/demo").unwrap();
-
-        assert!(!is_potential_share_url(&quarkus));
-        assert!(!is_potential_share_url(&fake_189));
-    }
-
-    #[test]
-    fn potential_share_url_accepts_supported_share_links() {
-        let url = Url::parse("https://pan.quark.cn/s/c094a3711bcc?pwd=abc").unwrap();
-
-        assert!(is_potential_share_url(&url));
-    }
-
-    #[test]
-    fn potential_share_url_accepts_supported_provider_host_shapes() {
-        let url = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
-
-        assert!(is_potential_share_url(&url));
-    }
-
-    #[test]
-    fn potential_share_url_accepts_provider_shape_without_share_code() {
-        let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
-
-        assert!(is_potential_share_url(&url));
-    }
-
-    #[test]
-    fn potential_share_url_ignores_supported_hosts_with_wrong_paths() {
-        let pan189_wrong = Url::parse("https://cloud.189.cn/s/demo").unwrap();
-        let quark_wrong = Url::parse("https://pan.quark.cn/t/demo").unwrap();
-        let pan123_wrong = Url::parse("https://www.123pan.com/web/share").unwrap();
-
-        assert!(!is_potential_share_url(&pan189_wrong));
-        assert!(!is_potential_share_url(&quark_wrong));
-        assert!(!is_potential_share_url(&pan123_wrong));
     }
 }

@@ -1,5 +1,3 @@
-use url::Url;
-
 use crate::{
     application::{file_index::SeenFile, import::MetadataLookup},
     error::{self, AppResult},
@@ -29,7 +27,6 @@ pub(crate) async fn run_import_share_url(
         logger::init_console();
     }
 
-    let url = parse_share_url(url)?;
     let config = config::Manager::try_from(data_dir.trim())?;
     let db = connect_db(&config.get_db_dir()).await?;
 
@@ -69,7 +66,7 @@ pub(crate) async fn run_import_share_url(
         FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db.clone()));
 
     // Fetch raw files once
-    let raw_files = resolve_share_url_raw_files(&share_resolver, &url).await?;
+    let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
 
     // Index: reuse raw files
     if !raw_files.is_empty() {
@@ -158,15 +155,9 @@ fn format_file_size(size: u64) -> String {
     }
 }
 
-fn parse_share_url(raw_url: &str) -> AppResult<Url> {
-    Url::parse(raw_url).map_err(|err| {
-        error::AppError::InvalidParameter(format!("invalid share url '{raw_url}': {err}"))
-    })
-}
-
 async fn resolve_share_url_raw_files<R: ShareResolver>(
     resolver: &R,
-    url: &Url,
+    url: &str,
 ) -> AppResult<Vec<crate::domain::share::RawFile>> {
     resolver.raw_files_from_url(url).await?.ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
@@ -177,11 +168,10 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, parse_share_url, resolve_share_url_raw_files};
+    use super::{format_file_size, resolve_share_url_raw_files};
     use crate::{
         domain::share::RawFile, error::AppResult, infrastructure::share::resolver::ShareResolver,
     };
-    use url::Url;
 
     #[derive(Clone)]
     struct FakeShareResolver {
@@ -189,38 +179,16 @@ mod tests {
     }
 
     impl ShareResolver for FakeShareResolver {
-        async fn raw_files_from_url(&self, _url: &Url) -> AppResult<Option<Vec<RawFile>>> {
+        async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
             Ok(self.result.clone())
         }
-    }
-
-    #[test]
-    fn parse_share_url_accepts_supported_provider() {
-        let share_url = parse_share_url("https://www.123pan.com/s/test?pwd=pass").unwrap();
-
-        assert_eq!(share_url.as_str(), "https://www.123pan.com/s/test?pwd=pass");
-    }
-
-    #[test]
-    fn parse_share_url_accepts_unsupported_provider_for_resolver() {
-        let share_url = parse_share_url("https://example.com/s/test").unwrap();
-
-        assert_eq!(share_url.as_str(), "https://example.com/s/test");
-    }
-
-    #[test]
-    fn parse_share_url_rejects_invalid_url() {
-        let err = parse_share_url("not a url").unwrap_err();
-
-        assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
-        assert!(err.to_string().contains("invalid share url"));
     }
 
     #[tokio::test]
     async fn resolve_share_url_raw_files_rejects_unsupported_provider() {
         let err = resolve_share_url_raw_files(
             &FakeShareResolver { result: None },
-            &Url::parse("https://example.com/s/test").unwrap(),
+            "https://example.com/s/test",
         )
         .await
         .unwrap_err();

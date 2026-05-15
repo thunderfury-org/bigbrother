@@ -39,23 +39,23 @@ impl<S: ShareClient> Pan123ShareService<S> {
         Self { share_source }
     }
 
-    pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        if !match_url(url) {
-            return Err(AppError::InvalidParameter(format!(
-                "unsupported pan123 share url: {url}"
-            )));
+    pub async fn raw_files_from_share(
+        &self,
+        share_key: &str,
+        share_password: &str,
+    ) -> AppResult<Vec<RawFile>> {
+        if share_key.is_empty() {
+            return Err(AppError::NotFound(
+                "Can not extract share key from URL".into(),
+            ));
         }
-        let Some((share_key, share_password)) = parse_share_parts(url) else {
-            return Err(AppError::NotFound(format!(
-                "Can not extract share key from URL: {url}"
-            )));
-        };
+
         let mut traversal = ShareTraversal::new((0, String::new()));
 
         while let Some((parent_id, parent_path)) = traversal.next_dir() {
             let files = self
                 .share_source
-                .list_pan123_share_files(share_key.as_str(), share_password.as_str(), parent_id)
+                .list_pan123_share_files(share_key, share_password, parent_id)
                 .await?;
             traversal.extend(collect_pan123_directory_entries(&files, &parent_path));
         }

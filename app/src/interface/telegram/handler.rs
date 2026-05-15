@@ -112,15 +112,9 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
     resolver: &R,
     raw_url: &str,
 ) -> AppResult<Vec<RawFile>> {
-    let parsed_url = url::Url::parse(raw_url)
-        .map_err(|e| crate::error::AppError::InvalidParameter(format!("invalid share url: {e}")))?;
-
-    resolver
-        .raw_files_from_url(&parsed_url)
-        .await?
-        .ok_or_else(|| {
-            crate::error::AppError::InvalidParameter(format!("unsupported share url: {raw_url}"))
-        })
+    resolver.raw_files_from_url(raw_url).await?.ok_or_else(|| {
+        crate::error::AppError::InvalidParameter(format!("unsupported share url: {raw_url}"))
+    })
 }
 
 async fn fetch_tg_document(
@@ -182,7 +176,6 @@ mod tests {
         error::{AppError, AppResult},
         infrastructure::share::resolver::ShareResolver,
     };
-    use url::Url;
 
     #[derive(Clone)]
     struct FakeShareResolver {
@@ -190,7 +183,7 @@ mod tests {
     }
 
     impl ShareResolver for FakeShareResolver {
-        async fn raw_files_from_url(&self, _url: &Url) -> AppResult<Option<Vec<RawFile>>> {
+        async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
             Ok(self.result.clone())
         }
     }

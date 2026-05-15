@@ -1,8 +1,6 @@
-use url::Url;
-
 use crate::{
     domain::share::RawFile,
-    error::AppResult,
+    error::{AppError, AppResult},
     infrastructure::share::{
         pan115::{self, Pan115ShareService},
         pan123::{self, Pan123ShareService},
@@ -14,7 +12,7 @@ use crate::{
 use super::ShareClient;
 
 pub trait ShareResolver: Clone {
-    async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>>;
+    async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>>;
 }
 
 #[derive(Clone)]
@@ -37,15 +35,31 @@ impl<S: ShareClient> ShareResolverService<S> {
 }
 
 impl<S: ShareClient> ShareResolver for ShareResolverService<S> {
-    async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
-        if pan123::match_url(url) {
-            self.pan123.raw_files_from_url(url).await.map(Some)
-        } else if pan189::match_url(url) {
-            self.pan189.raw_files_from_url(url).await.map(Some)
-        } else if pan115::match_url(url) {
-            self.pan115.raw_files_from_url(url).await.map(Some)
-        } else if quark::match_url(url) {
-            self.quark.raw_files_from_url(url).await.map(Some)
+    async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>> {
+        let url = url::Url::parse(url).map_err(|err| {
+            AppError::InvalidParameter(format!("invalid share url '{url}': {err}"))
+        })?;
+
+        if let Some((share_key, password)) = pan123::parse_share_parts(&url) {
+            self.pan123
+                .raw_files_from_share(&share_key, &password)
+                .await
+                .map(Some)
+        } else if let Some(share_code) = pan189::parse_share_code(&url) {
+            self.pan189
+                .raw_files_from_share_code(&share_code)
+                .await
+                .map(Some)
+        } else if let Some((share_code, receive_code)) = pan115::parse_share_parts(&url) {
+            self.pan115
+                .raw_files_from_share(&share_code, &receive_code)
+                .await
+                .map(Some)
+        } else if let Some((share_id, password)) = quark::parse_share_parts(&url) {
+            self.quark
+                .raw_files_from_share(&share_id, &password)
+                .await
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -60,7 +74,6 @@ mod tests {
     };
 
     use super::{ShareResolver, ShareResolverService};
-    use url::Url;
 
     use crate::{
         application::import::{
@@ -155,7 +168,7 @@ mod tests {
         let resolver = ShareResolverService::new(FakeShareClient::default());
 
         let result = resolver
-            .raw_files_from_url(&Url::parse("https://example.com/share").unwrap())
+            .raw_files_from_url("https://example.com/share")
             .await
             .unwrap();
 
@@ -178,7 +191,7 @@ mod tests {
         });
 
         let result = resolver
-            .raw_files_from_url(&Url::parse("https://www.123684.com/s/share-key").unwrap())
+            .raw_files_from_url("https://www.123684.com/s/share-key")
             .await
             .unwrap()
             .unwrap();
@@ -186,5 +199,15 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "Movie.mkv");
         assert_eq!(result[0].size, 99);
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_url() {
+        let resolver = ShareResolverService::new(FakeShareClient::default());
+
+        let err = resolver.raw_files_from_url("not a url").await.unwrap_err();
+
+        assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
+        assert!(err.to_string().contains("invalid share url"));
     }
 }

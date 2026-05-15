@@ -46,19 +46,14 @@ impl<S: ShareClient> Pan189ShareService<S> {
         Self { share_source }
     }
 
-    pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        if !match_url(url) {
-            return Err(AppError::InvalidParameter(format!(
-                "unsupported pan189 share url: {url}"
-            )));
+    pub async fn raw_files_from_share_code(&self, share_code: &str) -> AppResult<Vec<RawFile>> {
+        if share_code.is_empty() {
+            return Err(AppError::NotFound(
+                "Can not extract share code from URL".into(),
+            ));
         }
-        let Some(share_code) = parse_share_code(url) else {
-            return Err(AppError::NotFound(format!(
-                "Can not extract share code from URL: {url}"
-            )));
-        };
 
-        let share_info = self.share_source.get_pan189_share_info(&share_code).await?;
+        let share_info = self.share_source.get_pan189_share_info(share_code).await?;
         let mut traversal =
             ShareTraversal::new((share_info.file_id, share_info.file_name.to_owned()));
         let mut cas_files = Vec::new();
@@ -296,7 +291,7 @@ mod tests {
         };
 
         let raw_files = Pan189ShareService::new(source)
-            .raw_files_from_url(&Url::parse("https://cloud.189.cn/t/share189").unwrap())
+            .raw_files_from_share_code("share189")
             .await
             .unwrap();
 
