@@ -71,6 +71,18 @@ pub(crate) async fn run_import_share_url(
     Ok(())
 }
 
+pub(crate) async fn run_share_list(data_dir: &str, url: &str) -> AppResult<()> {
+    let ctx = CliContext::new(data_dir)?;
+    let share_resolver = ctx.share_resolver();
+    let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
+
+    for line in format_share_list_output(&raw_files) {
+        println!("{line}");
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResult<()> {
     let ctx = CliContext::new(data_dir)?;
     let service = ctx.file_index_service().await?;
@@ -115,6 +127,42 @@ fn format_file_size(size: u64) -> String {
     }
 }
 
+fn format_share_list_output(raw_files: &[crate::domain::share::RawFile]) -> Vec<String> {
+    if raw_files.is_empty() {
+        return vec!["未找到任何文件".to_owned()];
+    }
+
+    let mut lines = Vec::new();
+    let mut total_size = 0_u64;
+
+    for (index, file) in raw_files.iter().enumerate() {
+        total_size += file.size;
+        lines.push(format!("{}. {}", index + 1, file.name));
+        lines.push(format!("   path: {}", display_share_path(&file.path)));
+        lines.push(format!("   size: {}", format_file_size(file.size)));
+        match &file.etag {
+            crate::domain::share::Etag::Md5(value) => lines.push(format!("   md5: {value}")),
+            crate::domain::share::Etag::Sha1(value) => lines.push(format!("   sha1: {value}")),
+        }
+        if index + 1 < raw_files.len() {
+            lines.push(String::new());
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!(
+        "共 {} 个文件，总大小 {}",
+        raw_files.len(),
+        format_file_size(total_size)
+    ));
+
+    lines
+}
+
+fn display_share_path(path: &str) -> &str {
+    if path.is_empty() { "/" } else { path }
+}
+
 async fn resolve_share_url_raw_files<R: ShareResolver>(
     resolver: &R,
     url: &str,
@@ -128,9 +176,11 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, resolve_share_url_raw_files};
+    use super::{format_file_size, format_share_list_output, resolve_share_url_raw_files};
     use crate::{
-        domain::share::RawFile, error::AppResult, infrastructure::share::resolver::ShareResolver,
+        domain::share::{Etag, RawFile},
+        error::AppResult,
+        infrastructure::share::resolver::ShareResolver,
     };
 
     #[derive(Clone)]
@@ -164,5 +214,47 @@ mod tests {
             "6.07 GiB (6517230688 bytes)"
         );
         assert_eq!(format_file_size(512), "512 B");
+    }
+
+    #[test]
+    fn format_share_list_output_uses_expected_text_layout() {
+        let output = format_share_list_output(&[
+            RawFile {
+                id: Some(1),
+                name: "Movie.mkv".into(),
+                etag: Etag::Md5("abcdef0123456789abcdef0123456789".into()),
+                size: 6_517_230_688,
+                path: String::new(),
+            },
+            RawFile {
+                id: None,
+                name: "Episode 01.mkv".into(),
+                etag: Etag::Sha1("abcdef0123456789abcdef0123456789abcdef01".into()),
+                size: 512,
+                path: "/Show/Season 01".into(),
+            },
+        ]);
+
+        assert_eq!(
+            output,
+            vec![
+                "1. Movie.mkv",
+                "   path: /",
+                "   size: 6.07 GiB (6517230688 bytes)",
+                "   md5: abcdef0123456789abcdef0123456789",
+                "",
+                "2. Episode 01.mkv",
+                "   path: /Show/Season 01",
+                "   size: 512 B",
+                "   sha1: abcdef0123456789abcdef0123456789abcdef01",
+                "",
+                "共 2 个文件，总大小 6.07 GiB (6517231200 bytes)",
+            ]
+        );
+    }
+
+    #[test]
+    fn format_share_list_output_reports_empty_result() {
+        assert_eq!(format_share_list_output(&[]), vec!["未找到任何文件"]);
     }
 }

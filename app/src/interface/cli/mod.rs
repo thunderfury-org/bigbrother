@@ -20,8 +20,22 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     Server(DataDirArgs),
-    ImportShareUrl(ImportShareUrlArgs),
+    Share(ShareArgs),
     SearchFiles(SearchFilesArgs),
+}
+
+#[derive(Args)]
+pub struct ShareArgs {
+    #[command(subcommand)]
+    pub command: ShareCommands,
+}
+
+#[derive(Subcommand)]
+pub enum ShareCommands {
+    /// 列出分享链接中的文件
+    List(ShareListArgs),
+    /// 导入分享链接中的媒体文件
+    Import(ImportShareUrlArgs),
 }
 
 #[derive(Args)]
@@ -43,6 +57,13 @@ pub struct ImportShareUrlArgs {
 }
 
 #[derive(Args)]
+pub struct ShareListArgs {
+    #[command(flatten)]
+    pub data_dir: DataDirArgs,
+    pub url: String,
+}
+
+#[derive(Args)]
 pub struct SearchFilesArgs {
     #[command(flatten)]
     pub data_dir: DataDirArgs,
@@ -54,15 +75,20 @@ pub struct SearchFilesArgs {
 pub async fn run(cli: Cli) -> AppResult<()> {
     match cli.command {
         Commands::Server(args) => server::run(&args.data_dir).await,
-        Commands::ImportShareUrl(args) => {
-            handler::run_import_share_url(
-                args.data_dir.data_dir.as_str(),
-                &args.url,
-                args.verbose,
-                args.description,
-            )
-            .await
-        }
+        Commands::Share(args) => match args.command {
+            ShareCommands::List(args) => {
+                handler::run_share_list(args.data_dir.data_dir.as_str(), &args.url).await
+            }
+            ShareCommands::Import(args) => {
+                handler::run_import_share_url(
+                    args.data_dir.data_dir.as_str(),
+                    &args.url,
+                    args.verbose,
+                    args.description,
+                )
+                .await
+            }
+        },
         Commands::SearchFiles(args) => {
             handler::run_search_files(args.data_dir.data_dir.as_str(), &args.keyword, args.limit)
                 .await
@@ -90,7 +116,7 @@ async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, context::CliContext};
+    use super::{Cli, Commands, ShareCommands, context::CliContext};
     use clap::CommandFactory;
     use clap::Parser;
     use std::{
@@ -131,10 +157,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_import_share_url_command() {
+    fn parses_share_import_command() {
         let cli = Cli::parse_from([
             "bigbrother",
-            "import-share-url",
+            "share",
+            "import",
             "--verbose",
             "--data-dir",
             "./data",
@@ -142,20 +169,24 @@ mod tests {
         ]);
 
         match cli.command {
-            Commands::ImportShareUrl(args) => {
-                assert_eq!(args.data_dir.data_dir, "./data");
-                assert!(args.verbose);
-                assert_eq!(args.url, "https://www.123pan.com/s/test?pwd=pass");
-            }
-            _ => panic!("expected import-share-url command"),
+            Commands::Share(args) => match args.command {
+                ShareCommands::Import(args) => {
+                    assert_eq!(args.data_dir.data_dir, "./data");
+                    assert!(args.verbose);
+                    assert_eq!(args.url, "https://www.123pan.com/s/test?pwd=pass");
+                }
+                _ => panic!("expected share import command"),
+            },
+            _ => panic!("expected share command"),
         }
     }
 
     #[test]
-    fn parses_import_share_url_description() {
+    fn parses_share_import_description() {
         let cli = Cli::parse_from([
             "bigbrother",
-            "import-share-url",
+            "share",
+            "import",
             "--description",
             "from cli",
             "--data-dir",
@@ -164,10 +195,36 @@ mod tests {
         ]);
 
         match cli.command {
-            Commands::ImportShareUrl(args) => {
-                assert_eq!(args.description.as_deref(), Some("from cli"));
-            }
-            _ => panic!("expected import-share-url command"),
+            Commands::Share(args) => match args.command {
+                ShareCommands::Import(args) => {
+                    assert_eq!(args.description.as_deref(), Some("from cli"));
+                }
+                _ => panic!("expected share import command"),
+            },
+            _ => panic!("expected share command"),
+        }
+    }
+
+    #[test]
+    fn parses_share_list_command() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "share",
+            "list",
+            "--data-dir",
+            "./data",
+            "https://pan.quark.cn/s/test?pwd=pass",
+        ]);
+
+        match cli.command {
+            Commands::Share(args) => match args.command {
+                ShareCommands::List(args) => {
+                    assert_eq!(args.data_dir.data_dir, "./data");
+                    assert_eq!(args.url, "https://pan.quark.cn/s/test?pwd=pass");
+                }
+                _ => panic!("expected share list command"),
+            },
+            _ => panic!("expected share command"),
         }
     }
 
