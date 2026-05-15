@@ -9,7 +9,6 @@ use crate::{
         import::MetadataLookup,
         manage_keywords::ManageKeywordsService,
         notify::PublishTelegramMessageService,
-        share_crawler::ShareCrawler,
         sync_strm::{SyncStrmConfig, SyncStrmService},
     },
     error::{AppError, AppResult},
@@ -21,13 +20,16 @@ use crate::{
         fs::tokio_file_store::TokioFileStore,
         import::{
             gateway::{
-                Pan123MediaSearchGateway, PanLibraryGateway, ShareImportGateway,
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareClientGateway,
                 TmdbMetadataGateway,
             },
             local_store::FilesystemImportLocalStore,
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
-        services::{FileIndexRuntimeService, ImportService, MediaDownloadUrlService},
+        services::{
+            FileIndexRuntimeService, ImportService, MediaDownloadUrlService,
+            ShareResolverRuntimeService,
+        },
     },
     interface::{
         http,
@@ -169,7 +171,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         file_index_service: FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(
             db.clone(),
         )),
-        share_crawler: ShareCrawler::new(ShareImportGateway::new(
+        share_resolver: ShareResolverRuntimeService::new(ShareClientGateway::new(
             pan115,
             pan123.clone(),
             pan189,

@@ -10,7 +10,10 @@ use crate::{
         event::publisher::EventBusPublisher,
         fs::tokio_file_store::TokioFileStore,
         import::{
-            gateway::{Pan123MediaSearchGateway, PanLibraryGateway, ShareClientGateway, TmdbMetadataGateway},
+            gateway::{
+                Pan123MediaSearchGateway, PanLibraryGateway, ShareClientGateway,
+                TmdbMetadataGateway,
+            },
             local_store::FilesystemImportLocalStore,
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
@@ -19,9 +22,7 @@ use crate::{
 };
 
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
-#[allow(dead_code)]
 pub type ShareResolverRuntimeService = ShareResolverService<ShareClientGateway>;
-pub type ShareSourceService = ShareClientGateway;
 pub type ImportService =
     TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
 pub type NotifyService = PublishTelegramMessageService<EventBusPublisher>;

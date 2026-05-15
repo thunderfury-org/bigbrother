@@ -1,15 +1,12 @@
 use tracing::warn;
 
 use crate::{
-    application::{
-        file_index::SeenFile,
-        import::{MetadataLookup, ShareUrl},
-        share_crawler::ShareCrawler,
-    },
+    application::{file_index::SeenFile, import::MetadataLookup, ports::share::ShareResolver},
     domain::share::RawFile,
     error::AppResult,
     infrastructure::services::{
-        FileIndexRuntimeService, ImportService, KeywordService, NotifyService, ShareSourceService,
+        FileIndexRuntimeService, ImportService, KeywordService, NotifyService,
+        ShareResolverRuntimeService,
     },
     infrastructure::share::file_parser::ShareFileParser,
     interface::telegram::file_index::{
@@ -20,7 +17,7 @@ use crate::{
 #[derive(Clone)]
 pub struct ProcessMediaSourcesHandler {
     pub file_index_service: FileIndexRuntimeService,
-    pub share_crawler: ShareCrawler<ShareSourceService>,
+    pub share_resolver: ShareResolverRuntimeService,
     pub import_service: ImportService,
     pub metadata_lookup: MetadataLookup,
     pub notify_service: NotifyService,
@@ -92,16 +89,7 @@ async fn fetch_raw_files(
 ) -> AppResult<Option<Vec<RawFile>>> {
     let result = match source {
         MediaSource::ShareUrl(url) => {
-            let parsed_url = url::Url::parse(url).map_err(|e| {
-                crate::error::AppError::InvalidParameter(format!("invalid share url: {e}"))
-            })?;
-            let share_url = ShareUrl::from(&parsed_url).ok_or_else(|| {
-                crate::error::AppError::InvalidParameter(format!("unsupported share url: {url}"))
-            })?;
-            handler
-                .share_crawler
-                .raw_files_from_share_url(&share_url)
-                .await
+            resolve_share_url_raw_files(&handler.share_resolver, url).await
         }
         MediaSource::Fslink(fslink) => ShareFileParser::parse_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
@@ -118,6 +106,21 @@ async fn fetch_raw_files(
         }
         Err(err) => Err(err),
     }
+}
+
+async fn resolve_share_url_raw_files<R: ShareResolver>(
+    resolver: &R,
+    raw_url: &str,
+) -> AppResult<Vec<RawFile>> {
+    let parsed_url = url::Url::parse(raw_url)
+        .map_err(|e| crate::error::AppError::InvalidParameter(format!("invalid share url: {e}")))?;
+
+    resolver
+        .raw_files_from_url(&parsed_url)
+        .await?
+        .ok_or_else(|| {
+            crate::error::AppError::InvalidParameter(format!("unsupported share url: {raw_url}"))
+        })
 }
 
 async fn fetch_tg_document(
@@ -169,4 +172,39 @@ async fn should_import(
 
     let text = description.as_deref().unwrap_or_default();
     keyword_service.matches_any_keyword(text).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_share_url_raw_files;
+    use crate::{
+        application::ports::share::ShareResolver,
+        domain::share::RawFile,
+        error::{AppError, AppResult},
+    };
+    use url::Url;
+
+    #[derive(Clone)]
+    struct FakeShareResolver {
+        result: Option<Vec<RawFile>>,
+    }
+
+    impl ShareResolver for FakeShareResolver {
+        async fn raw_files_from_url(&self, _url: &Url) -> AppResult<Option<Vec<RawFile>>> {
+            Ok(self.result.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_share_url_raw_files_rejects_unsupported_provider() {
+        let err = resolve_share_url_raw_files(
+            &FakeShareResolver { result: None },
+            "https://example.com/share",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::InvalidParameter(_)));
+        assert!(err.to_string().contains("unsupported share url"));
+    }
 }

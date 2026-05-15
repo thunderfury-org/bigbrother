@@ -1,14 +1,14 @@
 use url::Url;
 
 use crate::{
-    application::{self, import::MetadataLookup, share_crawler::ShareCrawler},
+    application::{file_index::SeenFile, import::MetadataLookup, ports::share::ShareResolver},
     error::{self, AppResult},
     infrastructure::{
         client,
-        import::gateway::{PanLibraryGateway, ShareImportGateway, TmdbMetadataGateway},
+        import::gateway::{PanLibraryGateway, ShareClientGateway, TmdbMetadataGateway},
         import::local_store::FilesystemImportLocalStore,
         repo::file_index::SeaOrmFileIndexRepository,
-        services::{FileIndexRuntimeService, ImportService},
+        services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
     },
 };
 
@@ -46,7 +46,7 @@ pub(crate) async fn run_import_share_url(
     let quark = client::quark::Client::new(&config.get_quark_config().cookie);
     let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
 
-    let share_crawler = ShareCrawler::new(ShareImportGateway::new(
+    let share_resolver = ShareResolverRuntimeService::new(ShareClientGateway::new(
         pan115,
         pan123.clone(),
         pan189,
@@ -67,14 +67,8 @@ pub(crate) async fn run_import_share_url(
     let file_index_service =
         FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db.clone()));
 
-    let share_url = application::import::ShareUrl::from(&url).ok_or_else(|| {
-        error::AppError::InvalidParameter(format!(
-            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
-        ))
-    })?;
-
     // Fetch raw files once
-    let raw_files = match share_crawler.raw_files_from_share_url(&share_url).await {
+    let raw_files = match resolve_share_url_raw_files(&share_resolver, &url).await {
         Ok(files) => files,
         Err(err) => {
             eprintln!("Warning: failed to fetch raw files for indexing: {err}");
@@ -84,10 +78,7 @@ pub(crate) async fn run_import_share_url(
 
     // Index: reuse raw files
     if !raw_files.is_empty() {
-        let seen: Vec<application::file_index::SeenFile> = raw_files
-            .iter()
-            .map(application::file_index::SeenFile::from_raw_file)
-            .collect();
+        let seen: Vec<SeenFile> = raw_files.iter().map(SeenFile::from_raw_file).collect();
         if let Err(err) = file_index_service
             .record_seen_files(seen, description)
             .await
@@ -173,22 +164,40 @@ fn format_file_size(size: u64) -> String {
 }
 
 fn parse_share_url(raw_url: &str) -> AppResult<Url> {
-    let url = Url::parse(raw_url).map_err(|err| {
+    Url::parse(raw_url).map_err(|err| {
         error::AppError::InvalidParameter(format!("invalid share url '{raw_url}': {err}"))
-    })?;
+    })
+}
 
-    application::import::ShareUrl::from(&url).ok_or_else(|| {
+async fn resolve_share_url_raw_files<R: ShareResolver>(
+    resolver: &R,
+    url: &Url,
+) -> AppResult<Vec<crate::domain::share::RawFile>> {
+    resolver.raw_files_from_url(url).await?.ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
-            "unsupported share url '{raw_url}', expected pan123, pan189, pan115, or quark share link"
+            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
         ))
-    })?;
-
-    Ok(url)
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{format_file_size, parse_share_url};
+    use super::{format_file_size, parse_share_url, resolve_share_url_raw_files};
+    use crate::{
+        application::ports::share::ShareResolver, domain::share::RawFile, error::AppResult,
+    };
+    use url::Url;
+
+    #[derive(Clone)]
+    struct FakeShareResolver {
+        result: Option<Vec<RawFile>>,
+    }
+
+    impl ShareResolver for FakeShareResolver {
+        async fn raw_files_from_url(&self, _url: &Url) -> AppResult<Option<Vec<RawFile>>> {
+            Ok(self.result.clone())
+        }
+    }
 
     #[test]
     fn parse_share_url_accepts_supported_provider() {
@@ -198,8 +207,28 @@ mod tests {
     }
 
     #[test]
-    fn parse_share_url_rejects_unsupported_provider() {
-        let err = parse_share_url("https://example.com/s/test").unwrap_err();
+    fn parse_share_url_accepts_unsupported_provider_for_resolver() {
+        let share_url = parse_share_url("https://example.com/s/test").unwrap();
+
+        assert_eq!(share_url.as_str(), "https://example.com/s/test");
+    }
+
+    #[test]
+    fn parse_share_url_rejects_invalid_url() {
+        let err = parse_share_url("not a url").unwrap_err();
+
+        assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
+        assert!(err.to_string().contains("invalid share url"));
+    }
+
+    #[tokio::test]
+    async fn resolve_share_url_raw_files_rejects_unsupported_provider() {
+        let err = resolve_share_url_raw_files(
+            &FakeShareResolver { result: None },
+            &Url::parse("https://example.com/s/test").unwrap(),
+        )
+        .await
+        .unwrap_err();
 
         assert!(matches!(err, crate::error::AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("unsupported share url"));
