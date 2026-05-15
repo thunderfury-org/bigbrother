@@ -8,7 +8,7 @@ use crate::{
     application::import::ImportedMedia,
     error::AppError,
     infrastructure::event_bus::Event,
-    infrastructure::share::{file_parser::ShareFileParser, url::is_supported_share_url},
+    infrastructure::share::{file_parser::ShareFileParser, pan115, pan123, pan189, quark},
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
@@ -141,7 +141,10 @@ fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
 }
 
 fn is_potential_share_url(url: &Url) -> bool {
-    is_supported_share_url(url)
+    pan123::match_url(url)
+        || pan189::match_url(url)
+        || pan115::match_url(url)
+        || quark::match_url(url)
 }
 
 // --- Notification helpers ---
@@ -238,6 +241,13 @@ mod tests {
     #[test]
     fn potential_share_url_accepts_supported_provider_host_shapes() {
         let url = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
+
+        assert!(is_potential_share_url(&url));
+    }
+
+    #[test]
+    fn potential_share_url_accepts_provider_shape_without_share_code() {
+        let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
 
         assert!(is_potential_share_url(&url));
     }

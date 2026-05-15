@@ -5,12 +5,31 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-use super::{
-    ShareClient,
-    collect::collect_pan115_directory_entries,
-    traversal::ShareTraversal,
-    url::{ShareUrl, parse_pan115_share_parts, parse_share_url},
-};
+use super::{ShareClient, collect::collect_pan115_directory_entries, traversal::ShareTraversal};
+
+pub(crate) fn match_url(url: &Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| host == "115.com" || host == "115cdn.com")
+        && url.path().starts_with("/s/")
+}
+
+pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
+    if !match_url(url) {
+        return None;
+    }
+
+    let share_code = path_segment_after_prefix(url, 1);
+    if share_code.is_empty() {
+        return None;
+    }
+
+    let receive_code = url
+        .query_pairs()
+        .find(|(key, _)| key == "password" || key == "rc")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    Some((share_code, receive_code))
+}
 
 #[derive(Clone)]
 pub struct Pan115ShareService<S> {
@@ -23,17 +42,16 @@ impl<S: ShareClient> Pan115ShareService<S> {
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Pan115(url)) = parse_share_url(url) else {
+        if !match_url(url) {
             return Err(AppError::InvalidParameter(format!(
                 "unsupported pan115 share url: {url}"
             )));
-        };
-        let (share_code, receive_code) = parse_pan115_share_parts(url);
-        if share_code.is_empty() {
+        }
+        let Some((share_code, receive_code)) = parse_share_parts(url) else {
             return Err(AppError::NotFound(format!(
                 "Can not extract share code from URL: {url}"
             )));
-        }
+        };
 
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
 
@@ -46,5 +64,31 @@ impl<S: ShareClient> Pan115ShareService<S> {
         }
 
         Ok(traversal.into_raw_files())
+    }
+}
+
+fn path_segment_after_prefix(url: &Url, index: usize) -> String {
+    url.path()
+        .strip_prefix('/')
+        .and_then(|path| path.split('/').nth(index))
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use url::Url;
+
+    use super::{match_url, parse_share_parts};
+
+    #[test]
+    fn matches_supported_pan115_urls_and_parses_share_parts() {
+        let url = Url::parse("https://115.com/s/share115?rc=recv").unwrap();
+
+        assert!(match_url(&url));
+        assert_eq!(
+            parse_share_parts(&url),
+            Some(("share115".into(), "recv".into()))
+        );
     }
 }

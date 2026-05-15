@@ -5,12 +5,29 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-use super::{
-    ShareClient,
-    collect::collect_quark_directory_entries,
-    traversal::ShareTraversal,
-    url::{ShareUrl, parse_quark_share_parts, parse_share_url},
-};
+use super::{ShareClient, collect::collect_quark_directory_entries, traversal::ShareTraversal};
+
+pub(crate) fn match_url(url: &Url) -> bool {
+    url.host_str().is_some_and(|host| host == "pan.quark.cn") && url.path().starts_with("/s/")
+}
+
+pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
+    if !match_url(url) {
+        return None;
+    }
+
+    let share_id = path_segment_after_prefix(url, 1);
+    if share_id.is_empty() {
+        return None;
+    }
+
+    let password = url
+        .query_pairs()
+        .find(|(key, _)| key == "pwd")
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    Some((share_id, password))
+}
 
 #[derive(Clone)]
 pub struct QuarkShareService<S> {
@@ -23,17 +40,16 @@ impl<S: ShareClient> QuarkShareService<S> {
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Quark(url)) = parse_share_url(url) else {
+        if !match_url(url) {
             return Err(AppError::InvalidParameter(format!(
                 "unsupported quark share url: {url}"
             )));
-        };
-        let (share_id, password) = parse_quark_share_parts(url);
-        if share_id.is_empty() {
+        }
+        let Some((share_id, password)) = parse_share_parts(url) else {
             return Err(AppError::NotFound(format!(
                 "Can not extract share id from URL: {url}"
             )));
-        }
+        };
 
         let share_info = self
             .share_source
@@ -93,6 +109,14 @@ impl<S: ShareClient> QuarkShareService<S> {
     }
 }
 
+fn path_segment_after_prefix(url: &Url, index: usize) -> String {
+    url.path()
+        .strip_prefix('/')
+        .and_then(|path| path.split('/').nth(index))
+        .unwrap_or_default()
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -100,7 +124,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::QuarkShareService;
+    use super::{QuarkShareService, match_url, parse_share_parts};
     use url::Url;
 
     use crate::{
@@ -113,6 +137,17 @@ mod tests {
     };
 
     use super::super::ShareClient;
+
+    #[test]
+    fn matches_supported_quark_urls_and_parses_share_parts() {
+        let url = Url::parse("https://pan.quark.cn/s/share-id?pwd=abc").unwrap();
+
+        assert!(match_url(&url));
+        assert_eq!(
+            parse_share_parts(&url),
+            Some(("share-id".into(), "abc".into()))
+        );
+    }
 
     type QuarkFilesByParent = HashMap<String, (Vec<QuarkFolder>, Vec<QuarkFile>)>;
 

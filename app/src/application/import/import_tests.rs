@@ -21,7 +21,7 @@ use crate::error::{AppError, AppResult};
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
 use crate::{
     domain::share::RawFile,
-    infrastructure::share::{file_parser::ShareFileParser, url::is_supported_share_url},
+    infrastructure::share::{file_parser::ShareFileParser, pan115, pan189},
 };
 
 pub(crate) struct TestImportService<L, R, M, F> {
@@ -528,14 +528,16 @@ async fn import_from_share_url_imports_sha1_tv_from_resolved_raw_files() {
 async fn import_from_share_url_rejects_pan189_web_share_without_code() {
     let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
 
-    assert!(!is_supported_share_url(&url));
+    assert!(pan189::match_url(&url));
+    assert_eq!(pan189::parse_share_code(&url), None);
 }
 
 #[tokio::test]
 async fn import_from_share_url_rejects_pan115_share_without_code() {
     let url = Url::parse("https://115.com/s/").unwrap();
 
-    assert!(!is_supported_share_url(&url));
+    assert!(pan115::match_url(&url));
+    assert_eq!(pan115::parse_share_parts(&url), None);
 }
 
 static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);

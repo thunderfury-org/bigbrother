@@ -7,12 +7,34 @@ use crate::{
 };
 
 use super::{
-    ShareClient,
-    collect::collect_pan189_directory_entries,
-    file_parser::ShareFileParser,
+    ShareClient, collect::collect_pan189_directory_entries, file_parser::ShareFileParser,
     traversal::ShareTraversal,
-    url::{ShareUrl, parse_pan189_share_code, parse_share_url},
 };
+
+pub(crate) fn match_url(url: &Url) -> bool {
+    url.host_str().is_some_and(|host| host == "cloud.189.cn")
+        && (url.path().starts_with("/t/") || url.path() == "/web/share")
+}
+
+pub(crate) fn parse_share_code(url: &Url) -> Option<String> {
+    if !match_url(url) {
+        return None;
+    }
+
+    let share_code = url
+        .query_pairs()
+        .find(|(key, value)| key == "code" && !value.is_empty())
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_else(|| {
+            if url.path().starts_with("/t/") {
+                path_segment_after_prefix(url, 1)
+            } else {
+                String::new()
+            }
+        });
+
+    (!share_code.is_empty()).then_some(share_code)
+}
 
 #[derive(Clone)]
 pub struct Pan189ShareService<S> {
@@ -25,17 +47,16 @@ impl<S: ShareClient> Pan189ShareService<S> {
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Pan189(url)) = parse_share_url(url) else {
+        if !match_url(url) {
             return Err(AppError::InvalidParameter(format!(
                 "unsupported pan189 share url: {url}"
             )));
-        };
-        let share_code = parse_pan189_share_code(url);
-        if share_code.is_empty() {
+        }
+        let Some(share_code) = parse_share_code(url) else {
             return Err(AppError::NotFound(format!(
                 "Can not extract share code from URL: {url}"
             )));
-        }
+        };
 
         let share_info = self.share_source.get_pan189_share_info(&share_code).await?;
         let mut traversal =
@@ -106,6 +127,14 @@ fn cas_context_path(name: &str) -> String {
     }
 }
 
+fn path_segment_after_prefix(url: &Url, index: usize) -> String {
+    url.path()
+        .strip_prefix('/')
+        .and_then(|path| path.split('/').nth(index))
+        .unwrap_or_default()
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -113,7 +142,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::Pan189ShareService;
+    use super::{Pan189ShareService, match_url, parse_share_code};
     use url::Url;
 
     use crate::{
@@ -125,6 +154,20 @@ mod tests {
     };
 
     use super::super::ShareClient;
+
+    #[test]
+    fn matches_supported_pan189_urls_and_parses_share_code() {
+        let path_url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
+        let query_url = Url::parse("https://cloud.189.cn/web/share?code=share189").unwrap();
+        let missing_code_url = Url::parse("https://cloud.189.cn/web/share").unwrap();
+
+        assert!(match_url(&path_url));
+        assert!(match_url(&query_url));
+        assert!(match_url(&missing_code_url));
+        assert_eq!(parse_share_code(&path_url), Some("share189".into()));
+        assert_eq!(parse_share_code(&query_url), Some("share189".into()));
+        assert_eq!(parse_share_code(&missing_code_url), None);
+    }
 
     type Pan189FilesByParent = HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>;
 

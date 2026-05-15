@@ -6,9 +6,10 @@ This repository is a Rust workspace with two crates: `app/` for the runtime appl
 ### Module Dependency Constraints
 
 - `domain` 不能依赖 `application`、`infrastructure`、`interface`
-- `application` 可以依赖 `domain`，不能依赖 `interface`
+- `application` 可以依赖 `domain`，不能依赖 `interface`/`infrastructure`
 - `infrastructure` 可以依赖 `domain` 和 `application`，用于实现端口和外部适配
-- `interface` 可以依赖 `application`，必要时通过 `application` 暴露的端口使用 `infrastructure` 组装出的服务
+- `interface` 可以依赖其他模块
+- `error` 是最底层模块，不能依赖其他
 - `infrastructure/client` 只承载底层 API 调用，不依赖其他模块
 
 ## Build, Test, and Development Commands

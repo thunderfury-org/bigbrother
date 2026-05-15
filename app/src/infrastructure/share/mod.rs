@@ -6,7 +6,6 @@ pub mod pan189;
 pub mod quark;
 pub mod resolver;
 mod traversal;
-pub mod url;
 
 use std::collections::HashMap;
 

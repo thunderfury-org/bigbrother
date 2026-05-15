@@ -5,11 +5,10 @@ use crate::{
     domain::share::RawFile,
     error::AppResult,
     infrastructure::share::{
-        pan115::Pan115ShareService,
-        pan123::Pan123ShareService,
-        pan189::Pan189ShareService,
-        quark::QuarkShareService,
-        url::{ShareUrl, parse_share_url},
+        pan115::{self, Pan115ShareService},
+        pan123::{self, Pan123ShareService},
+        pan189::{self, Pan189ShareService},
+        quark::{self, QuarkShareService},
     },
 };
 
@@ -36,12 +35,16 @@ impl<S: ShareClient> ShareResolverService<S> {
 
 impl<S: ShareClient> ShareResolver for ShareResolverService<S> {
     async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
-        match parse_share_url(url) {
-            Some(ShareUrl::Pan123(_)) => self.pan123.raw_files_from_url(url).await.map(Some),
-            Some(ShareUrl::Pan189(_)) => self.pan189.raw_files_from_url(url).await.map(Some),
-            Some(ShareUrl::Pan115(_)) => self.pan115.raw_files_from_url(url).await.map(Some),
-            Some(ShareUrl::Quark(_)) => self.quark.raw_files_from_url(url).await.map(Some),
-            None => Ok(None),
+        if pan123::match_url(url) {
+            self.pan123.raw_files_from_url(url).await.map(Some)
+        } else if pan189::match_url(url) {
+            self.pan189.raw_files_from_url(url).await.map(Some)
+        } else if pan115::match_url(url) {
+            self.pan115.raw_files_from_url(url).await.map(Some)
+        } else if quark::match_url(url) {
+            self.quark.raw_files_from_url(url).await.map(Some)
+        } else {
+            Ok(None)
         }
     }
 }
