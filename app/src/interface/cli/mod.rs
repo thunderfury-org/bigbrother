@@ -1,4 +1,5 @@
 mod config;
+mod context;
 mod handler;
 mod logger;
 pub(crate) mod server;
@@ -89,9 +90,40 @@ async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands};
+    use super::{Cli, Commands, context::CliContext};
     use clap::CommandFactory;
     use clap::Parser;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct TempCliDataDir {
+        path: PathBuf,
+    }
+
+    impl TempCliDataDir {
+        fn new() -> Self {
+            let counter = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("bigbrother-cli-{}-{counter}", std::process::id()));
+            fs::create_dir_all(path.join("config")).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempCliDataDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[test]
     fn verify_cli() {
@@ -158,5 +190,19 @@ mod tests {
             }
             _ => panic!("expected search-files command"),
         }
+    }
+
+    #[tokio::test]
+    async fn cli_context_initializes_and_reuses_db_connection() {
+        let data_dir = TempCliDataDir::new();
+        let ctx = CliContext::new(data_dir.path().to_str().unwrap()).unwrap();
+
+        let first = ctx.db().await.unwrap().clone();
+        let second = ctx.db().await.unwrap().clone();
+
+        assert!(
+            std::path::Path::new(&format!("{}/db/data.db", data_dir.path().display())).exists()
+        );
+        assert_eq!(format!("{first:?}"), format!("{second:?}"));
     }
 }

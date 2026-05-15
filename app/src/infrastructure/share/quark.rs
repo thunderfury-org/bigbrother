@@ -105,10 +105,7 @@ impl<S: QuarkShareSource> QuarkShareService<S> {
             ));
         }
 
-        let share_info = self
-            .share_source
-            .get_share_info(share_id, password)
-            .await?;
+        let share_info = self.share_source.get_share_info(share_id, password).await?;
 
         let mut traversal = ShareTraversal::new(("0".to_string(), String::new()));
         let mut file_infos: Vec<(String, String, String, u64, String)> = Vec::new();
@@ -181,11 +178,7 @@ mod tests {
     use super::{QuarkShareService, parse_share_parts};
     use url::Url;
 
-    use crate::{
-        infrastructure::client::quark,
-        domain::share::Etag,
-        error::AppResult,
-    };
+    use crate::{domain::share::Etag, error::AppResult, infrastructure::client::quark};
 
     #[test]
     fn matches_supported_quark_urls_and_parses_share_parts() {
@@ -206,11 +199,7 @@ mod tests {
     }
 
     impl super::QuarkShareSource for FakeShareClient {
-        async fn get_share_info(
-            &self,
-            _share_id: &str,
-            _password: &str,
-        ) -> AppResult<String> {
+        async fn get_share_info(&self, _share_id: &str, _password: &str) -> AppResult<String> {
             Ok("stoken".into())
         }
 

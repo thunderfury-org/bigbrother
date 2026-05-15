@@ -37,8 +37,8 @@ impl<P123, P189, P115, Q> ShareResolverService<P123, P189, P115, Q> {
     }
 }
 
-impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, Q: QuarkShareSource> ShareResolver
-    for ShareResolverService<P123, P189, P115, Q>
+impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, Q: QuarkShareSource>
+    ShareResolver for ShareResolverService<P123, P189, P115, Q>
 {
     async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>> {
         let url = url::Url::parse(url).map_err(|err| {
@@ -78,6 +78,7 @@ mod tests {
     use super::{ShareResolver, ShareResolverService};
 
     use crate::{
+        error::AppResult,
         infrastructure::{
             client::{pan115, pan123, pan189, quark},
             share::{
@@ -87,7 +88,6 @@ mod tests {
                 quark::{QuarkShareService, QuarkShareSource},
             },
         },
-        error::AppResult,
     };
 
     #[derive(Clone, Default)]
@@ -154,11 +154,7 @@ mod tests {
     struct FakeQuarkShareSource;
 
     impl QuarkShareSource for FakeQuarkShareSource {
-        async fn get_share_info(
-            &self,
-            _share_id: &str,
-            _password: &str,
-        ) -> AppResult<String> {
+        async fn get_share_info(&self, _share_id: &str, _password: &str) -> AppResult<String> {
             Ok(String::new())
         }
 

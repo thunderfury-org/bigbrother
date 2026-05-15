@@ -1,24 +1,14 @@
 use crate::{
     application::{file_index::SeenFile, import::MetadataLookup},
     error::{self, AppResult},
-    infrastructure::{
-        client,
-        import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
-        import::local_store::FilesystemImportLocalStore,
-        repo::file_index::SeaOrmFileIndexRepository,
-        services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
-        share::{
-            pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
-            quark::QuarkShareService, resolver::ShareResolver,
-        },
-    },
+    infrastructure::share::resolver::ShareResolver,
 };
 
 use crate::interface::import::{
     NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes,
 };
 
-use super::{config, connect_db, logger};
+use super::{context::CliContext, logger};
 
 pub(crate) async fn run_import_share_url(
     data_dir: &str,
@@ -30,43 +20,11 @@ pub(crate) async fn run_import_share_url(
         logger::init_console();
     }
 
-    let config = config::Manager::try_from(data_dir.trim())?;
-    let db = connect_db(&config.get_db_dir()).await?;
-
-    let pan115 = client::pan115::Client::new();
-    let pan123 = client::pan123::Client::new(
-        &config.get_pan123_config().passport,
-        &config.get_pan123_config().password,
-        &format!("{}/pan123", config.get_cache_dir()),
-    );
-    let pan189 = client::pan189::Client::new(client::pan189::AuthConfig {
-        username: config.get_pan189_config().username.clone(),
-        password: config.get_pan189_config().password.clone(),
-        cache_dir: format!("{}/pan189", config.get_cache_dir()),
-    });
-    let quark = client::quark::Client::new(&config.get_quark_config().cookie);
-    let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
-
-    let share_resolver = ShareResolverRuntimeService::new(
-        Pan123ShareService::new(pan123.clone()),
-        Pan189ShareService::new(pan189),
-        Pan115ShareService::new(pan115),
-        QuarkShareService::new(quark),
-    );
-
-    let mut import_service = ImportService::new(
-        PanLibraryGateway::new(pan123),
-        TmdbMetadataGateway::new(tmdb),
-        FilesystemImportLocalStore::new(
-            config.get_library_config().remote_path.clone(),
-            config.get_library_config().local_path.clone(),
-            config.get_media_server_config().get_strm_download_url(),
-        ),
-    );
+    let ctx = CliContext::new(data_dir)?;
+    let share_resolver = ctx.share_resolver();
+    let mut import_service = ctx.import_service();
     let mut metadata_lookup = MetadataLookup::default();
-
-    let file_index_service =
-        FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db.clone()));
+    let file_index_service = ctx.file_index_service().await?;
 
     // Fetch raw files once
     let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
@@ -114,9 +72,8 @@ pub(crate) async fn run_import_share_url(
 }
 
 pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) -> AppResult<()> {
-    let config = config::Manager::try_from(data_dir.trim())?;
-    let db = connect_db(&config.get_db_dir()).await?;
-    let service = FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db));
+    let ctx = CliContext::new(data_dir)?;
+    let service = ctx.file_index_service().await?;
     let results = service.search_files(keyword, limit).await?;
     if results.is_empty() {
         println!("未找到匹配文件");

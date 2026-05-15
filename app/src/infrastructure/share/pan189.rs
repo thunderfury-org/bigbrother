@@ -7,7 +7,8 @@ use crate::{
 };
 
 use super::{
-    collect::collect_pan189_directory_entries, file_parser::ShareFileParser, traversal::ShareTraversal,
+    collect::collect_pan189_directory_entries, file_parser::ShareFileParser,
+    traversal::ShareTraversal,
 };
 
 pub(crate) fn parse_share_code(url: &Url) -> Option<String> {
@@ -59,7 +60,9 @@ impl Pan189ShareSource for pan189::Client {
         share_mode: i32,
         parent_id: &str,
     ) -> AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)> {
-        Ok(self.list_share_files(share_id, share_mode, parent_id).await?)
+        Ok(self
+            .list_share_files(share_id, share_mode, parent_id)
+            .await?)
     }
 
     async fn download_share_file(&self, share_id: i64, file: &pan189::File) -> AppResult<Vec<u8>> {
@@ -167,8 +170,8 @@ mod tests {
     use url::Url;
 
     use crate::{
-        infrastructure::client::pan189,
         error::{AppError, AppResult},
+        infrastructure::client::pan189,
     };
 
     #[test]
@@ -227,7 +230,6 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| AppError::InvalidParameter("missing fake pan189 download".into()))
         }
-
     }
 
     #[tokio::test]
