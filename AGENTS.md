@@ -42,14 +42,23 @@ If any of the above is missing and blocks confident implementation, the requirem
 
 These are architecture rules that agents must follow. They are enforced primarily by review and module boundaries, not by a dedicated automatic architecture checker.
 
-- `domain` 不能依赖 `application`、`infrastructure`、`interface`
-- `application` 可以依赖 `domain`，不能依赖 `interface`/`infrastructure`
-- `infrastructure` 可以依赖 `domain` 和 `application`，用于实现端口和外部适配
-- `interface` 可以依赖其他模块
-- `error` 是最底层模块，不能依赖其他
-- `infrastructure/client` 是额外从严限制的区域：这里只承载底层 API 调用和协议细节，不混入业务编排、仓储拼装或跨层便利逻辑，也不依赖其他模块
+- `domain` must not depend on `application`, `infrastructure`, or `interface`
+- `application` may depend on `domain`, but must not depend on `interface` or `infrastructure`
+- `infrastructure` may depend on `domain` and `application`, and is responsible for ports and external adapters
+- `interface` may depend on other modules
+- `error` is the lowest-level module and must not depend on other modules
+- `infrastructure/client` is a stricter sub-area: it should only contain low-level API calls and protocol details, and must not absorb business orchestration, repository composition, cross-layer convenience logic, or dependencies on other modules
 
-新增功能时，优先沿用相邻现有模块的组织方式，不要额外发明跨层公共 helper 或新的“通用层”。
+When adding new functionality, prefer the organization style of adjacent existing modules rather than inventing new cross-layer helpers or another “shared” layer.
+
+### Error Handling
+
+Use `AppError` and `AppResult` as the unified application error boundary. Do not introduce new top-level error structs or parallel error enums for normal feature work.
+
+- prefer mapping new failure cases into the existing `AppError` variants
+- if a lower-level library or adapter has its own local error type, convert it back into `AppError` at the boundary instead of leaking it upward
+- keep transport-specific rendering in `interface`, but keep the underlying failure classification in `AppError`
+- if an existing `AppError` variant is insufficient, change should be explicit and justified; do not add ad hoc error structures just for one module
 
 ## Build, Test, and Development Commands
 Use the `Makefile` for common tasks:
