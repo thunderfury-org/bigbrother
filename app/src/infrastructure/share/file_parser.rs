@@ -1,31 +1,267 @@
+use base64::{Engine, engine::general_purpose};
+use serde::{Deserialize, de::Deserializer};
+use std::path::Path;
+use tracing::info;
+
 use crate::{
-    domain::{
-        import::source::{
-            parse_fslink_to_raw_files, parse_json_to_raw_files, parse_json_to_raw_files_with_context,
-        },
-        share::RawFile,
-    },
-    error::AppResult,
+    domain::share::RawFile,
+    error::{AppError, AppResult},
 };
 
 pub struct ShareFileParser;
 
 impl ShareFileParser {
+    pub fn is_fslink(content: &str) -> bool {
+        ["123FSLinkV2$", "123FLCPV2$"]
+            .iter()
+            .any(|prefix| content.starts_with(prefix))
+    }
+
     pub fn parse_fslink(fslink: &str) -> AppResult<Vec<RawFile>> {
-        parse_fslink_to_raw_files(fslink)
+        let resource = parse_fslink_resource(fslink)?;
+        Ok(raw_files_from_resource_with_context(&resource, ""))
     }
 
     pub fn parse_json_bytes(content: Vec<u8>) -> AppResult<Vec<RawFile>> {
-        parse_json_to_raw_files(content)
+        Self::parse_json_bytes_with_context(content, "")
     }
 
-    #[allow(dead_code)]
     pub fn parse_json_bytes_with_context(
         content: Vec<u8>,
         fallback_common_path: &str,
     ) -> AppResult<Vec<RawFile>> {
-        parse_json_to_raw_files_with_context(content, fallback_common_path)
+        let resource = parse_files_from_json(content)?;
+        Ok(raw_files_from_resource_with_context(
+            &resource,
+            fallback_common_path,
+        ))
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ResourceFile {
+    path: String,
+    #[serde(default, alias = "md5", alias = "sha1")]
+    etag: String,
+    #[serde(deserialize_with = "deserialize_u64_from_string_or_number")]
+    size: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ResourceJson {
+    #[serde(rename = "commonPath")]
+    common_path: String,
+    files: Vec<ResourceFile>,
+}
+
+fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFile>> {
+    let mut files = Vec::new();
+    for segment in fslink.split('$') {
+        let parts = segment.split('#').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            return Err(AppError::InvalidParameter(format!(
+                "invalid fslink: {}",
+                segment
+            )));
+        }
+
+        let size = parts[1].parse::<u64>().map_err(|_| {
+            AppError::InvalidParameter(format!("invalid fslink: {}, size is not u64", segment))
+        })?;
+
+        files.push(ResourceFile {
+            path: parts[2].to_owned(),
+            etag: parts[0].to_owned(),
+            size,
+        });
+    }
+
+    info!("parsed {} files from fslink", files.len());
+    Ok(files)
+}
+
+fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
+    let json = decode_base64_json_if_needed(json);
+
+    if let Ok(resource) = serde_json::from_slice::<ResourceJson>(&json)
+        && (!resource.files.is_empty() || !resource.common_path.is_empty())
+    {
+        return Ok(resource);
+    }
+
+    if let Ok(file) = serde_json::from_slice::<SingleResourceFile>(&json) {
+        return Ok(ResourceJson {
+            common_path: String::new(),
+            files: vec![file.into_resource_file()?],
+        });
+    }
+
+    info!("Failed to parse JSON as object format, trying array-of-arrays format");
+
+    let rows: Vec<Vec<serde_json::Value>> = serde_json::from_slice(&json)?;
+    let mut files = Vec::new();
+    for row in rows {
+        if row.len() != 3 {
+            return Err(AppError::InvalidParameter(format!(
+                "invalid json row: expected 3 elements, got {}",
+                row.len()
+            )));
+        }
+
+        let etag = row[0]
+            .as_str()
+            .ok_or_else(|| AppError::InvalidParameter("etag is not a string".into()))?
+            .to_owned();
+        let size = row[1]
+            .as_u64()
+            .ok_or_else(|| AppError::InvalidParameter("size is not a u64".into()))?;
+        let path = row[2]
+            .as_str()
+            .ok_or_else(|| AppError::InvalidParameter("path is not a string".into()))?
+            .to_owned();
+        files.push(ResourceFile { path, etag, size });
+    }
+
+    Ok(ResourceJson {
+        common_path: String::new(),
+        files,
+    })
+}
+
+fn parse_fslink_resource(fslink: &str) -> AppResult<ResourceJson> {
+    let mut resource = ResourceJson::default();
+
+    let mut fslink = fslink.find('$').map(|i| &fslink[i + 1..]).unwrap_or(fslink);
+    if let Some(i) = fslink.find('%') {
+        resource.common_path = fslink[..i].to_owned();
+        fslink = &fslink[i + 1..];
+    }
+    resource.files = parse_files_from_fslink(fslink)?;
+    Ok(resource)
+}
+
+fn raw_files_from_resource_with_context(
+    resource: &ResourceJson,
+    fallback_common_path: &str,
+) -> Vec<RawFile> {
+    let common_path = if resource.common_path.trim().is_empty() {
+        fallback_common_path
+    } else {
+        resource.common_path.as_str()
+    };
+
+    resource
+        .files
+        .iter()
+        .map(|file| {
+            let full_path = format!("{common_path}/{}", file.path);
+            let path = Path::new(full_path.as_str());
+            let parent_path = path
+                .parent()
+                .map(|p| p.to_str().unwrap_or_default())
+                .unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|p| p.to_str().unwrap_or_default())
+                .unwrap_or_default();
+
+            RawFile {
+                id: None,
+                name: name.to_owned(),
+                etag: file.etag.as_str().into(),
+                size: file.size,
+                path: parent_path.to_owned(),
+            }
+        })
+        .collect()
+}
+
+fn deserialize_u64_from_string_or_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U64Value {
+        Number(u64),
+        String(String),
+    }
+
+    match U64Value::deserialize(deserializer)? {
+        U64Value::Number(value) => Ok(value),
+        U64Value::String(value) => value.parse::<u64>().map_err(serde::de::Error::custom),
+    }
+}
+
+fn decode_base64_json_if_needed(json: Vec<u8>) -> Vec<u8> {
+    let trimmed = json
+        .iter()
+        .copied()
+        .skip_while(|byte| byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    if trimmed
+        .first()
+        .is_some_and(|byte| *byte == b'{' || *byte == b'[')
+    {
+        return json;
+    }
+
+    let Ok(text) = std::str::from_utf8(&json) else {
+        return json;
+    };
+    match general_purpose::STANDARD.decode(text.trim()) {
+        Ok(decoded) => decoded,
+        Err(_) => json,
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct SingleResourceFile {
+    path: String,
+    name: String,
+    file_name: String,
+    etag: String,
+    md5: String,
+    sha1: String,
+    size: u64,
+}
+
+impl SingleResourceFile {
+    fn into_resource_file(self) -> AppResult<ResourceFile> {
+        let path = first_non_empty([self.path, self.name, self.file_name]);
+        let etag = first_non_empty([self.etag, self.md5, self.sha1]);
+
+        if path.is_empty() {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: path is empty".into(),
+            ));
+        }
+        if etag.is_empty() {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: etag is empty".into(),
+            ));
+        }
+        if self.size == 0 {
+            return Err(AppError::InvalidParameter(
+                "invalid cas/json file: size is empty".into(),
+            ));
+        }
+
+        Ok(ResourceFile {
+            path,
+            etag,
+            size: self.size,
+        })
+    }
+}
+
+fn first_non_empty<const N: usize>(values: [String; N]) -> String {
+    values
+        .into_iter()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -33,6 +269,13 @@ mod tests {
     use super::ShareFileParser;
     use crate::{domain::share::Etag, error::AppError};
     use base64::{Engine, engine::general_purpose};
+
+    #[test]
+    fn detects_fslink_prefixes() {
+        assert!(ShareFileParser::is_fslink("123FSLinkV2$some_content"));
+        assert!(ShareFileParser::is_fslink("123FLCPV2$some_content"));
+        assert!(!ShareFileParser::is_fslink("invalid_link"));
+    }
 
     #[test]
     fn parses_fslink_with_common_path_into_raw_files() {

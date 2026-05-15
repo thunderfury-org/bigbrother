@@ -1,9 +1,11 @@
-use crate::domain::share::RawFile;
-
-use super::{
-    LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, QuarkFile, QuarkFolder,
-    share_walk::{DirectoryEntries, child_share_path},
+use crate::{
+    application::import::{
+        LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, QuarkFile, QuarkFolder,
+    },
+    domain::share::RawFile,
 };
+
+use super::traversal::{DirectoryEntries, child_share_path};
 
 pub(crate) fn collect_pan123_directory_entries(
     files: &[LibraryFile],
@@ -102,7 +104,7 @@ pub(crate) fn collect_quark_directory_entries(
         .map(|file| RawFile {
             id: None,
             name: file.name.to_owned(),
-            etag: String::new().as_str().into(),
+            etag: "".into(),
             size: file.size,
             path: parent_path.to_owned(),
         })

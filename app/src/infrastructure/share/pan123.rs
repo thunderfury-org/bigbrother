@@ -1,15 +1,12 @@
 use url::Url;
 
-use crate::{
-    application::import_ports::ShareSource,
-    domain::{
-        import::{
-            ShareUrl, share_collect::collect_pan123_directory_entries, share_walk::ShareTraversal,
-            source::parse_pan123_share_parts,
-        },
-        share::RawFile,
-    },
-    error::AppResult,
+use crate::{domain::share::RawFile, error::AppResult};
+
+use super::{
+    ShareClient,
+    collect::collect_pan123_directory_entries,
+    traversal::ShareTraversal,
+    url::{ShareUrl, parse_pan123_share_parts, parse_share_url},
 };
 
 #[derive(Clone)]
@@ -17,13 +14,13 @@ pub struct Pan123ShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareSource> Pan123ShareService<S> {
+impl<S: ShareClient> Pan123ShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Pan123(url)) = ShareUrl::from(url) else {
+        let Some(ShareUrl::Pan123(url)) = parse_share_url(url) else {
             return Err(crate::error::AppError::InvalidParameter(format!(
                 "unsupported pan123 share url: {url}"
             )));

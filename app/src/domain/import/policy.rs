@@ -218,8 +218,8 @@ pub(crate) fn select_largest_media_file<'a>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        domain::share::{Etag, RawFile},
         domain::media::Metadata,
+        domain::share::{Etag, RawFile},
     };
 
     use super::*;

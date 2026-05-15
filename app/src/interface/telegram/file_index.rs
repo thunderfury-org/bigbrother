@@ -5,9 +5,10 @@ use teloxide::types::{InlineKeyboardButtonKind, Message, MessageEntityKind};
 use url::Url;
 
 use crate::{
-    application::import::{ImportedMedia, ShareUrl, is_fslink},
+    application::import::ImportedMedia,
     error::AppError,
     infrastructure::event_bus::Event,
+    infrastructure::share::{file_parser::ShareFileParser, url::is_supported_share_url},
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
@@ -44,16 +45,14 @@ pub fn extract_media_sources(msg: &Message) -> Vec<MediaSource> {
     let urls = extract_urls_from_msg(msg);
     let mut processed_urls = HashSet::new();
     for url in urls {
-        if let Some(share_url) = ShareUrl::from(&url)
-            && processed_urls.insert(share_url.get_url().to_string())
-        {
+        if is_potential_share_url(&url) && processed_urls.insert(url.to_string()) {
             sources.push(MediaSource::ShareUrl(url.to_string()));
         }
     }
 
     // Fslines
     for line in text.lines() {
-        if is_fslink(line) {
+        if ShareFileParser::is_fslink(line) {
             sources.push(MediaSource::Fslink(line.to_owned()));
         }
     }
@@ -83,7 +82,7 @@ fn message_description_from_text(text: &str) -> Option<String> {
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .filter(|line| !is_fslink(line))
+        .filter(|line| !ShareFileParser::is_fslink(line))
         .collect::<Vec<_>>()
         .join("\n");
     let description = description.trim();
@@ -139,6 +138,10 @@ fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
             urls.push(url);
         }
     }
+}
+
+fn is_potential_share_url(url: &Url) -> bool {
+    is_supported_share_url(url)
 }
 
 // --- Notification helpers ---
@@ -207,5 +210,46 @@ mod tests {
         );
 
         assert_eq!(description, None);
+    }
+
+    #[test]
+    fn potential_share_url_ignores_plain_web_links() {
+        let url = Url::parse("https://example.com/docs/page").unwrap();
+
+        assert!(!is_potential_share_url(&url));
+    }
+
+    #[test]
+    fn potential_share_url_ignores_lookalike_non_provider_domains() {
+        let quarkus = Url::parse("https://quarkus.io/s/demo").unwrap();
+        let fake_189 = Url::parse("https://example189.com/t/demo").unwrap();
+
+        assert!(!is_potential_share_url(&quarkus));
+        assert!(!is_potential_share_url(&fake_189));
+    }
+
+    #[test]
+    fn potential_share_url_accepts_supported_share_links() {
+        let url = Url::parse("https://pan.quark.cn/s/c094a3711bcc?pwd=abc").unwrap();
+
+        assert!(is_potential_share_url(&url));
+    }
+
+    #[test]
+    fn potential_share_url_accepts_supported_provider_host_shapes() {
+        let url = Url::parse("https://cloud.189.cn/t/abc123").unwrap();
+
+        assert!(is_potential_share_url(&url));
+    }
+
+    #[test]
+    fn potential_share_url_ignores_supported_hosts_with_wrong_paths() {
+        let pan189_wrong = Url::parse("https://cloud.189.cn/s/demo").unwrap();
+        let quark_wrong = Url::parse("https://pan.quark.cn/t/demo").unwrap();
+        let pan123_wrong = Url::parse("https://www.123pan.com/web/share").unwrap();
+
+        assert!(!is_potential_share_url(&pan189_wrong));
+        assert!(!is_potential_share_url(&quark_wrong));
+        assert!(!is_potential_share_url(&pan123_wrong));
     }
 }

@@ -68,13 +68,7 @@ pub(crate) async fn run_import_share_url(
         FileIndexRuntimeService::new(SeaOrmFileIndexRepository::new(db.clone()));
 
     // Fetch raw files once
-    let raw_files = match resolve_share_url_raw_files(&share_resolver, &url).await {
-        Ok(files) => files,
-        Err(err) => {
-            eprintln!("Warning: failed to fetch raw files for indexing: {err}");
-            vec![]
-        }
-    };
+    let raw_files = resolve_share_url_raw_files(&share_resolver, &url).await?;
 
     // Index: reuse raw files
     if !raw_files.is_empty() {

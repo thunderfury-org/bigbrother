@@ -1,17 +1,17 @@
 use url::Url;
 
 use crate::{
-    application::{import::Pan189File, import_ports::ShareSource},
-    domain::{
-        import::{
-            ShareUrl,
-            share_collect::collect_pan189_directory_entries,
-            share_walk::ShareTraversal,
-            source::{parse_json_to_raw_files_with_context, parse_pan189_share_code},
-        },
-        share::RawFile,
-    },
+    application::import::Pan189File,
+    domain::share::RawFile,
     error::{AppError, AppResult},
+};
+
+use super::{
+    ShareClient,
+    collect::collect_pan189_directory_entries,
+    file_parser::ShareFileParser,
+    traversal::ShareTraversal,
+    url::{ShareUrl, parse_pan189_share_code, parse_share_url},
 };
 
 #[derive(Clone)]
@@ -19,13 +19,13 @@ pub struct Pan189ShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareSource> Pan189ShareService<S> {
+impl<S: ShareClient> Pan189ShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Pan189(url)) = ShareUrl::from(url) else {
+        let Some(ShareUrl::Pan189(url)) = parse_share_url(url) else {
             return Err(AppError::InvalidParameter(format!(
                 "unsupported pan189 share url: {url}"
             )));
@@ -77,7 +77,7 @@ impl<S: ShareSource> Pan189ShareService<S> {
                             "检测到天翼 CAS 秒传分享，需要使用自己的天翼云盘账号登录后读取 CAS 内容；请确认 pan189.username / pan189.password 可正常登录且账号未触发设备校验后重试: {e}"
                         ))
                     })?;
-                cas_raw_files.extend(parse_json_to_raw_files_with_context(
+                cas_raw_files.extend(ShareFileParser::parse_json_bytes_with_context(
                     json,
                     &cas_context_path(&candidate.file.name),
                 )?);
@@ -117,24 +117,25 @@ mod tests {
     use url::Url;
 
     use crate::{
-        application::{
-            import::{
-                Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile, QuarkFolder,
-                QuarkShareInfo,
-            },
-            import_ports::ShareSource,
+        application::import::{
+            Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile, QuarkFolder,
+            QuarkShareInfo,
         },
         error::{AppError, AppResult},
     };
 
+    use super::super::ShareClient;
+
+    type Pan189FilesByParent = HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>;
+
     #[derive(Clone, Default)]
-    struct FakeShareSource {
+    struct FakeShareClient {
         pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
-        pan189_files: Arc<Mutex<HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>>>,
+        pan189_files: Arc<Mutex<Pan189FilesByParent>>,
         pan189_downloads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     }
 
-    impl ShareSource for FakeShareSource {
+    impl ShareClient for FakeShareClient {
         async fn list_pan123_share_files(
             &self,
             _share_key: &str,
@@ -220,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn expands_cas_only_share_with_context_path() {
-        let source = FakeShareSource {
+        let source = FakeShareClient {
             pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
                 file_id: "root".into(),
                 file_name: "share-root".into(),

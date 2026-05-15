@@ -257,7 +257,7 @@ mod tests {
                 .unwrap()
                 .get(&file_id)
                 .cloned()
-                .unwrap_or_else(|| Err("not_found"));
+                .unwrap_or(Err("not_found"));
 
             match result {
                 Ok(url) => Ok(url),

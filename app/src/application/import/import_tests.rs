@@ -13,51 +13,56 @@ use base64::Engine;
 use url::Url;
 
 use super::*;
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, ShareSource,
+use crate::application::{
+    import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog},
+    ports::share::ShareResolver,
 };
-use crate::application::share_crawler::ShareCrawler;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::import::local_store::FilesystemImportLocalStore;
+use crate::{
+    domain::share::RawFile,
+    infrastructure::share::{file_parser::ShareFileParser, url::is_supported_share_url},
+};
 
-pub(crate) struct TestImportService<L, S, M, F> {
-    pub crawler: ShareCrawler<S>,
+pub(crate) struct TestImportService<L, R, M, F> {
+    pub share_resolver: R,
     pub transfer: TransferWorkflow<L, M, F>,
     pub metadata_lookup: MetadataLookup,
 }
 
-impl<L, S, M, F> TestImportService<L, S, M, F>
+impl<L, R, M, F> TestImportService<L, R, M, F>
 where
     L: LibraryGateway,
-    S: ShareSource,
+    R: ShareResolver,
     M: MetadataCatalog,
     F: ImportLocalStore,
 {
-    pub fn new(library_gateway: L, share_source: S, metadata_catalog: M, local_store: F) -> Self {
+    pub fn new(library_gateway: L, share_resolver: R, metadata_catalog: M, local_store: F) -> Self {
         Self {
-            crawler: ShareCrawler::new(share_source),
+            share_resolver,
             transfer: TransferWorkflow::new(library_gateway, metadata_catalog, local_store),
             metadata_lookup: MetadataLookup::default(),
         }
     }
 
-    pub async fn import_from_share_url(
-        &mut self,
-        url: &ShareUrl<'_>,
-    ) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = self.crawler.raw_files_from_share_url(url).await?;
+    pub async fn import_from_share_url(&mut self, url: &Url) -> AppResult<Vec<ImportedMedia>> {
+        let raw_files = self
+            .share_resolver
+            .raw_files_from_url(url)
+            .await?
+            .ok_or_else(|| AppError::InvalidParameter(format!("unsupported share url: {url}")))?;
         let media_files = self.metadata_lookup.build_media_files(raw_files);
         self.transfer.transfer_media_files(&media_files).await
     }
 
     pub async fn import_from_fslink(&mut self, fslink: &str) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = self.crawler.raw_files_from_fslink(fslink)?;
+        let raw_files = ShareFileParser::parse_fslink(fslink)?;
         let media_files = self.metadata_lookup.build_media_files(raw_files);
         self.transfer.transfer_media_files(&media_files).await
     }
 
     pub async fn import_from_json(&mut self, json: Vec<u8>) -> AppResult<Vec<ImportedMedia>> {
-        let raw_files = self.crawler.raw_files_from_json(json)?;
+        let raw_files = ShareFileParser::parse_json_bytes(json)?;
         let media_files = self.metadata_lookup.build_media_files(raw_files);
         self.transfer.transfer_media_files(&media_files).await
     }
@@ -144,16 +149,10 @@ struct FakeLibraryState {
 }
 
 #[derive(Clone, Default)]
-struct FakeShareSource {
+struct FakeShareResolver {
     calls: Arc<Mutex<Vec<String>>>,
-    pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
-    pan189_share_info: Arc<Mutex<Option<Pan189ShareInfo>>>,
-    pan189_files: Arc<Mutex<Pan189FilesByParent>>,
-    pan189_downloads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    pan115_files: Arc<Mutex<HashMap<String, Vec<Pan115FileEntry>>>>,
+    raw_files_by_url: Arc<Mutex<HashMap<String, Vec<RawFile>>>>,
 }
-
-type Pan189FilesByParent = HashMap<String, (Vec<Pan189Folder>, Vec<Pan189File>)>;
 
 #[derive(Clone, Default)]
 struct FakeMetadataCatalog;
@@ -267,101 +266,24 @@ impl LibraryGateway for FakeLibraryGateway {
     }
 }
 
-impl ShareSource for FakeShareSource {
-    async fn list_pan123_share_files(
-        &self,
-        _share_key: &str,
-        _share_password: &str,
-        parent_id: i64,
-    ) -> AppResult<Vec<LibraryFile>> {
+impl FakeShareResolver {
+    fn with_raw_files(url: &str, raw_files: Vec<RawFile>) -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            raw_files_by_url: Arc::new(Mutex::new(HashMap::from([(url.to_string(), raw_files)]))),
+        }
+    }
+}
+
+impl ShareResolver for FakeShareResolver {
+    async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
         self.calls.lock().unwrap().push("share".to_string());
         Ok(self
-            .pan123_files
+            .raw_files_by_url
             .lock()
             .unwrap()
-            .get(&parent_id)
-            .cloned()
-            .unwrap_or_default())
-    }
-    async fn get_pan189_share_info(&self, _share_code: &str) -> AppResult<Pan189ShareInfo> {
-        self.calls.lock().unwrap().push("share".to_string());
-        Ok(self
-            .pan189_share_info
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_default())
-    }
-    async fn list_pan189_share_files(
-        &self,
-        _share_id: i64,
-        _share_mode: i32,
-        parent_id: &str,
-    ) -> AppResult<(Vec<Pan189Folder>, Vec<Pan189File>)> {
-        self.calls.lock().unwrap().push("share".to_string());
-        Ok(self
-            .pan189_files
-            .lock()
-            .unwrap()
-            .get(parent_id)
-            .cloned()
-            .unwrap_or((Vec::new(), Vec::new())))
-    }
-    async fn download_pan189_share_file(
-        &self,
-        _share_id: i64,
-        file: &Pan189File,
-    ) -> AppResult<Vec<u8>> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push("share-download".to_string());
-        self.pan189_downloads
-            .lock()
-            .unwrap()
-            .get(&file.id)
-            .cloned()
-            .ok_or_else(|| AppError::InvalidParameter("missing fake pan189 download".into()))
-    }
-    async fn list_pan115_share_files(
-        &self,
-        _share_code: &str,
-        _receive_code: &str,
-        cid: &str,
-    ) -> AppResult<Vec<Pan115FileEntry>> {
-        self.calls.lock().unwrap().push("share".to_string());
-        Ok(self
-            .pan115_files
-            .lock()
-            .unwrap()
-            .get(cid)
-            .cloned()
-            .unwrap_or_default())
-    }
-    async fn get_quark_share_info(
-        &self,
-        _share_id: &str,
-        _password: &str,
-    ) -> AppResult<QuarkShareInfo> {
-        Ok(QuarkShareInfo::default())
-    }
-    async fn list_quark_share_files(
-        &self,
-        _share_id: &str,
-        _password: &str,
-        _stoken: &str,
-        _pdir_fid: &str,
-    ) -> AppResult<(Vec<QuarkFolder>, Vec<QuarkFile>)> {
-        Ok((Vec::new(), Vec::new()))
-    }
-    async fn batch_get_quark_file_md5s(
-        &self,
-        _share_id: &str,
-        _password: &str,
-        _stoken: &str,
-        _file_infos: &[(String, String)],
-    ) -> AppResult<std::collections::HashMap<String, String>> {
-        Ok(HashMap::new())
+            .get(url.as_str())
+            .cloned())
     }
 }
 
@@ -503,10 +425,11 @@ impl ImportLocalStore for FakeLocalStore {
 
 #[tokio::test]
 async fn service_delegates_to_gateway() {
-    let share_source = FakeShareSource::default();
+    let share_resolver =
+        FakeShareResolver::with_raw_files("https://www.123684.com/s/test", Vec::new());
     let mut service = TestImportService::new(
         FakeLibraryGateway::default(),
-        share_source.clone(),
+        share_resolver.clone(),
         FakeMetadataCatalog,
         FilesystemImportLocalStore::new(
             "/remote".into(),
@@ -515,62 +438,37 @@ async fn service_delegates_to_gateway() {
         ),
     );
     let url = Url::parse("https://www.123684.com/s/test").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    service.import_from_share_url(&share).await.unwrap();
+    service.import_from_share_url(&url).await.unwrap();
 
-    assert_eq!(share_source.calls.lock().unwrap().as_slice(), ["share"]);
+    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
 }
 
 #[tokio::test]
-async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
+async fn import_from_share_url_imports_tv_from_resolved_raw_files() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let share_source = FakeShareSource {
-        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
-            file_id: "root".into(),
-            file_name: "Breaking Bad (2008) {tmdb-1396}".into(),
-            share_id: 1,
-            share_mode: 2,
-        }))),
-        pan189_files: Arc::new(Mutex::new(HashMap::from([
-            (
-                "root".to_string(),
-                (
-                    vec![Pan189Folder {
-                        id: "season-1".into(),
-                        name: "Season 01".into(),
-                    }],
-                    Vec::new(),
-                ),
-            ),
-            (
-                "season-1".to_string(),
-                (
-                    Vec::new(),
-                    vec![Pan189File {
-                        id: "episode-1".into(),
-                        name: "Breaking.Bad.S01E01.1080p.mkv".into(),
-                        size: 1001,
-                        md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-                    }],
-                ),
-            ),
-        ]))),
-        ..Default::default()
-    };
+    let share_resolver = FakeShareResolver::with_raw_files(
+        "https://cloud.189.cn/t/share189",
+        vec![RawFile {
+            id: None,
+            name: "Breaking.Bad.S01E01.1080p.mkv".into(),
+            etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            size: 1001,
+            path: "Breaking Bad (2008) {tmdb-1396}/Season 01".into(),
+        }],
+    );
     let mut service = TestImportService::new(
         gateway.clone(),
-        share_source.clone(),
+        share_resolver.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
     let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    let imported = service.import_from_share_url(&share).await.unwrap();
+    let imported = service.import_from_share_url(&url).await.unwrap();
 
-    assert_eq!(share_source.calls.lock().unwrap().len(), 3);
+    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
     assert!(matches!(
         imported.as_slice(),
         [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
@@ -587,201 +485,30 @@ async fn import_from_share_url_walks_pan189_entries_and_imports_tv() {
 }
 
 #[tokio::test]
-async fn import_from_pan189_share_reports_cas_only_entries() {
-    let local_dir = unique_temp_dir();
-    let share_source = FakeShareSource {
-        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
-            file_id: "root".into(),
-            file_name: "Veil of Shadows".into(),
-            share_id: 1,
-            share_mode: 3,
-        }))),
-        pan189_files: Arc::new(Mutex::new(HashMap::from([(
-            "root".to_string(),
-            (
-                Vec::new(),
-                vec![Pan189File {
-                    id: "cas-1".into(),
-                    name: "Veil.of.Shadows.S01E01.2160p.mp4.cas".into(),
-                    size: 288,
-                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
-                }],
-            ),
-        )]))),
-        ..Default::default()
-    };
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        share_source,
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
-
-    let error = service.import_from_share_url(&share).await.unwrap_err();
-
-    assert!(error.to_string().contains("天翼 CAS 秒传分享"));
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_pan189_share_imports_downloaded_cas_entries() {
-    let local_dir = unique_temp_dir();
-    let share_source = FakeShareSource {
-        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
-            file_id: "root".into(),
-            file_name: "Breaking Bad (2008) {tmdb-1396}".into(),
-            share_id: 1,
-            share_mode: 3,
-        }))),
-        pan189_files: Arc::new(Mutex::new(HashMap::from([(
-            "root".to_string(),
-            (
-                Vec::new(),
-                vec![Pan189File {
-                    id: "cas-1".into(),
-                    name: "Breaking.Bad.S01E01.1080p.mkv.cas".into(),
-                    size: 288,
-                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
-                }],
-            ),
-        )]))),
-        pan189_downloads: Arc::new(Mutex::new(HashMap::from([(
-            "cas-1".to_string(),
-            serde_json::json!({
-                "fileName": "Breaking Bad (2008) {tmdb-1396}/Breaking.Bad.S01E01.1080p.mkv",
-                "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "size": 1001
-            })
-            .to_string()
-            .into_bytes(),
-        )]))),
-        ..Default::default()
-    };
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        share_source,
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
-
-    let imported = service.import_from_share_url(&share).await.unwrap();
-
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
-            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
-    ));
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_pan189_share_uses_cas_file_name_as_context_path() {
-    let local_dir = unique_temp_dir();
-    let share_source = FakeShareSource {
-        pan189_share_info: Arc::new(Mutex::new(Some(Pan189ShareInfo {
-            file_id: "root".into(),
-            file_name: "share-root".into(),
-            share_id: 1,
-            share_mode: 3,
-        }))),
-        pan189_files: Arc::new(Mutex::new(HashMap::from([(
-            "root".to_string(),
-            (
-                Vec::new(),
-                vec![Pan189File {
-                    id: "cas-1".into(),
-                    name: "Breaking Bad (2008) {tmdb-1396}.cas".into(),
-                    size: 288,
-                    md5: "79202e0c3975e92c12ee2b543ebcd968".into(),
-                }],
-            ),
-        )]))),
-        pan189_downloads: Arc::new(Mutex::new(HashMap::from([(
-            "cas-1".to_string(),
-            serde_json::json!({
-                "fileName": "S01E01.mp4",
-                "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "size": 1001
-            })
-            .to_string()
-            .into_bytes(),
-        )]))),
-        ..Default::default()
-    };
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        share_source,
-        FakeMetadataCatalog,
-        local_store_for(&local_dir),
-    );
-    let url = Url::parse("https://cloud.189.cn/t/share189").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
-
-    let imported = service.import_from_share_url(&share).await.unwrap();
-
-    assert!(matches!(
-        imported.as_slice(),
-        [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
-            if name == "Breaking Bad" && *season == 1 && episodes == &vec![1] && *total_size == 1001 && !has_failed
-    ));
-    let _ = fs::remove_dir_all(local_dir);
-}
-
-#[tokio::test]
-async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
+async fn import_from_share_url_imports_sha1_tv_from_resolved_raw_files() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let share_source = FakeShareSource {
-        pan115_files: Arc::new(Mutex::new(HashMap::from([
-            (
-                "0".to_string(),
-                vec![Pan115FileEntry {
-                    fid: None,
-                    cid: Some("show-1".into()),
-                    name: "Breaking Bad (2008) {tmdb-1396}".into(),
-                    size: 0,
-                    sha: None,
-                }],
-            ),
-            (
-                "show-1".to_string(),
-                vec![Pan115FileEntry {
-                    fid: None,
-                    cid: Some("season-1".into()),
-                    name: "Season 01".into(),
-                    size: 0,
-                    sha: None,
-                }],
-            ),
-            (
-                "season-1".to_string(),
-                vec![Pan115FileEntry {
-                    fid: Some("file-1".into()),
-                    cid: None,
-                    name: "Breaking.Bad.S01E01.1080p.mkv".into(),
-                    size: 1001,
-                    sha: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into()),
-                }],
-            ),
-        ]))),
-        ..Default::default()
-    };
+    let share_resolver = FakeShareResolver::with_raw_files(
+        "https://115.com/s/share115?password=recv",
+        vec![RawFile {
+            id: None,
+            name: "Breaking.Bad.S01E01.1080p.mkv".into(),
+            etag: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+            size: 1001,
+            path: "Breaking Bad (2008) {tmdb-1396}/Season 01".into(),
+        }],
+    );
     let mut service = TestImportService::new(
         gateway.clone(),
-        share_source.clone(),
+        share_resolver.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
     let url = Url::parse("https://115.com/s/share115?password=recv").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    let imported = service.import_from_share_url(&share).await.unwrap();
+    let imported = service.import_from_share_url(&url).await.unwrap();
 
-    assert_eq!(share_source.calls.lock().unwrap().len(), 3);
+    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
     assert!(matches!(
         imported.as_slice(),
         [ImportedMedia::Tv { name, season, episodes, total_size, has_failed, .. }]
@@ -798,35 +525,17 @@ async fn import_from_share_url_walks_pan115_entries_and_imports_tv() {
 }
 
 #[tokio::test]
-async fn import_from_share_url_returns_error_when_pan189_share_code_is_missing() {
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareSource::default(),
-        FakeMetadataCatalog,
-        FakeLocalStore::new(unique_temp_dir()),
-    );
+async fn import_from_share_url_rejects_pan189_web_share_without_code() {
     let url = Url::parse("https://cloud.189.cn/web/share").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    let error = service.import_from_share_url(&share).await.unwrap_err();
-
-    assert!(error.to_string().contains("Can not extract share code"));
+    assert!(!is_supported_share_url(&url));
 }
 
 #[tokio::test]
-async fn import_from_share_url_returns_error_when_pan115_share_code_is_missing() {
-    let mut service = TestImportService::new(
-        FakeLibraryGateway::default(),
-        FakeShareSource::default(),
-        FakeMetadataCatalog,
-        FakeLocalStore::new(unique_temp_dir()),
-    );
+async fn import_from_share_url_rejects_pan115_share_without_code() {
     let url = Url::parse("https://115.com/s/").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    let error = service.import_from_share_url(&share).await.unwrap_err();
-
-    assert!(error.to_string().contains("Can not extract share code"));
+    assert!(!is_supported_share_url(&url));
 }
 
 static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -880,7 +589,7 @@ async fn import_from_json_writes_strm_and_records_upload() {
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -935,12 +644,12 @@ async fn import_from_json_writes_strm_and_records_upload() {
 }
 
 #[tokio::test]
-async fn import_from_json_accepts_base64_single_file_cas_through_share_crawler() {
+async fn import_from_json_accepts_base64_single_file_cas() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -988,7 +697,7 @@ async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1084,60 +793,32 @@ async fn import_from_json_groups_tv_episodes_and_writes_season_strms() {
 async fn import_from_share_url_walks_pan123_entries_and_imports_movie() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let share_source = FakeShareSource {
-        pan123_files: Arc::new(Mutex::new(HashMap::from([
-            (
-                0,
-                vec![
-                    LibraryFile {
-                        file_id: 100,
-                        file_name: "Movies".into(),
-                        is_dir: true,
-                        size: 0,
-                        etag: String::new(),
-                    },
-                    LibraryFile {
-                        file_id: 101,
-                        file_name: "ignore.txt".into(),
-                        is_dir: false,
-                        size: 10,
-                        etag: "etag-ignore".into(),
-                    },
-                ],
-            ),
-            (
-                100,
-                vec![LibraryFile {
-                    file_id: 102,
-                    file_name: "Inception.2010.1080p.mkv".into(),
-                    is_dir: false,
-                    size: 2234,
-                    etag: "fedcba9876543210fedcba9876543210".into(),
-                }],
-            ),
-        ]))),
-        ..Default::default()
-    };
+    let share_resolver = FakeShareResolver::with_raw_files(
+        "https://www.123684.com/s/test?pwd=pass",
+        vec![RawFile {
+            id: None,
+            name: "Inception.2010.1080p.mkv".into(),
+            etag: "fedcba9876543210fedcba9876543210".into(),
+            size: 2234,
+            path: "Movies".into(),
+        }],
+    );
     let mut service = TestImportService::new(
         gateway.clone(),
-        share_source.clone(),
+        share_resolver.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
     let url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-    let share = ShareUrl::from(&url).unwrap();
 
-    let imported = service.import_from_share_url(&share).await.unwrap();
+    let imported = service.import_from_share_url(&url).await.unwrap();
 
     assert!(matches!(
         imported.as_slice(),
         [ImportedMedia::Movie { title, year, size, has_failed, .. }]
             if title == "Inception" && year == "2010" && *size == 2234 && !has_failed
     ));
-    assert_eq!(
-        share_source.calls.lock().unwrap().as_slice(),
-        ["share", "share"]
-    );
+    assert_eq!(share_resolver.calls.lock().unwrap().as_slice(), ["share"]);
 
     let state = gateway.state.lock().unwrap();
     assert_eq!(
@@ -1168,7 +849,7 @@ async fn import_from_fslink_parses_prefixed_common_path_and_writes_strm() {
     let gateway = FakeLibraryGateway::default();
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1235,7 +916,7 @@ async fn import_from_json_skips_when_existing_movie_is_not_smaller() {
     }
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1291,7 +972,7 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
 
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1342,31 +1023,28 @@ async fn import_from_json_overwrites_when_incoming_movie_is_larger() {
 async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
     let mut json_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
     let mut share_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource {
-            pan123_files: Arc::new(Mutex::new(HashMap::from([(
-                0,
-                vec![LibraryFile {
-                    file_id: 102,
-                    file_name: "Inception.2010.1080p.mkv".into(),
-                    is_dir: false,
-                    size: 2234,
-                    etag: "fedcba9876543210fedcba9876543210".into(),
-                }],
-            )]))),
-            ..Default::default()
-        },
+        FakeShareResolver::with_raw_files(
+            "https://www.123684.com/s/test?pwd=pass",
+            vec![RawFile {
+                id: None,
+                name: "Inception.2010.1080p.mkv".into(),
+                etag: "fedcba9876543210fedcba9876543210".into(),
+                size: 2234,
+                path: String::new(),
+            }],
+        ),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
     let mut fslink_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
@@ -1380,11 +1058,13 @@ async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
     }))
     .unwrap();
     let share_url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-    let share = ShareUrl::from(&share_url).unwrap();
     let fslink = "123FSLinkV2$共享目录/Movies%fedcba9876543210fedcba9876543210#2234#Inception.2010.1080p.mkv";
 
     let from_json = json_service.import_from_json(json).await.unwrap();
-    let from_share = share_service.import_from_share_url(&share).await.unwrap();
+    let from_share = share_service
+        .import_from_share_url(&share_url)
+        .await
+        .unwrap();
     let from_fslink = fslink_service.import_from_fslink(fslink).await.unwrap();
 
     assert_eq!(from_json.len(), 1);
@@ -1403,40 +1083,37 @@ async fn movie_import_contract_is_consistent_across_json_share_and_fslink() {
 async fn tv_import_contract_is_consistent_across_json_share_and_fslink() {
     let mut json_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
     let mut share_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource {
-            pan123_files: Arc::new(Mutex::new(HashMap::from([(
-                0,
-                vec![
-                    LibraryFile {
-                        file_id: 201,
-                        file_name: "Breaking.Bad.2008.S01E01.1080p.mkv".into(),
-                        is_dir: false,
-                        size: 1001,
-                        etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-                    },
-                    LibraryFile {
-                        file_id: 202,
-                        file_name: "Breaking.Bad.2008.S01E02.1080p.mkv".into(),
-                        is_dir: false,
-                        size: 1002,
-                        etag: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-                    },
-                ],
-            )]))),
-            ..Default::default()
-        },
+        FakeShareResolver::with_raw_files(
+            "https://www.123684.com/s/test?pwd=pass",
+            vec![
+                RawFile {
+                    id: None,
+                    name: "Breaking.Bad.2008.S01E01.1080p.mkv".into(),
+                    etag: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                    size: 1001,
+                    path: String::new(),
+                },
+                RawFile {
+                    id: None,
+                    name: "Breaking.Bad.2008.S01E02.1080p.mkv".into(),
+                    etag: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                    size: 1002,
+                    path: String::new(),
+                },
+            ],
+        ),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
     let mut fslink_service = TestImportService::new(
         FakeLibraryGateway::default(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&unique_temp_dir()),
     );
@@ -1457,11 +1134,13 @@ async fn tv_import_contract_is_consistent_across_json_share_and_fslink() {
     }))
     .unwrap();
     let share_url = Url::parse("https://www.123684.com/s/test?pwd=pass").unwrap();
-    let share = ShareUrl::from(&share_url).unwrap();
     let fslink = "123FSLinkV2$共享目录/TV%aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#1001#Breaking.Bad.2008.S01E01.1080p.mkv$bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#1002#Breaking.Bad.2008.S01E02.1080p.mkv";
 
     let from_json = json_service.import_from_json(json).await.unwrap();
-    let from_share = share_service.import_from_share_url(&share).await.unwrap();
+    let from_share = share_service
+        .import_from_share_url(&share_url)
+        .await
+        .unwrap();
     let from_fslink = fslink_service.import_from_fslink(fslink).await.unwrap();
 
     assert_eq!(from_json.len(), 1);
@@ -1497,7 +1176,7 @@ async fn import_from_json_skips_existing_tv_episode_when_existing_is_not_smaller
     }
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1571,7 +1250,7 @@ async fn import_from_json_overwrites_existing_tv_episode_when_incoming_is_larger
 
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1634,7 +1313,7 @@ async fn import_from_json_returns_error_when_library_dir_creation_fails() {
     gateway.state.lock().unwrap().fail_mkdir_path = true;
     let mut service = TestImportService::new(
         gateway,
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1666,7 +1345,7 @@ async fn import_from_json_marks_movie_failed_when_upload_returns_none() {
     gateway.state.lock().unwrap().md5_upload_returns_none = true;
     let mut service = TestImportService::new(
         gateway.clone(),
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
     );
@@ -1731,7 +1410,7 @@ async fn import_from_json_returns_error_when_local_cleanup_fails_on_overwrite() 
     local_store.fail_remove = true;
     let mut service = TestImportService::new(
         gateway,
-        FakeShareSource::default(),
+        FakeShareResolver::default(),
         FakeMetadataCatalog,
         local_store,
     );

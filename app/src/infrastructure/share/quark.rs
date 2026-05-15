@@ -1,15 +1,15 @@
 use url::Url;
 
 use crate::{
-    application::import_ports::ShareSource,
-    domain::{
-        import::{
-            ShareUrl, share_collect::collect_quark_directory_entries, share_walk::ShareTraversal,
-            source::parse_quark_share_parts,
-        },
-        share::RawFile,
-    },
+    domain::share::RawFile,
     error::{AppError, AppResult},
+};
+
+use super::{
+    ShareClient,
+    collect::collect_quark_directory_entries,
+    traversal::ShareTraversal,
+    url::{ShareUrl, parse_quark_share_parts, parse_share_url},
 };
 
 #[derive(Clone)]
@@ -17,13 +17,13 @@ pub struct QuarkShareService<S> {
     share_source: S,
 }
 
-impl<S: ShareSource> QuarkShareService<S> {
+impl<S: ShareClient> QuarkShareService<S> {
     pub fn new(share_source: S) -> Self {
         Self { share_source }
     }
 
     pub async fn raw_files_from_url(&self, url: &Url) -> AppResult<Vec<RawFile>> {
-        let Some(ShareUrl::Quark(url)) = ShareUrl::from(url) else {
+        let Some(ShareUrl::Quark(url)) = parse_share_url(url) else {
             return Err(AppError::InvalidParameter(format!(
                 "unsupported quark share url: {url}"
             )));
@@ -104,24 +104,25 @@ mod tests {
     use url::Url;
 
     use crate::{
-        application::{
-            import::{
-                LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
-                QuarkFolder, QuarkShareInfo,
-            },
-            import_ports::ShareSource,
+        application::import::{
+            LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
+            QuarkFolder, QuarkShareInfo,
         },
         domain::share::Etag,
         error::AppResult,
     };
 
+    use super::super::ShareClient;
+
+    type QuarkFilesByParent = HashMap<String, (Vec<QuarkFolder>, Vec<QuarkFile>)>;
+
     #[derive(Clone, Default)]
-    struct FakeShareSource {
-        quark_files: Arc<Mutex<HashMap<String, (Vec<QuarkFolder>, Vec<QuarkFile>)>>>,
+    struct FakeShareClient {
+        quark_files: Arc<Mutex<QuarkFilesByParent>>,
         quark_md5s: Arc<Mutex<HashMap<String, String>>>,
     }
 
-    impl ShareSource for FakeShareSource {
+    impl ShareClient for FakeShareClient {
         async fn list_pan123_share_files(
             &self,
             _share_key: &str,
@@ -200,7 +201,7 @@ mod tests {
 
     #[tokio::test]
     async fn fills_raw_file_md5_from_batch_lookup() {
-        let source = FakeShareSource {
+        let source = FakeShareClient {
             quark_files: Arc::new(Mutex::new(HashMap::from([
                 (
                     "0".to_string(),

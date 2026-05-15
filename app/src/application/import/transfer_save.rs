@@ -1,8 +1,8 @@
 mod finalize;
 mod upload;
 
-use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::domain::import::policy::format_video_file_name;
+use crate::domain::{import::inner::MediaFile, share::RawFile};
 
 use super::{
     TransferWorkflow,

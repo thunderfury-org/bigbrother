@@ -7,11 +7,14 @@ use crate::{
         Season, TvDetail,
     },
     application::{
-        import_ports::{LibraryGateway, MetadataCatalog, ShareSource},
+        import_ports::{LibraryGateway, MetadataCatalog},
         ports::{MediaDirectoryRecord, MediaSearchSource},
     },
     error::AppResult,
-    infrastructure::client::{pan115, pan123, pan189, quark, tmdb},
+    infrastructure::{
+        client::{pan115, pan123, pan189, quark, tmdb},
+        share::ShareClient,
+    },
 };
 
 #[derive(Clone)]
@@ -26,8 +29,6 @@ pub struct ShareClientGateway {
     pan189: pan189::Client,
     quark: quark::Client,
 }
-
-pub type ShareImportGateway = ShareClientGateway;
 
 #[derive(Clone)]
 pub struct TmdbMetadataGateway {
@@ -284,7 +285,7 @@ impl LibraryGateway for PanLibraryGateway {
     }
 }
 
-impl ShareSource for ShareClientGateway {
+impl ShareClient for ShareClientGateway {
     async fn list_pan123_share_files(
         &self,
         share_key: &str,

@@ -1,14 +1,19 @@
 use url::Url;
 
 use crate::{
-    application::{import_ports::ShareSource, ports::share::ShareResolver},
-    domain::{import::ShareUrl, share::RawFile},
+    application::ports::share::ShareResolver,
+    domain::share::RawFile,
     error::AppResult,
     infrastructure::share::{
-        pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
+        pan115::Pan115ShareService,
+        pan123::Pan123ShareService,
+        pan189::Pan189ShareService,
         quark::QuarkShareService,
+        url::{ShareUrl, parse_share_url},
     },
 };
+
+use super::ShareClient;
 
 #[derive(Clone)]
 pub struct ShareResolverService<S> {
@@ -18,7 +23,7 @@ pub struct ShareResolverService<S> {
     quark: QuarkShareService<S>,
 }
 
-impl<S: ShareSource> ShareResolverService<S> {
+impl<S: ShareClient> ShareResolverService<S> {
     pub fn new(share_source: S) -> Self {
         Self {
             pan115: Pan115ShareService::new(share_source.clone()),
@@ -29,9 +34,9 @@ impl<S: ShareSource> ShareResolverService<S> {
     }
 }
 
-impl<S: ShareSource> ShareResolver for ShareResolverService<S> {
+impl<S: ShareClient> ShareResolver for ShareResolverService<S> {
     async fn raw_files_from_url(&self, url: &Url) -> AppResult<Option<Vec<RawFile>>> {
-        match ShareUrl::from(url) {
+        match parse_share_url(url) {
             Some(ShareUrl::Pan123(_)) => self.pan123.raw_files_from_url(url).await.map(Some),
             Some(ShareUrl::Pan189(_)) => self.pan189.raw_files_from_url(url).await.map(Some),
             Some(ShareUrl::Pan115(_)) => self.pan115.raw_files_from_url(url).await.map(Some),
@@ -57,18 +62,17 @@ mod tests {
                 LibraryFile, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo, QuarkFile,
                 QuarkFolder, QuarkShareInfo,
             },
-            import_ports::ShareSource,
             ports::share::ShareResolver,
         },
         error::AppResult,
     };
 
     #[derive(Clone, Default)]
-    struct FakeShareSource {
+    struct FakeShareClient {
         pan123_files: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
     }
 
-    impl ShareSource for FakeShareSource {
+    impl super::super::ShareClient for FakeShareClient {
         async fn list_pan123_share_files(
             &self,
             _share_key: &str,
@@ -145,7 +149,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_none_for_unsupported_url() {
-        let resolver = ShareResolverService::new(FakeShareSource::default());
+        let resolver = ShareResolverService::new(FakeShareClient::default());
 
         let result = resolver
             .raw_files_from_url(&Url::parse("https://example.com/share").unwrap())
@@ -157,7 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn routes_pan123_urls_to_pan123_service() {
-        let resolver = ShareResolverService::new(FakeShareSource {
+        let resolver = ShareResolverService::new(FakeShareClient {
             pan123_files: Arc::new(Mutex::new(HashMap::from([(
                 0,
                 vec![LibraryFile {

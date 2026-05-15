@@ -16,7 +16,6 @@ pub(crate) use crate::domain::import::{
     Genre, LibraryFile, MovieDetail, Pan115FileEntry, Pan189File, Pan189Folder, Pan189ShareInfo,
     QuarkFile, QuarkFolder, QuarkShareInfo, SearchMovieResult, SearchTvResult, Season, TvDetail,
 };
-pub(crate) use crate::domain::import::{ShareUrl, is_fslink};
 pub(crate) use factory::TransferWorkflow;
 pub(crate) use metadata::MetadataLookup;
 pub(crate) use model::ImportedMedia;
