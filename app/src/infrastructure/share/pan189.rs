@@ -11,13 +11,10 @@ use super::{
     traversal::ShareTraversal,
 };
 
-pub(crate) fn match_url(url: &Url) -> bool {
-    url.host_str().is_some_and(|host| host == "cloud.189.cn")
-        && (url.path().starts_with("/t/") || url.path() == "/web/share")
-}
-
 pub(crate) fn parse_share_code(url: &Url) -> Option<String> {
-    if !match_url(url) {
+    if !(url.host_str().is_some_and(|host| host == "cloud.189.cn")
+        && (url.path().starts_with("/t/") || url.path() == "/web/share"))
+    {
         return None;
     }
 
@@ -137,7 +134,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::{Pan189ShareService, match_url, parse_share_code};
+    use super::{Pan189ShareService, parse_share_code};
     use url::Url;
 
     use crate::{
@@ -156,9 +153,6 @@ mod tests {
         let query_url = Url::parse("https://cloud.189.cn/web/share?code=share189").unwrap();
         let missing_code_url = Url::parse("https://cloud.189.cn/web/share").unwrap();
 
-        assert!(match_url(&path_url));
-        assert!(match_url(&query_url));
-        assert!(match_url(&missing_code_url));
         assert_eq!(parse_share_code(&path_url), Some("share189".into()));
         assert_eq!(parse_share_code(&query_url), Some("share189".into()));
         assert_eq!(parse_share_code(&missing_code_url), None);

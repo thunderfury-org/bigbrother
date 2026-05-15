@@ -7,12 +7,9 @@ use crate::{
 
 use super::{ShareClient, collect::collect_quark_directory_entries, traversal::ShareTraversal};
 
-pub(crate) fn match_url(url: &Url) -> bool {
-    url.host_str().is_some_and(|host| host == "pan.quark.cn") && url.path().starts_with("/s/")
-}
-
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
-    if !match_url(url) {
+    if !(url.host_str().is_some_and(|host| host == "pan.quark.cn") && url.path().starts_with("/s/"))
+    {
         return None;
     }
 
@@ -123,7 +120,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use super::{QuarkShareService, match_url, parse_share_parts};
+    use super::{QuarkShareService, parse_share_parts};
     use url::Url;
 
     use crate::{
@@ -141,7 +138,6 @@ mod tests {
     fn matches_supported_quark_urls_and_parses_share_parts() {
         let url = Url::parse("https://pan.quark.cn/s/share-id?pwd=abc").unwrap();
 
-        assert!(match_url(&url));
         assert_eq!(
             parse_share_parts(&url),
             Some(("share-id".into(), "abc".into()))

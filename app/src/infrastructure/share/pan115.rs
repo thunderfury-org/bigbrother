@@ -7,14 +7,12 @@ use crate::{
 
 use super::{ShareClient, collect::collect_pan115_directory_entries, traversal::ShareTraversal};
 
-pub(crate) fn match_url(url: &Url) -> bool {
-    url.host_str()
-        .is_some_and(|host| host == "115.com" || host == "115cdn.com")
-        && url.path().starts_with("/s/")
-}
-
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
-    if !match_url(url) {
+    if !(url
+        .host_str()
+        .is_some_and(|host| host == "115.com" || host == "115cdn.com")
+        && url.path().starts_with("/s/"))
+    {
         return None;
     }
 
@@ -78,13 +76,12 @@ fn path_segment_after_prefix(url: &Url, index: usize) -> String {
 mod tests {
     use url::Url;
 
-    use super::{match_url, parse_share_parts};
+    use super::parse_share_parts;
 
     #[test]
     fn matches_supported_pan115_urls_and_parses_share_parts() {
         let url = Url::parse("https://115.com/s/share115?rc=recv").unwrap();
 
-        assert!(match_url(&url));
         assert_eq!(
             parse_share_parts(&url),
             Some(("share115".into(), "recv".into()))
@@ -95,7 +92,6 @@ mod tests {
     fn accepts_pan115_url_shape_but_rejects_missing_share_code() {
         let url = Url::parse("https://115.com/s/").unwrap();
 
-        assert!(match_url(&url));
         assert_eq!(parse_share_parts(&url), None);
     }
 }

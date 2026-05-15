@@ -7,16 +7,19 @@ use crate::{
 
 use super::{ShareClient, collect::collect_pan123_directory_entries, traversal::ShareTraversal};
 
-pub(crate) fn match_url(url: &Url) -> bool {
-    url.host_str().is_some_and(is_pan123_host) && is_pan123_share_path(url)
-}
-
 pub(crate) fn parse_share_parts(url: &Url) -> Option<(String, String)> {
-    if !match_url(url) {
+    if !(url.host_str().is_some_and(|host| {
+        (host.starts_with("www.123") || host.contains(".share.123")) && host.ends_with(".com")
+    }) && (url.path().starts_with("/s/") || url.path().starts_with("/123")))
+    {
         return None;
     }
 
-    let share_key = path_segment_after_prefix(url, 1);
+    let share_key = url
+        .path_segments()
+        .map(|mut segments| segments.next_back().unwrap_or_default())
+        .unwrap_or_default()
+        .to_owned();
     if share_key.is_empty() {
         return None;
     }
@@ -64,41 +67,16 @@ impl<S: ShareClient> Pan123ShareService<S> {
     }
 }
 
-fn is_pan123_host(host: &str) -> bool {
-    host == "www.123pan.com" || host == "www.123684.com" || host.ends_with(".share.123865.com")
-}
-
-fn is_pan123_share_path(url: &Url) -> bool {
-    let Some(host) = url.host_str() else {
-        return false;
-    };
-
-    if host == "www.123pan.com" || host == "www.123684.com" {
-        return url.path().starts_with("/s/");
-    }
-
-    host.ends_with(".share.123865.com") && url.path().starts_with("/123pan/")
-}
-
-fn path_segment_after_prefix(url: &Url, index: usize) -> String {
-    url.path()
-        .strip_prefix('/')
-        .and_then(|path| path.split('/').nth(index))
-        .unwrap_or_default()
-        .to_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use url::Url;
 
-    use super::{match_url, parse_share_parts};
+    use super::parse_share_parts;
 
     #[test]
     fn matches_supported_pan123_urls_and_parses_share_parts() {
         let url = Url::parse("https://www.123684.com/s/share-key?pwd=pass").unwrap();
 
-        assert!(match_url(&url));
         assert_eq!(
             parse_share_parts(&url),
             Some(("share-key".into(), "pass".into()))
