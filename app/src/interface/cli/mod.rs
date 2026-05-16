@@ -3,6 +3,7 @@ mod context;
 mod handler;
 mod logger;
 pub(crate) mod server;
+mod telegram_export;
 
 use migration::{Migrator, MigratorTrait};
 use sea_orm::DatabaseConnection;
@@ -22,6 +23,7 @@ pub enum Commands {
     Server(DataDirArgs),
     Share(ShareArgs),
     SearchFiles(SearchFilesArgs),
+    TelegramExport(TelegramExportArgs),
 }
 
 #[derive(Args)]
@@ -30,12 +32,24 @@ pub struct ShareArgs {
     pub command: ShareCommands,
 }
 
+#[derive(Args)]
+pub struct TelegramExportArgs {
+    #[command(subcommand)]
+    pub command: TelegramExportCommands,
+}
+
 #[derive(Subcommand)]
 pub enum ShareCommands {
     /// 列出分享链接中的文件
     List(ShareListArgs),
     /// 导入分享链接中的媒体文件
     Import(ImportShareUrlArgs),
+}
+
+#[derive(Subcommand)]
+pub enum TelegramExportCommands {
+    /// 从 Telegram Desktop 导出文件建立文件索引
+    Index(TelegramExportIndexArgs),
 }
 
 #[derive(Args)]
@@ -72,6 +86,20 @@ pub struct SearchFilesArgs {
     pub keyword: String,
 }
 
+#[derive(Args)]
+pub struct TelegramExportIndexArgs {
+    #[command(flatten)]
+    pub data_dir: DataDirArgs,
+    #[arg(short, long)]
+    pub input: String,
+    #[arg(long)]
+    pub state_file: String,
+    #[arg(short, long)]
+    pub verbose: bool,
+    #[arg(long)]
+    pub retry_all: bool,
+}
+
 pub async fn run(cli: Cli) -> AppResult<()> {
     match cli.command {
         Commands::Server(args) => server::run(&args.data_dir).await,
@@ -93,6 +121,18 @@ pub async fn run(cli: Cli) -> AppResult<()> {
             handler::run_search_files(args.data_dir.data_dir.as_str(), &args.keyword, args.limit)
                 .await
         }
+        Commands::TelegramExport(args) => match args.command {
+            TelegramExportCommands::Index(args) => {
+                handler::run_telegram_export_index(
+                    args.data_dir.data_dir.as_str(),
+                    args.input.as_str(),
+                    args.state_file.as_str(),
+                    args.verbose,
+                    args.retry_all,
+                )
+                .await
+            }
+        },
     }
 }
 
@@ -116,7 +156,7 @@ async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, ShareCommands, context::CliContext};
+    use super::{Cli, Commands, ShareCommands, TelegramExportCommands, context::CliContext};
     use clap::CommandFactory;
     use clap::Parser;
     use std::{
@@ -246,6 +286,36 @@ mod tests {
                 assert_eq!(args.limit, 50);
             }
             _ => panic!("expected search-files command"),
+        }
+    }
+
+    #[test]
+    fn parses_telegram_export_index_command() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "telegram-export",
+            "index",
+            "--data-dir",
+            "./data",
+            "--input",
+            "/tmp/result.json",
+            "--state-file",
+            "/tmp/telegram-export-state.json",
+            "--verbose",
+            "--retry-all",
+        ]);
+
+        match cli.command {
+            Commands::TelegramExport(args) => match args.command {
+                TelegramExportCommands::Index(args) => {
+                    assert_eq!(args.data_dir.data_dir, "./data");
+                    assert_eq!(args.input, "/tmp/result.json");
+                    assert_eq!(args.state_file, "/tmp/telegram-export-state.json");
+                    assert!(args.verbose);
+                    assert!(args.retry_all);
+                }
+            },
+            _ => panic!("expected telegram-export command"),
         }
     }
 

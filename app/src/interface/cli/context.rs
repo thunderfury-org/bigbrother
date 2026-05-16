@@ -125,4 +125,11 @@ impl CliContext {
         let db = self.db().await?.clone();
         Ok(ManageKeywordsService::new(SeaOrmKeywordRepository::new(db)))
     }
+
+    pub(super) async fn telegram_export_index_services(
+        &self,
+    ) -> AppResult<(ShareResolverRuntimeService, SeaOrmFileIndexRepository)> {
+        let db = self.db().await?.clone();
+        Ok((self.share_resolver(), SeaOrmFileIndexRepository::new(db)))
+    }
 }
