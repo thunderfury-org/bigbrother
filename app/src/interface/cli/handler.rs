@@ -1,5 +1,5 @@
 use crate::{
-    application::{file_index::SeenFile, import::MetadataLookup},
+    application::import::MetadataLookup,
     error::{self, AppResult},
     infrastructure::share::resolver::ShareResolver,
 };
@@ -31,9 +31,8 @@ pub(crate) async fn run_import_share_url(
 
     // Index: reuse raw files
     if !raw_files.is_empty() {
-        let seen: Vec<SeenFile> = raw_files.iter().map(SeenFile::from_raw_file).collect();
         if let Err(err) = file_index_service
-            .record_seen_files(seen, description)
+            .record_raw_files(raw_files.clone(), description)
             .await
         {
             eprintln!("Warning: failed to index share url: {err}");
@@ -93,17 +92,19 @@ pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) 
     }
 
     for (index, record) in results.iter().enumerate() {
-        println!("{}. {}", index + 1, record.file_name);
-        println!("   path: {}", record.file_path);
+        let display_name = record
+            .locations
+            .first()
+            .map(|location| location.file_name.as_str())
+            .unwrap_or("(unknown)");
+        println!("{}. {}", index + 1, display_name);
         println!("   size: {}", format_file_size(record.size));
-        if let Some(md5) = &record.md5 {
-            println!("   md5: {md5}");
-        }
-        if let Some(sha1) = &record.sha1 {
-            println!("   sha1: {sha1}");
-        }
-        for description in record.descriptions.iter().take(3) {
-            println!("   description: {description}");
+        println!("   {}: {}", record.hash_type, record.hash_value);
+        for location in &record.locations {
+            println!("   path: {}", location.file_path);
+            for description in location.descriptions.iter().take(3) {
+                println!("   description: {description}");
+            }
         }
     }
 
@@ -140,9 +141,9 @@ fn format_share_list_output(raw_files: &[crate::domain::share::RawFile]) -> Vec<
         lines.push(format!("{}. {}", index + 1, file.name));
         lines.push(format!("   path: {}", display_share_path(&file.path)));
         lines.push(format!("   size: {}", format_file_size(file.size)));
-        match &file.etag {
-            crate::domain::share::Etag::Md5(value) => lines.push(format!("   md5: {value}")),
-            crate::domain::share::Etag::Sha1(value) => lines.push(format!("   sha1: {value}")),
+        match &file.hash {
+            crate::domain::share::FileHash::Md5(value) => lines.push(format!("   md5: {value}")),
+            crate::domain::share::FileHash::Sha1(value) => lines.push(format!("   sha1: {value}")),
         }
         if index + 1 < raw_files.len() {
             lines.push(String::new());
@@ -178,7 +179,7 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 mod tests {
     use super::{format_file_size, format_share_list_output, resolve_share_url_raw_files};
     use crate::{
-        domain::share::{Etag, RawFile},
+        domain::share::{FileHash, RawFile},
         error::AppResult,
         infrastructure::share::resolver::ShareResolver,
     };
@@ -222,14 +223,14 @@ mod tests {
             RawFile {
                 id: Some(1),
                 name: "Movie.mkv".into(),
-                etag: Etag::Md5("abcdef0123456789abcdef0123456789".into()),
+                hash: FileHash::Md5("abcdef0123456789abcdef0123456789".into()),
                 size: 6_517_230_688,
                 path: String::new(),
             },
             RawFile {
                 id: None,
                 name: "Episode 01.mkv".into(),
-                etag: Etag::Sha1("abcdef0123456789abcdef0123456789abcdef01".into()),
+                hash: FileHash::Sha1("abcdef0123456789abcdef0123456789abcdef01".into()),
                 size: 512,
                 path: "/Show/Season 01".into(),
             },

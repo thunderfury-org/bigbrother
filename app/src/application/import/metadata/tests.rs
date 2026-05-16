@@ -1,11 +1,11 @@
 use crate::application::import::metadata::MetadataLookup;
-use crate::domain::share::{Etag, RawFile};
+use crate::domain::share::{FileHash, RawFile};
 
 fn raw_file(name: &str, path: &str) -> RawFile {
     RawFile {
         id: None,
         name: name.to_string(),
-        etag: Etag::Md5("etag".to_string()),
+        hash: FileHash::Md5("hash".to_string()),
         size: 1,
         path: path.to_string(),
     }

@@ -48,7 +48,7 @@ pub(crate) fn child_share_path(parent_path: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::share::Etag;
+    use crate::domain::share::FileHash;
 
     #[test]
     fn share_traversal_collects_nested_entries() {
@@ -58,7 +58,7 @@ mod tests {
             vec![RawFile {
                 id: Some(2),
                 name: "movie.mkv".into(),
-                etag: Etag::Md5("etag".into()),
+                hash: FileHash::Md5("hash".into()),
                 size: 100,
                 path: "/root".into(),
             }],

@@ -19,7 +19,7 @@ pub(crate) fn collect_pan123_directory_entries(
             raw_files.push(RawFile {
                 id: Some(file.file_id),
                 name: file.file_name.to_owned(),
-                etag: file.etag.as_str().into(),
+                hash: file.etag.as_str().into(),
                 size: file.size,
                 path: parent_path.to_owned(),
             });
@@ -49,7 +49,7 @@ pub(crate) fn collect_pan189_directory_entries(
         .map(|file| RawFile {
             id: None,
             name: file.name.to_owned(),
-            etag: file.md5.as_str().into(),
+            hash: file.md5.as_str().into(),
             size: file.size,
             path: parent_path.to_owned(),
         })
@@ -70,7 +70,7 @@ pub(crate) fn collect_pan115_directory_entries(
             raw_files.push(RawFile {
                 id: None,
                 name: entry.name.to_owned(),
-                etag: entry.sha.as_deref().unwrap_or_default().into(),
+                hash: entry.sha.as_deref().unwrap_or_default().into(),
                 size: entry.size,
                 path: parent_path.to_owned(),
             });
@@ -102,7 +102,7 @@ pub(crate) fn collect_quark_directory_entries(
         .map(|file| RawFile {
             id: None,
             name: file.file_name.to_owned(),
-            etag: "".into(),
+            hash: "".into(),
             size: file.size,
             path: parent_path.to_owned(),
         })
@@ -114,7 +114,7 @@ pub(crate) fn collect_quark_directory_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::share::Etag;
+    use crate::domain::share::FileHash;
 
     #[test]
     fn collect_pan123_directory_entries_splits_dirs_and_files() {
@@ -136,7 +136,7 @@ mod tests {
                 size: 100,
                 _created_at: time::OffsetDateTime::UNIX_EPOCH,
                 _updated_at: time::OffsetDateTime::UNIX_EPOCH,
-                etag: "etag".into(),
+                etag: "hash".into(),
                 abs_path: String::new(),
             },
         ];
@@ -168,7 +168,7 @@ mod tests {
             vec![("next".into(), "/parent/folder".into())]
         );
         assert_eq!(entries.raw_files.len(), 1);
-        assert!(matches!(&entries.raw_files[0].etag, Etag::Md5(value) if value == "md5"));
+        assert!(matches!(&entries.raw_files[0].hash, FileHash::Md5(value) if value == "md5"));
     }
 
     #[test]

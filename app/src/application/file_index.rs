@@ -2,41 +2,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
-    domain::share::{Etag, RawFile},
+    domain::share::RawFile,
     error::AppResult,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SeenFileHash {
-    Md5(String),
-    Sha1(String),
-    #[allow(dead_code)]
-    Unknown(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeenFile {
-    pub size: u64,
-    pub hash: SeenFileHash,
-    pub file_name: String,
-    pub file_path: String,
-}
-
-impl SeenFile {
-    pub fn from_raw_file(file: &RawFile) -> Self {
-        let hash = match &file.etag {
-            Etag::Md5(value) => SeenFileHash::Md5(value.clone()),
-            Etag::Sha1(value) => SeenFileHash::Sha1(value.clone()),
-        };
-
-        Self {
-            size: file.size,
-            hash,
-            file_name: file.name.clone(),
-            file_path: file.path.clone(),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct FileIndexService<R> {
@@ -53,9 +21,9 @@ impl<R> FileIndexService<R>
 where
     R: FileIndexRepository,
 {
-    pub async fn record_seen_files(
+    pub async fn record_raw_files(
         &self,
-        files: Vec<SeenFile>,
+        files: Vec<RawFile>,
         description: Option<String>,
     ) -> AppResult<()> {
         let description = normalize_optional_text(description);
@@ -88,36 +56,25 @@ pub fn description_hash(description: &str) -> String {
     hash_hex(description.trim())
 }
 
-fn to_record_input(file: SeenFile, description: Option<String>) -> Option<FileIndexRecordInput> {
+fn to_record_input(file: RawFile, description: Option<String>) -> Option<FileIndexRecordInput> {
     if file.size == 0 {
         return None;
     }
 
-    let (md5, sha1) = match file.hash {
-        SeenFileHash::Md5(value) => (normalize_hash(value), None),
-        SeenFileHash::Sha1(value) => (None, normalize_hash(value)),
-        SeenFileHash::Unknown(value) => match normalize_hash(value) {
-            Some(hash) if hash.len() == 32 => (Some(hash), None),
-            Some(hash) if hash.len() == 40 => (None, Some(hash)),
-            _ => (None, None),
-        },
-    };
-
-    if md5.is_none() && sha1.is_none() {
-        return None;
-    }
+    let hash_type = file.hash.hash_type().to_owned();
+    let hash_value = normalize_hash(file.hash.hash_value())?;
 
     Some(FileIndexRecordInput {
         size: file.size,
-        md5,
-        sha1,
-        file_name: file.file_name.trim().to_owned(),
-        file_path: normalize_file_path(&file.file_path),
+        hash_type,
+        hash_value,
+        file_name: file.name.trim().to_owned(),
+        file_path: normalize_file_path(&file.path),
         description,
     })
 }
 
-fn normalize_hash(value: String) -> Option<String> {
+fn normalize_hash(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     (!value.is_empty()).then_some(value)
 }
@@ -146,6 +103,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::{
+        application::ports::FileLocationRecord,
+        domain::share::FileHash,
+    };
 
     #[derive(Clone, Default)]
     struct FakeRepo {
@@ -163,43 +124,54 @@ mod tests {
             _keyword: &str,
             _limit: u64,
         ) -> AppResult<Vec<FileSearchRecord>> {
-            Ok(Vec::new())
+            Ok(vec![FileSearchRecord {
+                size: 1,
+                hash_type: "md5".into(),
+                hash_value: "abc".into(),
+                locations: vec![FileLocationRecord {
+                    file_name: "movie.mkv".into(),
+                    file_path: "/Movies".into(),
+                    descriptions: vec!["desc".into()],
+                }],
+            }])
         }
     }
 
     #[tokio::test]
-    async fn record_seen_files_filters_files_without_hash_or_size() {
+    async fn record_raw_files_filters_files_without_hash_or_size() {
         let repo = FakeRepo::default();
         let service = FileIndexService::new(repo.clone());
 
         service
-            .record_seen_files(
+            .record_raw_files(
                 vec![
-                    SeenFile {
+                    RawFile {
+                        id: Some(1),
+                        name: "zero.mkv".into(),
+                        hash: FileHash::Md5("abc".into()),
                         size: 0,
-                        hash: SeenFileHash::Md5("abc".into()),
-                        file_name: "zero.mkv".into(),
-                        file_path: "/a".into(),
+                        path: "/a".into(),
                     },
-                    SeenFile {
+                    RawFile {
+                        id: Some(2),
+                        name: "missing.mkv".into(),
+                        hash: FileHash::Md5(" ".into()),
                         size: 10,
-                        hash: SeenFileHash::Unknown(String::new()),
-                        file_name: "missing.mkv".into(),
-                        file_path: "/a".into(),
+                        path: "/a".into(),
                     },
-                    SeenFile {
+                    RawFile {
+                        id: Some(3),
+                        name: "movie.mkv".into(),
+                        hash: FileHash::Md5(" ABCDEF ".into()),
                         size: 20,
-                        hash: SeenFileHash::Md5(" ABCDEF ".into()),
-                        file_name: "movie.mkv".into(),
-                        file_path: " / ".into(),
+                        path: " / ".into(),
                     },
-                    SeenFile {
+                    RawFile {
+                        id: Some(4),
+                        name: "episode.mkv".into(),
+                        hash: FileHash::Sha1(" 0123456789012345678901234567890123456789 ".into()),
                         size: 30,
-                        hash: SeenFileHash::Sha1(
-                            " 0123456789012345678901234567890123456789 ".into(),
-                        ),
-                        file_name: "episode.mkv".into(),
-                        file_path: "/Shows".into(),
+                        path: "/Shows".into(),
                     },
                 ],
                 Some(" desc ".into()),
@@ -209,14 +181,25 @@ mod tests {
 
         let recorded = repo.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 2);
-        assert_eq!(recorded[0].md5.as_deref(), Some("abcdef"));
-        assert_eq!(recorded[0].sha1, None);
+        assert_eq!(recorded[0].hash_type, "md5");
+        assert_eq!(recorded[0].hash_value, "abcdef");
         assert_eq!(recorded[0].file_path, "");
         assert_eq!(recorded[0].description.as_deref(), Some("desc"));
+        assert_eq!(recorded[1].hash_type, "sha1");
         assert_eq!(
-            recorded[1].sha1.as_deref(),
-            Some("0123456789012345678901234567890123456789")
+            recorded[1].hash_value,
+            "0123456789012345678901234567890123456789"
         );
+    }
+
+    #[tokio::test]
+    async fn search_files_delegates_to_repo() {
+        let service = FileIndexService::new(FakeRepo::default());
+        let results = service.search_files("movie", 10).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].hash_type, "md5");
+        assert_eq!(results[0].locations.len(), 1);
     }
 
     #[test]

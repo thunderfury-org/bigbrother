@@ -58,5 +58,5 @@ pub(crate) struct LibraryFile {
     pub file_name: String,
     pub is_dir: bool,
     pub size: u64,
-    pub etag: String,
+    pub hash: String,
 }

@@ -219,7 +219,7 @@ pub(crate) fn select_largest_media_file<'a>(
 mod tests {
     use crate::{
         domain::media::Metadata,
-        domain::share::{Etag, RawFile},
+        domain::share::{FileHash, RawFile},
     };
 
     use super::*;
@@ -230,7 +230,7 @@ mod tests {
             video: RawFile {
                 id: None,
                 name: "test.mkv".to_string(),
-                etag: Etag::Md5("etag".to_string()),
+                hash: FileHash::Md5("hash".to_string()),
                 size,
                 path: "/path".to_string(),
             },
@@ -244,7 +244,7 @@ mod tests {
             video: RawFile {
                 id: None,
                 name: name.to_string(),
-                etag: Etag::Md5("etag".to_string()),
+                hash: FileHash::Md5("hash".to_string()),
                 size: 1000,
                 path: "/path".to_string(),
             },

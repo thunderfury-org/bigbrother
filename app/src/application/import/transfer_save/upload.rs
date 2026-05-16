@@ -1,4 +1,4 @@
-use crate::domain::share::Etag;
+use crate::domain::share::FileHash;
 
 use super::TransferWorkflow;
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
@@ -16,15 +16,15 @@ where
         parent_dir_id: i64,
         file_name: &str,
         size: u64,
-        etag: &Etag,
+        hash: &FileHash,
     ) -> AppResult<Option<i64>> {
-        Ok(match &etag {
-            Etag::Md5(etag) => {
+        Ok(match &hash {
+            FileHash::Md5(hash) => {
                 self.library_gateway
-                    .fast_upload_md5(parent_dir_id, file_name, etag, size)
+                    .fast_upload_md5(parent_dir_id, file_name, hash, size)
                     .await?
             }
-            Etag::Sha1(sha1) => {
+            FileHash::Sha1(sha1) => {
                 self.library_gateway
                     .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
                     .await?
@@ -37,9 +37,9 @@ where
         parent_dir_id: i64,
         file_name: &str,
         size: u64,
-        etag: &Etag,
+        hash: &FileHash,
     ) -> AppResult<Option<i64>> {
-        self.transfer_raw_file(parent_dir_id, file_name, size, etag)
+        self.transfer_raw_file(parent_dir_id, file_name, size, hash)
             .await
             .inspect_err(|error| {
                 error!("Failed to transfer file {}, error: {}", file_name, error);

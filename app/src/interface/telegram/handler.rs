@@ -1,7 +1,7 @@
 use tracing::warn;
 
 use crate::{
-    application::{file_index::SeenFile, import::MetadataLookup},
+    application::import::MetadataLookup,
     domain::share::RawFile,
     error::AppResult,
     infrastructure::services::{
@@ -44,10 +44,9 @@ pub async fn on_process_media_sources(
     };
 
     // Step 2: Index
-    let seen: Vec<SeenFile> = raw_files.iter().map(SeenFile::from_raw_file).collect();
     if let Err(err) = handler
         .file_index_service
-        .record_seen_files(seen, description)
+        .record_raw_files(raw_files.clone(), description)
         .await
     {
         warn!(error = %err, "file index record failed (non-blocking)");

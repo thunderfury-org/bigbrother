@@ -5,7 +5,7 @@ use crate::{
     domain::media::{FileType, Metadata},
     domain::{
         import::inner::MediaFile,
-        share::{Etag, RawFile},
+        share::{FileHash, RawFile},
     },
 };
 
@@ -13,7 +13,7 @@ fn create_raw_file(name: &str) -> RawFile {
     RawFile {
         id: None,
         name: name.to_string(),
-        etag: Etag::Md5("test".to_string()),
+        hash: FileHash::Md5("test".to_string()),
         size: 1024,
         path: format!("/test/{}", name),
     }

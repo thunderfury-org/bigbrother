@@ -75,7 +75,7 @@ where
                 parent_dir_id,
                 video_file_name,
                 media_file.video.size,
-                &media_file.video.etag,
+                &media_file.video.hash,
             )
             .await?;
         match res {
@@ -103,7 +103,7 @@ where
         file_name: &str,
     ) -> AppResult<bool> {
         let res = self
-            .transfer_raw_file_with_logging(parent_dir_id, file_name, raw_file.size, &raw_file.etag)
+            .transfer_raw_file_with_logging(parent_dir_id, file_name, raw_file.size, &raw_file.hash)
             .await?;
         match res {
             Some(id) => {

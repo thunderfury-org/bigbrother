@@ -50,7 +50,7 @@ where
             raw_files.push(RawFile {
                 id: Some(file.file_id),
                 name: file.file_name.to_owned(),
-                etag: file.etag.as_str().into(),
+                hash: file.hash.as_str().into(),
                 size: file.size,
                 path: "".to_owned(),
             });
