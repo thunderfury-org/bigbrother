@@ -152,4 +152,24 @@ mod tests {
         let results = repo.search_files("movie", 20).await.unwrap();
         assert_eq!(results.len(), 2);
     }
+
+    #[tokio::test]
+    async fn search_files_respects_limit_for_name_matches() {
+        let repo = repo().await;
+        let files = (0..3)
+            .map(|index| FileIndexRecordInput {
+                size: 100 + index,
+                hash_type: "md5".into(),
+                hash_value: format!("{index:032x}"),
+                file_name: format!("movie-{index}.mkv"),
+                file_path: "/Movies".into(),
+                description: None,
+            })
+            .collect::<Vec<_>>();
+
+        repo.record_files(&files).await.unwrap();
+
+        let results = repo.search_files("movie", 2).await.unwrap();
+        assert_eq!(results.len(), 2);
+    }
 }

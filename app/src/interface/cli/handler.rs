@@ -100,6 +100,7 @@ pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) 
         println!("   size: {}", format_file_size(record.size));
         println!("   {}: {}", record.hash_type, record.hash_value);
         for location in &record.locations {
+            println!("   file: {}", location.file_name);
             println!("   path: {}", location.file_path);
             for description in location.descriptions.iter().take(3) {
                 println!("   description: {description}");

@@ -52,6 +52,7 @@ where
                 .add(file_location::Column::FilePath.contains(trimmed)),
         )
         .order_by_asc(file_location::Column::Id)
+        .limit(limit)
         .all(db)
         .await?;
     for location in locations {
@@ -66,12 +67,20 @@ where
         .await?;
 
     for description in description_matches {
+        if by_fingerprint.len() >= limit as usize {
+            break;
+        }
+
         let links = file_location_description::Entity::find()
             .filter(file_location_description::Column::FileDescriptionId.eq(description.id))
             .all(db)
             .await?;
 
         for link in links {
+            if by_fingerprint.len() >= limit as usize {
+                break;
+            }
+
             let Some(location) = file_location::Entity::find_by_id(link.file_location_id)
                 .one(db)
                 .await?
