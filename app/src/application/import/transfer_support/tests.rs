@@ -4,7 +4,7 @@ use crate::{
     application::import::{Genre, Season},
     domain::import::policy::should_skip_existing_media,
     domain::media::Metadata,
-    domain::share::{Etag, RawFile},
+    domain::share::{FileHash, RawFile},
 };
 
 fn create_media_file(name: &str, size: u64) -> MediaFile {
@@ -16,7 +16,7 @@ fn create_media_file(name: &str, size: u64) -> MediaFile {
         video: RawFile {
             id: Some(1),
             name: name.into(),
-            etag: Etag::Md5("etag".into()),
+            hash: FileHash::Md5("hash".into()),
             size,
             path: "/remote/path".into(),
         },
@@ -28,7 +28,7 @@ fn create_subtitle(name: &str) -> RawFile {
     RawFile {
         id: Some(2),
         name: name.into(),
-        etag: Etag::Md5("etag".into()),
+        hash: FileHash::Md5("hash".into()),
         size: 10,
         path: "/remote/path".into(),
     }

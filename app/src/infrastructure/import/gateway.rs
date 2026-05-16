@@ -125,7 +125,7 @@ impl From<pan123::File> for LibraryFile {
             file_name: value.file_name,
             is_dir,
             size: value.size,
-            etag: value.etag,
+            hash: value.etag,
         }
     }
 }
@@ -165,12 +165,12 @@ impl LibraryGateway for PanLibraryGateway {
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        etag: &str,
+        hash: &str,
         size: u64,
     ) -> AppResult<Option<i64>> {
         Ok(self
             .pan123
-            .fast_upload(parent_dir_id, file_name, etag, size)
+            .fast_upload(parent_dir_id, file_name, hash, size)
             .await?)
     }
 

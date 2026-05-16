@@ -11,7 +11,7 @@ use std::{
 
 use super::*;
 use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
-use crate::domain::share::{Etag, RawFile};
+use crate::domain::share::{FileHash, RawFile};
 use crate::error::{AppError, AppResult};
 
 pub(crate) struct TestImportService<L, M, F> {
@@ -138,7 +138,7 @@ impl LibraryGateway for FakeLibraryGateway {
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        etag: &str,
+        hash: &str,
         size: u64,
     ) -> AppResult<Option<i64>> {
         if self.state.lock().unwrap().md5_upload_returns_none {
@@ -147,7 +147,7 @@ impl LibraryGateway for FakeLibraryGateway {
         self.state.lock().unwrap().fast_uploads.push((
             parent_dir_id,
             file_name.to_string(),
-            etag.to_string(),
+            hash.to_string(),
             size,
         ));
         Ok(Some(42))
@@ -325,7 +325,7 @@ fn unique_temp_dir() -> PathBuf {
 fn local_store_for(local_dir: &Path) -> FakeLocalStore {
     FakeLocalStore::new(local_dir.to_path_buf())
 }
-fn raw_file(path: &str, etag: &str, size: u64) -> RawFile {
+fn raw_file(path: &str, hash: &str, size: u64) -> RawFile {
     let path = Path::new(path);
     let parent_path = path
         .parent()
@@ -339,19 +339,19 @@ fn raw_file(path: &str, etag: &str, size: u64) -> RawFile {
     RawFile {
         id: None,
         name: name.to_string(),
-        etag: Etag::from(etag),
+        hash: FileHash::from(hash),
         size,
         path: parent_path.to_string(),
     }
 }
 
-fn existing_library_file(file_id: i64, file_name: &str, size: u64, etag: &str) -> LibraryFile {
+fn existing_library_file(file_id: i64, file_name: &str, size: u64, hash: &str) -> LibraryFile {
     LibraryFile {
         file_id,
         file_name: file_name.to_string(),
         is_dir: false,
         size,
-        etag: etag.to_string(),
+        hash: hash.to_string(),
     }
 }
 
@@ -531,7 +531,7 @@ async fn import_from_raw_files_imports_movie() {
         .import_from_raw_files(vec![RawFile {
             id: None,
             name: "Inception.2010.1080p.mkv".into(),
-            etag: "fedcba9876543210fedcba9876543210".into(),
+            hash: "fedcba9876543210fedcba9876543210".into(),
             size: 2234,
             path: "Movies".into(),
         }])
@@ -580,7 +580,7 @@ async fn import_from_raw_files_skips_when_existing_movie_is_not_smaller() {
                 501,
                 "Inception.2010.2160p.mkv",
                 4321,
-                "etag-existing-large",
+                "hash-existing-large",
             )],
         );
     }
@@ -627,7 +627,7 @@ async fn import_from_raw_files_overwrites_when_incoming_movie_is_larger() {
                 601,
                 "Inception.2010.720p.mkv",
                 900,
-                "etag-existing-small",
+                "hash-existing-small",
             )],
         );
     }
@@ -696,7 +696,7 @@ async fn import_from_raw_files_skips_existing_tv_episode_when_existing_is_not_sm
                 701,
                 "Breaking Bad.2008.S01E01.2160p.mkv",
                 2001,
-                "etag-existing-large-tv",
+                "hash-existing-large-tv",
             )],
         );
     }
@@ -757,7 +757,7 @@ async fn import_from_raw_files_overwrites_existing_tv_episode_when_incoming_is_l
                 801,
                 "Breaking Bad.2008.S01E01.720p.mkv",
                 900,
-                "etag-existing-small-tv",
+                "hash-existing-small-tv",
             )],
         );
     }
@@ -904,7 +904,7 @@ async fn import_from_raw_files_returns_error_when_local_cleanup_fails_on_overwri
                 601,
                 "Inception.2010.720p.mkv",
                 900,
-                "etag-existing-small",
+                "hash-existing-small",
             )],
         );
     }

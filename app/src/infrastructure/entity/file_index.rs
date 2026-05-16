@@ -9,7 +9,7 @@ use sea_orm::{
 use crate::{
     application::{
         file_index::{description_hash, location_hash},
-        ports::{FileIndexRecordInput, FileSearchRecord},
+        ports::{FileIndexRecordInput, FileLocationRecord, FileSearchRecord},
     },
     error::{AppError, AppResult},
     infrastructure::entity::model::{
@@ -42,25 +42,24 @@ where
         return Ok(Vec::new());
     }
 
+    let trimmed = keyword.trim();
+    let mut by_fingerprint = BTreeMap::new();
+
     let locations = file_location::Entity::find()
         .filter(
             Condition::any()
-                .add(file_location::Column::FileName.contains(keyword.trim()))
-                .add(file_location::Column::FilePath.contains(keyword.trim())),
+                .add(file_location::Column::FileName.contains(trimmed))
+                .add(file_location::Column::FilePath.contains(trimmed)),
         )
         .order_by_asc(file_location::Column::Id)
         .limit(limit)
         .all(db)
         .await?;
-
-    let mut by_location = BTreeMap::new();
     for location in locations {
-        if let Some(record) = record_for_location(db, &location).await? {
-            by_location.insert(location.id, record);
-        }
+        add_location_match(db, &mut by_fingerprint, &location).await?;
     }
 
-    let pattern = format!("%{}%", keyword.trim());
+    let pattern = format!("%{}%", trimmed);
     let description_matches = file_description::Entity::find()
         .filter(file_description::Column::Description.like(pattern))
         .limit(limit)
@@ -68,45 +67,40 @@ where
         .await?;
 
     for description in description_matches {
+        if by_fingerprint.len() >= limit as usize {
+            break;
+        }
+
         let links = file_location_description::Entity::find()
             .filter(file_location_description::Column::FileDescriptionId.eq(description.id))
             .all(db)
             .await?;
+
         for link in links {
+            if by_fingerprint.len() >= limit as usize {
+                break;
+            }
+
             let Some(location) = file_location::Entity::find_by_id(link.file_location_id)
                 .one(db)
                 .await?
             else {
                 continue;
             };
-            if !by_location.contains_key(&location.id)
-                && let Some(record) = record_for_location(db, &location).await?
-            {
-                by_location.insert(location.id, record);
-            }
-            if let Some(record) = by_location.get_mut(&location.id) {
-                push_unique(&mut record.descriptions, description.description.clone());
-            }
+            add_location_match(db, &mut by_fingerprint, &location).await?;
         }
     }
 
-    let location_ids = by_location.keys().copied().collect::<Vec<_>>();
-    for location_id in location_ids {
-        let descriptions = descriptions_for_location(db, location_id).await?;
-        if let Some(record) = by_location.get_mut(&location_id) {
-            for description in descriptions {
-                push_unique(&mut record.descriptions, description);
-            }
-        }
-    }
-
-    Ok(by_location.into_values().take(limit as usize).collect())
+    let mut results = by_fingerprint.into_values().collect::<Vec<_>>();
+    results.truncate(limit as usize);
+    Ok(results)
 }
 
-async fn record_for_location<C>(
+async fn add_location_match<C>(
     db: &C,
+    by_fingerprint: &mut BTreeMap<i64, FileSearchRecord>,
     location: &file_location::Model,
-) -> Result<Option<FileSearchRecord>, DbErr>
+) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
@@ -114,50 +108,55 @@ where
         .one(db)
         .await?
     else {
-        return Ok(None);
+        return Ok(());
     };
 
-    Ok(Some(FileSearchRecord {
-        file_name: location.file_name.clone(),
-        file_path: location.file_path.clone(),
-        size: index.size.try_into().unwrap_or_default(),
-        md5: index.md5,
-        sha1: index.sha1,
-        descriptions: Vec::new(),
-    }))
+    let descriptions = descriptions_for_location(db, location.id).await?;
+    let entry = by_fingerprint
+        .entry(index.id)
+        .or_insert_with(|| FileSearchRecord {
+            size: index.size.try_into().unwrap_or_default(),
+            hash_type: index.hash_type.clone(),
+            hash_value: index.hash_value.clone(),
+            locations: Vec::new(),
+        });
+
+    if let Some(existing) = entry.locations.iter_mut().find(|existing| {
+        existing.file_name == location.file_name && existing.file_path == location.file_path
+    }) {
+        for description in descriptions {
+            push_unique(&mut existing.descriptions, description);
+        }
+    } else {
+        entry.locations.push(FileLocationRecord {
+            file_name: location.file_name.clone(),
+            file_path: location.file_path.clone(),
+            descriptions,
+        });
+    }
+
+    Ok(())
 }
 
 async fn find_or_insert_file_index<C>(db: &C, file: &FileIndexRecordInput) -> AppResult<i64>
 where
     C: ConnectionTrait,
 {
-    if let Some(md5) = file.md5.as_deref()
-        && let Some(existing) = file_index::Entity::find()
-            .filter(file_index::Column::Size.eq(size_as_i64(file.size)?))
-            .filter(file_index::Column::Md5.eq(md5))
-            .one(db)
-            .await?
+    if let Some(existing) = file_index::Entity::find()
+        .filter(file_index::Column::Size.eq(size_as_i64(file.size)?))
+        .filter(file_index::Column::HashType.eq(&file.hash_type))
+        .filter(file_index::Column::HashValue.eq(&file.hash_value))
+        .one(db)
+        .await?
     {
-        update_missing_hashes(db, &existing, file).await?;
-        return Ok(existing.id);
-    }
-
-    if let Some(sha1) = file.sha1.as_deref()
-        && let Some(existing) = file_index::Entity::find()
-            .filter(file_index::Column::Size.eq(size_as_i64(file.size)?))
-            .filter(file_index::Column::Sha1.eq(sha1))
-            .one(db)
-            .await?
-    {
-        update_missing_hashes(db, &existing, file).await?;
         return Ok(existing.id);
     }
 
     let now = Utc::now();
     let inserted = file_index::ActiveModel {
         size: ActiveValue::Set(size_as_i64(file.size)?),
-        md5: ActiveValue::Set(file.md5.clone()),
-        sha1: ActiveValue::Set(file.sha1.clone()),
+        hash_type: ActiveValue::Set(file.hash_type.clone()),
+        hash_value: ActiveValue::Set(file.hash_value.clone()),
         create_time: ActiveValue::Set(now),
         update_time: ActiveValue::Set(now),
         ..Default::default()
@@ -165,31 +164,6 @@ where
     .insert(db)
     .await?;
     Ok(inserted.id)
-}
-
-async fn update_missing_hashes<C>(
-    db: &C,
-    existing: &file_index::Model,
-    file: &FileIndexRecordInput,
-) -> Result<(), DbErr>
-where
-    C: ConnectionTrait,
-{
-    let mut active: file_index::ActiveModel = existing.clone().into();
-    let mut changed = false;
-    if existing.md5.is_none() && file.md5.is_some() {
-        active.md5 = ActiveValue::Set(file.md5.clone());
-        changed = true;
-    }
-    if existing.sha1.is_none() && file.sha1.is_some() {
-        active.sha1 = ActiveValue::Set(file.sha1.clone());
-        changed = true;
-    }
-    if changed {
-        active.update_time = ActiveValue::Set(Utc::now());
-        active.update(db).await?;
-    }
-    Ok(())
 }
 
 async fn find_or_insert_file_location<C>(
@@ -298,7 +272,7 @@ where
             .one(db)
             .await?
         {
-            descriptions.push(description.description);
+            push_unique(&mut descriptions, description.description);
         }
     }
     Ok(descriptions)

@@ -147,7 +147,7 @@ impl<S: QuarkShareSource> QuarkShareService<S> {
             .map(|(fid, _token, name, size, path)| RawFile {
                 id: None,
                 name,
-                etag: md5_map
+                hash: md5_map
                     .get(&fid)
                     .cloned()
                     .unwrap_or_default()
@@ -178,7 +178,7 @@ mod tests {
     use super::{QuarkShareService, parse_share_parts};
     use url::Url;
 
-    use crate::{domain::share::Etag, error::AppResult, infrastructure::client::quark};
+    use crate::{domain::share::FileHash, error::AppResult, infrastructure::client::quark};
 
     #[test]
     fn matches_supported_quark_urls_and_parses_share_parts() {
@@ -272,8 +272,8 @@ mod tests {
         assert_eq!(raw_files.len(), 1);
         assert_eq!(raw_files[0].path, "/Show");
         assert!(matches!(
-            &raw_files[0].etag,
-            Etag::Md5(value) if value == "0123456789abcdef0123456789abcdef"
+            &raw_files[0].hash,
+            FileHash::Md5(value) if value == "0123456789abcdef0123456789abcdef"
         ));
     }
 }

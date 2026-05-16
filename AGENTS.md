@@ -58,6 +58,7 @@ These are architecture rules that agents must follow. They are enforced primaril
 - `interface` may depend on other modules
 - `error` is the lowest-level module and must not depend on other modules
 - `infrastructure/client` is a stricter sub-area: it should only contain low-level API calls and protocol details, and must not absorb business orchestration, repository composition, cross-layer convenience logic, or dependencies on other modules
+- Do not rename or reshape `infrastructure/client` fields just to match domain terminology when those fields mirror third-party protocols. Keep the third-party naming at the client boundary and translate it in adapters or mappers.
 
 When adding new functionality, prefer the organization style of adjacent existing modules rather than inventing new cross-layer helpers or another “shared” layer.
 
@@ -90,6 +91,13 @@ Follow `.editorconfig`: use spaces, LF line endings, and a final newline; Rust f
 Prefer small, targeted Rust tests placed close to the code they verify. Cover the behavior surface that is actually at risk for the change, including domain parsing, import orchestration, transfer path rules, download URL resolution, proxy/redirect behavior, and Telegram or HTTP entrypoint behavior when applicable. Name tests by behavior, such as `parses_tv_episode_title`.
 
 Verification strategy matters more than full manual startup. Use targeted tests first, then run broader checks such as `make test` or `make lint` when the scope justifies them. Do not treat “the server boots” as sufficient validation for a change.
+
+Before creating a commit or pull request:
+
+- Run targeted tests for the changed behavior first.
+- If the change includes any code changes, run `make lint`.
+- If the change is broader than a small, isolated fix, run `make test` unless the user explicitly agrees to narrower verification.
+- If the expected checks are not run, tell the user exactly what was skipped and why before commit or PR creation.
 
 ## Commit & Pull Request Guidelines
 Agent-authored commits should use Conventional Commit-style prefixes such as `feat:`, `fix:`, `refactor:`, and `support:`. Keep subjects imperative and specific, for example `feat: add quark share importer`.

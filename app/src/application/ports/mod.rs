@@ -81,21 +81,26 @@ pub trait FileStore {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileIndexRecordInput {
     pub size: u64,
-    pub md5: Option<String>,
-    pub sha1: Option<String>,
+    pub hash_type: String,
+    pub hash_value: String,
     pub file_name: String,
     pub file_path: String,
     pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileSearchRecord {
+pub struct FileLocationRecord {
     pub file_name: String,
     pub file_path: String,
-    pub size: u64,
-    pub md5: Option<String>,
-    pub sha1: Option<String>,
     pub descriptions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSearchRecord {
+    pub size: u64,
+    pub hash_type: String,
+    pub hash_value: String,
+    pub locations: Vec<FileLocationRecord>,
 }
 
 pub trait FileIndexRepository: Clone {

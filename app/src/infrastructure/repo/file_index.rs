@@ -48,16 +48,16 @@ mod tests {
         let files = vec![
             FileIndexRecordInput {
                 size: 100,
-                md5: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
-                sha1: None,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 file_name: "movie.mkv".into(),
                 file_path: "/Movies".into(),
                 description: Some("same desc".into()),
             },
             FileIndexRecordInput {
                 size: 100,
-                md5: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
-                sha1: None,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 file_name: "movie.mkv".into(),
                 file_path: "/Movies".into(),
                 description: Some("same desc".into()),
@@ -69,28 +69,81 @@ mod tests {
 
         let results = repo.search_files("movie", 20).await.unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].descriptions, vec!["same desc"]);
+        assert_eq!(results[0].locations.len(), 1);
+        assert_eq!(results[0].locations[0].descriptions, vec!["same desc"]);
     }
 
     #[tokio::test]
-    async fn record_files_keeps_multiple_locations_for_same_file() {
+    async fn record_files_keeps_multiple_locations_for_same_fingerprint() {
         let repo = repo().await;
         repo.record_files(&[
             FileIndexRecordInput {
                 size: 100,
-                md5: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
-                sha1: None,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 file_name: "movie-a.mkv".into(),
                 file_path: "/A".into(),
                 description: Some("desc".into()),
             },
             FileIndexRecordInput {
                 size: 100,
-                md5: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
-                sha1: None,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                 file_name: "movie-b.mkv".into(),
                 file_path: "/B".into(),
                 description: Some("desc".into()),
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("movie", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn search_files_matches_description() {
+        let repo = repo().await;
+        repo.record_files(&[FileIndexRecordInput {
+            size: 200,
+            hash_type: "sha1".into(),
+            hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+            file_name: "episode.mkv".into(),
+            file_path: "/Shows".into(),
+            description: Some("rare keyword".into()),
+        }])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("rare", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].hash_type, "sha1");
+        assert_eq!(
+            results[0].hash_value,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+    }
+
+    #[tokio::test]
+    async fn record_files_does_not_merge_different_hash_types() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "movie.mkv".into(),
+                file_path: "/A".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "sha1".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "movie.mkv".into(),
+                file_path: "/A".into(),
+                description: None,
             },
         ])
         .await
@@ -101,24 +154,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_files_matches_description() {
+    async fn search_files_respects_limit_for_name_matches() {
         let repo = repo().await;
-        repo.record_files(&[FileIndexRecordInput {
-            size: 200,
-            md5: None,
-            sha1: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into()),
-            file_name: "episode.mkv".into(),
-            file_path: "/Shows".into(),
-            description: Some("rare keyword".into()),
-        }])
-        .await
-        .unwrap();
+        let files = (0..3)
+            .map(|index| FileIndexRecordInput {
+                size: 100 + index,
+                hash_type: "md5".into(),
+                hash_value: format!("{index:032x}"),
+                file_name: format!("movie-{index}.mkv"),
+                file_path: "/Movies".into(),
+                description: None,
+            })
+            .collect::<Vec<_>>();
 
-        let results = repo.search_files("rare", 20).await.unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(
-            results[0].sha1.as_deref(),
-            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-        );
+        repo.record_files(&files).await.unwrap();
+
+        let results = repo.search_files("movie", 2).await.unwrap();
+        assert_eq!(results.len(), 2);
     }
 }

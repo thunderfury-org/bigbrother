@@ -16,7 +16,7 @@ pub trait LibraryGateway: Clone {
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        etag: &str,
+        hash: &str,
         size: u64,
     ) -> AppResult<Option<i64>>;
     async fn fast_upload_sha1(

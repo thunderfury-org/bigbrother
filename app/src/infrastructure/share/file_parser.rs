@@ -42,7 +42,7 @@ impl ShareFileParser {
 struct ResourceFile {
     path: String,
     #[serde(default, alias = "md5", alias = "sha1")]
-    etag: String,
+    hash: String,
     #[serde(deserialize_with = "deserialize_u64_from_string_or_number")]
     size: u64,
 }
@@ -72,7 +72,7 @@ fn parse_files_from_fslink(fslink: &str) -> AppResult<Vec<ResourceFile>> {
 
         files.push(ResourceFile {
             path: parts[2].to_owned(),
-            etag: parts[0].to_owned(),
+            hash: parts[0].to_owned(),
             size,
         });
     }
@@ -109,9 +109,9 @@ fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
             )));
         }
 
-        let etag = row[0]
+        let hash = row[0]
             .as_str()
-            .ok_or_else(|| AppError::InvalidParameter("etag is not a string".into()))?
+            .ok_or_else(|| AppError::InvalidParameter("hash is not a string".into()))?
             .to_owned();
         let size = row[1]
             .as_u64()
@@ -120,7 +120,7 @@ fn parse_files_from_json(json: Vec<u8>) -> AppResult<ResourceJson> {
             .as_str()
             .ok_or_else(|| AppError::InvalidParameter("path is not a string".into()))?
             .to_owned();
-        files.push(ResourceFile { path, etag, size });
+        files.push(ResourceFile { path, hash, size });
     }
 
     Ok(ResourceJson {
@@ -169,7 +169,7 @@ fn raw_files_from_resource_with_context(
             RawFile {
                 id: None,
                 name: name.to_owned(),
-                etag: file.etag.as_str().into(),
+                hash: file.hash.as_str().into(),
                 size: file.size,
                 path: parent_path.to_owned(),
             }
@@ -222,7 +222,7 @@ struct SingleResourceFile {
     path: String,
     name: String,
     file_name: String,
-    etag: String,
+    hash: String,
     md5: String,
     sha1: String,
     size: u64,
@@ -231,16 +231,16 @@ struct SingleResourceFile {
 impl SingleResourceFile {
     fn into_resource_file(self) -> AppResult<ResourceFile> {
         let path = first_non_empty([self.path, self.name, self.file_name]);
-        let etag = first_non_empty([self.etag, self.md5, self.sha1]);
+        let hash = first_non_empty([self.hash, self.md5, self.sha1]);
 
         if path.is_empty() {
             return Err(AppError::InvalidParameter(
                 "invalid cas/json file: path is empty".into(),
             ));
         }
-        if etag.is_empty() {
+        if hash.is_empty() {
             return Err(AppError::InvalidParameter(
-                "invalid cas/json file: etag is empty".into(),
+                "invalid cas/json file: hash is empty".into(),
             ));
         }
         if self.size == 0 {
@@ -251,7 +251,7 @@ impl SingleResourceFile {
 
         Ok(ResourceFile {
             path,
-            etag,
+            hash,
             size: self.size,
         })
     }
@@ -267,7 +267,7 @@ fn first_non_empty<const N: usize>(values: [String; N]) -> String {
 #[cfg(test)]
 mod tests {
     use super::ShareFileParser;
-    use crate::{domain::share::Etag, error::AppError};
+    use crate::{domain::share::FileHash, error::AppError};
     use base64::{Engine, engine::general_purpose};
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(raw_files.len(), 2);
         assert_eq!(raw_files[0].name, "Movie.2026.mkv");
         assert_eq!(raw_files[0].path, "/Media/Movies");
-        assert!(matches!(raw_files[0].etag, Etag::Md5(ref value) if value == "moviehash"));
+        assert!(matches!(raw_files[0].hash, FileHash::Md5(ref value) if value == "moviehash"));
         assert_eq!(raw_files[1].name, "Movie.2026.srt");
         assert_eq!(raw_files[1].path, "/Media/Movies");
     }
@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(raw_files[0].name, "E01.mkv");
         assert_eq!(raw_files[0].path, "/shows/Series/Season 1");
         assert!(
-            matches!(raw_files[0].etag, Etag::Sha1(ref value) if value == "a444f38b2cecb8a71ad27a0dd88bed1cf1fa1eb6")
+            matches!(raw_files[0].hash, FileHash::Sha1(ref value) if value == "a444f38b2cecb8a71ad27a0dd88bed1cf1fa1eb6")
         );
         assert_eq!(raw_files[0].size, 30062779674);
     }
@@ -333,7 +333,7 @@ mod tests {
         assert_eq!(raw_files[0].name, "Movie.2026.2160p.WEB-DL.mkv");
         assert_eq!(raw_files[0].path, "/");
         assert!(
-            matches!(raw_files[0].etag, Etag::Md5(ref value) if value == "ffd9a9bc7616540fcd741afee223a12b")
+            matches!(raw_files[0].hash, FileHash::Md5(ref value) if value == "ffd9a9bc7616540fcd741afee223a12b")
         );
         assert_eq!(raw_files[0].size, 1766233377);
     }
@@ -348,7 +348,7 @@ mod tests {
         let err = ShareFileParser::parse_json_bytes(cas.to_string().into_bytes()).unwrap_err();
 
         assert!(matches!(err, AppError::InvalidParameter(_)));
-        assert!(err.to_string().contains("etag is empty"));
+        assert!(err.to_string().contains("hash is empty"));
     }
 
     #[test]
