@@ -10,7 +10,10 @@ use crate::{
             gateway::{PanLibraryGateway, TmdbMetadataGateway},
             local_store::FilesystemImportLocalStore,
         },
-        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        repo::{
+            file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository,
+            telegram_export_state::SeaOrmTelegramExportStateRepository,
+        },
         services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
         share::{
             pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
@@ -128,8 +131,16 @@ impl CliContext {
 
     pub(super) async fn telegram_export_index_services(
         &self,
-    ) -> AppResult<(ShareResolverRuntimeService, SeaOrmFileIndexRepository)> {
+    ) -> AppResult<(
+        ShareResolverRuntimeService,
+        SeaOrmFileIndexRepository,
+        SeaOrmTelegramExportStateRepository,
+    )> {
         let db = self.db().await?.clone();
-        Ok((self.share_resolver(), SeaOrmFileIndexRepository::new(db)))
+        Ok((
+            self.share_resolver(),
+            SeaOrmFileIndexRepository::new(db.clone()),
+            SeaOrmTelegramExportStateRepository::new(db),
+        ))
     }
 }

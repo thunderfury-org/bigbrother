@@ -114,7 +114,6 @@ pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) 
 pub(crate) async fn run_telegram_export_index(
     data_dir: &str,
     input: &str,
-    state_file: &str,
     verbose: bool,
     retry_all: bool,
 ) -> AppResult<()> {
@@ -123,9 +122,10 @@ pub(crate) async fn run_telegram_export_index(
     }
 
     let ctx = CliContext::new(data_dir)?;
-    let (share_resolver, file_index_repo) = ctx.telegram_export_index_services().await?;
-    let runner = TelegramExportIndexRuntimeRunner::new(share_resolver, file_index_repo);
-    runner.run(input, state_file, retry_all).await
+    let (share_resolver, file_index_repo, state_repo) =
+        ctx.telegram_export_index_services().await?;
+    let runner = TelegramExportIndexRuntimeRunner::new(share_resolver, file_index_repo, state_repo);
+    runner.run(input, retry_all).await
 }
 
 fn format_file_size(size: u64) -> String {

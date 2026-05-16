@@ -92,8 +92,6 @@ pub struct TelegramExportIndexArgs {
     pub data_dir: DataDirArgs,
     #[arg(short, long)]
     pub input: String,
-    #[arg(long)]
-    pub state_file: String,
     #[arg(short, long)]
     pub verbose: bool,
     #[arg(long)]
@@ -126,7 +124,6 @@ pub async fn run(cli: Cli) -> AppResult<()> {
                 handler::run_telegram_export_index(
                     args.data_dir.data_dir.as_str(),
                     args.input.as_str(),
-                    args.state_file.as_str(),
                     args.verbose,
                     args.retry_all,
                 )
@@ -299,8 +296,6 @@ mod tests {
             "./data",
             "--input",
             "/tmp/result.json",
-            "--state-file",
-            "/tmp/telegram-export-state.json",
             "--verbose",
             "--retry-all",
         ]);
@@ -310,7 +305,6 @@ mod tests {
                 TelegramExportCommands::Index(args) => {
                     assert_eq!(args.data_dir.data_dir, "./data");
                     assert_eq!(args.input, "/tmp/result.json");
-                    assert_eq!(args.state_file, "/tmp/telegram-export-state.json");
                     assert!(args.verbose);
                     assert!(args.retry_all);
                 }

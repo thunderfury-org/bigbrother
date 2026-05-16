@@ -107,3 +107,20 @@ pub trait FileIndexRepository: Clone {
     async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()>;
     async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>;
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelegramExportStateRecord {
+    pub source_type: String,
+    pub source_value: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
+    pub attempt_count: u64,
+    pub first_seen_at: String,
+    pub last_attempt_at: String,
+}
+
+pub trait TelegramExportStateRepository: Clone {
+    async fn list_all(&self) -> AppResult<Vec<TelegramExportStateRecord>>;
+    async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()>;
+}

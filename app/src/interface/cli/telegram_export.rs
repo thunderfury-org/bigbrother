@@ -1,14 +1,19 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, io::BufReader};
 
-use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tracing::info;
 
 use crate::{
     application::file_index::FileIndexService,
-    application::ports::FileIndexRepository,
+    application::ports::{
+        FileIndexRepository, TelegramExportStateRecord, TelegramExportStateRepository,
+    },
     error::{AppError, AppResult},
     infrastructure::{
-        repo::file_index::SeaOrmFileIndexRepository,
+        repo::{
+            file_index::SeaOrmFileIndexRepository,
+            telegram_export_state::SeaOrmTelegramExportStateRepository,
+        },
         services::ShareResolverRuntimeService,
         share::{file_parser::ShareFileParser, resolver::ShareResolver},
     },
@@ -18,86 +23,74 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TelegramExportSourceStatus {
-    Succeeded,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TelegramExportStateEntry {
-    pub source_type: String,
-    pub source_value: String,
-    pub description: Option<String>,
-    pub status: TelegramExportSourceStatus,
-    pub error: Option<String>,
-    pub attempt_count: u64,
-    pub first_seen_at: String,
-    pub last_attempt_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct TelegramExportState {
-    pub version: u64,
-    pub entries: Vec<TelegramExportStateEntry>,
-}
-
-pub type TelegramExportIndexRuntimeRunner =
-    TelegramExportIndexRunner<ShareResolverRuntimeService, SeaOrmFileIndexRepository>;
+pub type TelegramExportIndexRuntimeRunner = TelegramExportIndexRunner<
+    ShareResolverRuntimeService,
+    SeaOrmFileIndexRepository,
+    SeaOrmTelegramExportStateRepository,
+>;
 
 #[derive(Clone)]
-pub struct TelegramExportIndexRunner<R, Repo> {
+pub struct TelegramExportIndexRunner<R, FileRepo, StateRepo> {
     share_resolver: R,
-    file_index_service: FileIndexService<Repo>,
+    file_index_service: FileIndexService<FileRepo>,
+    state_repo: StateRepo,
 }
 
-impl<R, Repo> TelegramExportIndexRunner<R, Repo> {
-    pub fn new(share_resolver: R, repo: Repo) -> Self {
+impl<R, FileRepo, StateRepo> TelegramExportIndexRunner<R, FileRepo, StateRepo> {
+    pub fn new(share_resolver: R, file_repo: FileRepo, state_repo: StateRepo) -> Self {
         Self {
             share_resolver,
-            file_index_service: FileIndexService::new(repo),
+            file_index_service: FileIndexService::new(file_repo),
+            state_repo,
         }
     }
 }
 
-impl<R, Repo> TelegramExportIndexRunner<R, Repo>
+impl<R, FileRepo, StateRepo> TelegramExportIndexRunner<R, FileRepo, StateRepo>
 where
     R: ShareResolver,
-    Repo: FileIndexRepository,
+    FileRepo: FileIndexRepository,
+    StateRepo: TelegramExportStateRepository,
 {
-    pub async fn run(&self, input: &str, state_file: &str, retry_all: bool) -> AppResult<()> {
-        let content = fs::read_to_string(input)?;
-        let root: ExportRoot = serde_json::from_str(&content).map_err(|err| {
+    pub async fn run(&self, input: &str, retry_all: bool) -> AppResult<()> {
+        info!(input = %input, retry_all, "starting telegram export file-index run");
+
+        let file = fs::File::open(input)?;
+        let reader = BufReader::new(file);
+        let root: ExportRoot = serde_json::from_reader(reader).map_err(|err| {
             AppError::InvalidParameter(format!("invalid telegram export json: {err}"))
         })?;
-        let mut state = load_state(state_file)?;
+        let mut state = load_state(&self.state_repo).await?;
 
         merge_sources_into_state(&root, &mut state);
-        let mut dirty = false;
-        let mut processed_since_flush = 0usize;
-        const STATE_FLUSH_INTERVAL: usize = 10;
+        info!(sources = state.len(), "loaded deduplicated sources");
 
-        for index in 0..state.entries.len() {
-            let should_process = {
-                let entry = &state.entries[index];
-                retry_all || !matches!(entry.status, TelegramExportSourceStatus::Succeeded)
-            };
-            if !should_process {
+        for record in state.values_mut() {
+            if !retry_all && record.status == "succeeded" {
+                info!(
+                    source_type = %record.source_type,
+                    source_value = %record.source_value,
+                    "skipping succeeded source"
+                );
                 continue;
             }
 
-            let entry = &mut state.entries[index];
-            entry.attempt_count += 1;
-            entry.last_attempt_at = now_string();
+            record.attempt_count += 1;
+            record.last_attempt_at = now_string();
+            info!(
+                source_type = %record.source_type,
+                source_value = %record.source_value,
+                attempt_count = record.attempt_count,
+                "processing source"
+            );
 
-            let result = match entry.source_type.as_str() {
+            let result = match record.source_type.as_str() {
                 "url" => {
-                    self.process_url(&entry.source_value, entry.description.clone())
+                    self.process_url(&record.source_value, record.description.clone())
                         .await
                 }
                 "fslink" => {
-                    self.process_fslink(&entry.source_value, entry.description.clone())
+                    self.process_fslink(&record.source_value, record.description.clone())
                         .await
                 }
                 other => Err(AppError::InvalidParameter(format!(
@@ -107,27 +100,38 @@ where
 
             match result {
                 Ok(()) => {
-                    entry.status = TelegramExportSourceStatus::Succeeded;
-                    entry.error = None;
+                    record.status = "succeeded".into();
+                    record.error = None;
+                    info!(
+                        source_type = %record.source_type,
+                        source_value = %record.source_value,
+                        "source succeeded"
+                    );
                 }
                 Err(err) => {
-                    entry.status = TelegramExportSourceStatus::Failed;
-                    entry.error = Some(err.to_string());
+                    record.status = "failed".into();
+                    record.error = Some(err.to_string());
+                    info!(
+                        source_type = %record.source_type,
+                        source_value = %record.source_value,
+                        error = %err,
+                        "source failed"
+                    );
                 }
             }
 
-            dirty = true;
-            processed_since_flush += 1;
-            if processed_since_flush >= STATE_FLUSH_INTERVAL {
-                save_state(state_file, &state)?;
-                dirty = false;
-                processed_since_flush = 0;
-            }
+            self.state_repo.upsert(record).await?;
         }
 
-        if dirty {
-            save_state(state_file, &state)?;
-        }
+        let succeeded = state
+            .values()
+            .filter(|record| record.status == "succeeded")
+            .count();
+        let failed = state.len() - succeeded;
+        info!(
+            total = state.len(),
+            succeeded, failed, "finished telegram export file-index run"
+        );
 
         Ok(())
     }
@@ -151,13 +155,10 @@ where
     }
 }
 
-fn merge_sources_into_state(root: &ExportRoot, state: &mut TelegramExportState) {
-    let mut by_key = state
-        .entries
-        .drain(..)
-        .map(|entry| (state_key(&entry.source_type, &entry.source_value), entry))
-        .collect::<HashMap<_, _>>();
-
+fn merge_sources_into_state(
+    root: &ExportRoot,
+    state: &mut HashMap<String, TelegramExportStateRecord>,
+) {
     for msg in &root.messages {
         let description = message_description(msg);
         for source in extract_media_sources(msg) {
@@ -167,13 +168,13 @@ fn merge_sources_into_state(root: &ExportRoot, state: &mut TelegramExportState) 
                 MediaSource::TgDocument { .. } => continue,
             };
             let key = state_key(&source_type, &source_value);
-            by_key
+            state
                 .entry(key)
-                .or_insert_with(|| TelegramExportStateEntry {
+                .or_insert_with(|| TelegramExportStateRecord {
                     source_type,
                     source_value,
                     description: description.clone(),
-                    status: TelegramExportSourceStatus::Failed,
+                    status: "failed".into(),
                     error: None,
                     attempt_count: 0,
                     first_seen_at: now_string(),
@@ -181,31 +182,19 @@ fn merge_sources_into_state(root: &ExportRoot, state: &mut TelegramExportState) 
                 });
         }
     }
-
-    let mut entries = by_key.into_values().collect::<Vec<_>>();
-    entries.sort_by(|a, b| {
-        a.source_type
-            .cmp(&b.source_type)
-            .then(a.source_value.cmp(&b.source_value))
-    });
-    state.version = 1;
-    state.entries = entries;
 }
 
-fn load_state(path: &str) -> AppResult<TelegramExportState> {
-    if !Path::new(path).exists() {
-        return Ok(TelegramExportState::default());
-    }
-
-    let content = fs::read_to_string(path)?;
-    serde_json::from_str(&content)
-        .map_err(|err| AppError::InvalidParameter(format!("invalid telegram export state: {err}")))
-}
-
-fn save_state(path: &str, state: &TelegramExportState) -> AppResult<()> {
-    let content = serde_json::to_vec_pretty(state)?;
-    fs::write(path, content)?;
-    Ok(())
+async fn load_state<StateRepo>(
+    state_repo: &StateRepo,
+) -> AppResult<HashMap<String, TelegramExportStateRecord>>
+where
+    StateRepo: TelegramExportStateRepository,
+{
+    let records = state_repo.list_all().await?;
+    Ok(records
+        .into_iter()
+        .map(|record| (state_key(&record.source_type, &record.source_value), record))
+        .collect())
 }
 
 fn state_key(source_type: &str, source_value: &str) -> String {
@@ -222,13 +211,10 @@ fn now_string() -> String {
 mod tests {
     use super::*;
     use crate::{
-        application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
+        application::ports::{FileIndexRecordInput, FileSearchRecord},
         domain::share::{FileHash, RawFile},
     };
-    use std::{
-        path::PathBuf,
-        sync::{Arc, Mutex},
-    };
+    use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Default)]
     struct FakeResolver {
@@ -242,11 +228,11 @@ mod tests {
     }
 
     #[derive(Clone, Default)]
-    struct SpyRepo {
+    struct SpyFileRepo {
         recorded: Arc<Mutex<Vec<FileIndexRecordInput>>>,
     }
 
-    impl FileIndexRepository for SpyRepo {
+    impl FileIndexRepository for SpyFileRepo {
         async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
             self.recorded.lock().unwrap().extend_from_slice(files);
             Ok(())
@@ -261,7 +247,26 @@ mod tests {
         }
     }
 
-    fn temp_path(name: &str) -> PathBuf {
+    #[derive(Clone, Default)]
+    struct SpyStateRepo {
+        records: Arc<Mutex<HashMap<String, TelegramExportStateRecord>>>,
+    }
+
+    impl TelegramExportStateRepository for SpyStateRepo {
+        async fn list_all(&self) -> AppResult<Vec<TelegramExportStateRecord>> {
+            Ok(self.records.lock().unwrap().values().cloned().collect())
+        }
+
+        async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()> {
+            self.records.lock().unwrap().insert(
+                state_key(&record.source_type, &record.source_value),
+                record.clone(),
+            );
+            Ok(())
+        }
+    }
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("bigbrother-{name}-{}.json", std::process::id()))
     }
 
@@ -283,21 +288,18 @@ mod tests {
         )
         .unwrap();
 
-        let mut state = TelegramExportState::default();
+        let mut state = HashMap::new();
         merge_sources_into_state(&root, &mut state);
 
-        assert_eq!(state.entries.len(), 1);
-        assert_eq!(state.entries[0].description.as_deref(), Some("desc one"));
-        assert!(matches!(
-            state.entries[0].status,
-            TelegramExportSourceStatus::Failed
-        ));
+        let values = state.values().collect::<Vec<_>>();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].description.as_deref(), Some("desc one"));
+        assert_eq!(values[0].status, "failed");
     }
 
     #[tokio::test]
     async fn skips_succeeded_entries_by_default_and_retries_failed() {
-        let input = temp_path("telegram-export-input");
-        let state_file = temp_path("telegram-export-state");
+        let input = temp_path("telegram-export-input-db");
         fs::write(
             &input,
             r#"{
@@ -310,67 +312,58 @@ mod tests {
             }"#,
         )
         .unwrap();
-        save_state(
-            state_file.to_str().unwrap(),
-            &TelegramExportState {
-                version: 1,
-                entries: vec![TelegramExportStateEntry {
-                    source_type: "url".into(),
-                    source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
-                    description: Some("desc".into()),
-                    status: TelegramExportSourceStatus::Succeeded,
-                    error: None,
-                    attempt_count: 2,
-                    first_seen_at: "2026-01-01T00:00:00Z".into(),
-                    last_attempt_at: "2026-01-01T00:00:00Z".into(),
-                }],
-            },
-        )
-        .unwrap();
 
-        let repo = SpyRepo::default();
-        let runner = TelegramExportIndexRunner::new(FakeResolver::default(), repo.clone());
-        runner
-            .run(input.to_str().unwrap(), state_file.to_str().unwrap(), false)
+        let state_repo = SpyStateRepo::default();
+        state_repo
+            .upsert(&TelegramExportStateRecord {
+                source_type: "url".into(),
+                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                description: Some("desc".into()),
+                status: "succeeded".into(),
+                error: None,
+                attempt_count: 2,
+                first_seen_at: "2026-01-01T00:00:00Z".into(),
+                last_attempt_at: "2026-01-01T00:00:00Z".into(),
+            })
             .await
             .unwrap();
 
-        assert!(repo.recorded.lock().unwrap().is_empty());
+        let file_repo = SpyFileRepo::default();
+        let runner =
+            TelegramExportIndexRunner::new(FakeResolver::default(), file_repo.clone(), state_repo);
+        runner.run(input.to_str().unwrap(), false).await.unwrap();
 
+        assert!(file_repo.recorded.lock().unwrap().is_empty());
         fs::remove_file(input).unwrap();
-        fs::remove_file(state_file).unwrap();
     }
 
     #[tokio::test]
     async fn processes_fslink_and_records_file_index_with_description() {
-        let input = temp_path("telegram-export-fslink-input");
-        let state_file = temp_path("telegram-export-fslink-state");
+        let input = temp_path("telegram-export-fslink-input-db");
         fs::write(
             &input,
             r#"{"messages":[{"id":1,"text":"资源说明\n123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv"}]}"#,
         )
         .unwrap();
 
-        let repo = SpyRepo::default();
-        let runner = TelegramExportIndexRunner::new(FakeResolver::default(), repo.clone());
-        runner
-            .run(input.to_str().unwrap(), state_file.to_str().unwrap(), false)
-            .await
-            .unwrap();
+        let file_repo = SpyFileRepo::default();
+        let runner = TelegramExportIndexRunner::new(
+            FakeResolver::default(),
+            file_repo.clone(),
+            SpyStateRepo::default(),
+        );
+        runner.run(input.to_str().unwrap(), false).await.unwrap();
 
-        let recorded = repo.recorded.lock().unwrap();
+        let recorded = file_repo.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 1);
         assert_eq!(recorded[0].file_name, "movie.mkv");
         assert_eq!(recorded[0].description.as_deref(), Some("资源说明"));
-
         fs::remove_file(input).unwrap();
-        fs::remove_file(state_file).unwrap();
     }
 
     #[tokio::test]
     async fn retry_all_reprocesses_succeeded_entries() {
-        let input = temp_path("telegram-export-retry-all-input");
-        let state_file = temp_path("telegram-export-retry-all-state");
+        let input = temp_path("telegram-export-retry-all-input-db");
         fs::write(
             &input,
             r#"{
@@ -383,25 +376,23 @@ mod tests {
             }"#,
         )
         .unwrap();
-        save_state(
-            state_file.to_str().unwrap(),
-            &TelegramExportState {
-                version: 1,
-                entries: vec![TelegramExportStateEntry {
-                    source_type: "url".into(),
-                    source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
-                    description: Some("desc".into()),
-                    status: TelegramExportSourceStatus::Succeeded,
-                    error: None,
-                    attempt_count: 1,
-                    first_seen_at: "2026-01-01T00:00:00Z".into(),
-                    last_attempt_at: "2026-01-01T00:00:00Z".into(),
-                }],
-            },
-        )
-        .unwrap();
 
-        let repo = SpyRepo::default();
+        let state_repo = SpyStateRepo::default();
+        state_repo
+            .upsert(&TelegramExportStateRecord {
+                source_type: "url".into(),
+                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                description: Some("desc".into()),
+                status: "succeeded".into(),
+                error: None,
+                attempt_count: 1,
+                first_seen_at: "2026-01-01T00:00:00Z".into(),
+                last_attempt_at: "2026-01-01T00:00:00Z".into(),
+            })
+            .await
+            .unwrap();
+
+        let file_repo = SpyFileRepo::default();
         let runner = TelegramExportIndexRunner::new(
             FakeResolver {
                 files_by_url: HashMap::from([(
@@ -415,16 +406,48 @@ mod tests {
                     }],
                 )]),
             },
-            repo.clone(),
+            file_repo.clone(),
+            state_repo,
         );
-        runner
-            .run(input.to_str().unwrap(), state_file.to_str().unwrap(), true)
-            .await
-            .unwrap();
+        runner.run(input.to_str().unwrap(), true).await.unwrap();
 
-        assert_eq!(repo.recorded.lock().unwrap().len(), 1);
-
+        assert_eq!(file_repo.recorded.lock().unwrap().len(), 1);
         fs::remove_file(input).unwrap();
-        fs::remove_file(state_file).unwrap();
+    }
+
+    #[tokio::test]
+    async fn stores_error_message_when_url_processing_fails() {
+        let input = temp_path("telegram-export-error-input-db");
+        fs::write(
+            &input,
+            r#"{
+                "messages": [
+                    {
+                        "id": 1,
+                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let state_repo = SpyStateRepo::default();
+        let runner = TelegramExportIndexRunner::new(
+            FakeResolver::default(),
+            SpyFileRepo::default(),
+            state_repo.clone(),
+        );
+        runner.run(input.to_str().unwrap(), false).await.unwrap();
+
+        let state = state_repo.list_all().await.unwrap();
+        assert_eq!(state.len(), 1);
+        assert_eq!(state[0].status, "failed");
+        assert!(
+            state[0]
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("unsupported share url"))
+        );
+        fs::remove_file(input).unwrap();
     }
 }
