@@ -16,7 +16,7 @@ pub struct Model {
     pub status: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub error: Option<String>,
-    pub attempt_count: u64,
+    pub attempt_count: i64,
     pub first_seen_at: String,
     pub last_attempt_at: String,
     pub create_time: DateTimeUtc,

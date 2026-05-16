@@ -94,7 +94,7 @@ pub struct TelegramExportIndexArgs {
     pub input: String,
     #[arg(short, long)]
     pub verbose: bool,
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 300)]
     pub delay_ms: u64,
     #[arg(long)]
     pub retry_all: bool,
@@ -313,6 +313,30 @@ mod tests {
                     assert!(args.verbose);
                     assert_eq!(args.delay_ms, 250);
                     assert!(args.retry_all);
+                }
+            },
+            _ => panic!("expected telegram-export command"),
+        }
+    }
+
+    #[test]
+    fn telegram_export_index_uses_default_delay_ms() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "telegram-export",
+            "index",
+            "--data-dir",
+            "./data",
+            "--input",
+            "/tmp/result.json",
+        ]);
+
+        match cli.command {
+            Commands::TelegramExport(args) => match args.command {
+                TelegramExportCommands::Index(args) => {
+                    assert_eq!(args.delay_ms, 300);
+                    assert!(!args.retry_all);
+                    assert!(!args.verbose);
                 }
             },
             _ => panic!("expected telegram-export command"),

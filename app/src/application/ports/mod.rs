@@ -115,7 +115,7 @@ pub struct TelegramExportStateRecord {
     pub description: Option<String>,
     pub status: String,
     pub error: Option<String>,
-    pub attempt_count: u64,
+    pub attempt_count: i64,
     pub first_seen_at: String,
     pub last_attempt_at: String,
 }

@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
                     .col(text_null(TelegramExportState::Description))
                     .col(string(TelegramExportState::Status))
                     .col(text_null(TelegramExportState::Error))
-                    .col(big_unsigned(TelegramExportState::AttemptCount))
+                    .col(big_integer(TelegramExportState::AttemptCount))
                     .col(string(TelegramExportState::FirstSeenAt))
                     .col(string(TelegramExportState::LastAttemptAt))
                     .col(timestamp(TelegramExportState::CreateTime))

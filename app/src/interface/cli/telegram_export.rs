@@ -30,6 +30,11 @@ pub type TelegramExportIndexRuntimeRunner = TelegramExportIndexRunner<
     SeaOrmTelegramExportStateRepository,
 >;
 
+const STATUS_PENDING: &str = "pending";
+const STATUS_SUCCEEDED: &str = "succeeded";
+const STATUS_FAILED: &str = "failed";
+const STATUS_PERMANENT_FAILED: &str = "permanent_failed";
+
 #[derive(Clone)]
 pub struct TelegramExportIndexRunner<R, FileRepo, StateRepo> {
     share_resolver: R,
@@ -88,7 +93,7 @@ where
                         source_type: source_type.clone(),
                         source_value: source_value.clone(),
                         description: description.clone(),
-                        status: "pending".into(),
+                        status: STATUS_PENDING.into(),
                         error: None,
                         attempt_count: 0,
                         first_seen_at: now_string(),
@@ -99,18 +104,22 @@ where
                     record.description = description.clone();
                 }
 
-                if !retry_all && record.status == "succeeded" {
+                if !retry_all
+                    && (record.status == STATUS_SUCCEEDED
+                        || record.status == STATUS_PERMANENT_FAILED)
+                {
                     info!(
                         source_type = %record.source_type,
                         source_value = %record.source_value,
-                        "skipping succeeded source"
+                        status = %record.status,
+                        "skipping terminal source"
                     );
                     succeeded += 1;
                     continue;
                 }
 
                 record.attempt_count += 1;
-                record.status = "pending".into();
+                record.status = STATUS_PENDING.into();
                 record.error = None;
                 record.last_attempt_at = now_string();
                 self.state_repo.upsert(&record).await?;
@@ -137,7 +146,7 @@ where
 
                 match result {
                     Ok(()) => {
-                        record.status = "succeeded".into();
+                        record.status = STATUS_SUCCEEDED.into();
                         record.error = None;
                         succeeded += 1;
                         info!(
@@ -147,12 +156,13 @@ where
                         );
                     }
                     Err(err) => {
-                        record.status = "failed".into();
+                        record.status = classify_error_status(&err).into();
                         record.error = Some(err.to_string());
                         failed += 1;
                         info!(
                             source_type = %record.source_type,
                             source_value = %record.source_value,
+                            status = %record.status,
                             error = %err,
                             "source failed"
                         );
@@ -214,7 +224,7 @@ fn merge_sources_into_state(
                     source_type,
                     source_value,
                     description: description.clone(),
-                    status: "pending".into(),
+                    status: STATUS_PENDING.into(),
                     error: None,
                     attempt_count: 0,
                     first_seen_at: now_string(),
@@ -232,6 +242,14 @@ fn now_string() -> String {
     OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
+fn classify_error_status(err: &AppError) -> &'static str {
+    if matches!(err, AppError::ExternalService(_, false)) {
+        STATUS_PERMANENT_FAILED
+    } else {
+        STATUS_FAILED
+    }
 }
 
 #[cfg(test)]
@@ -331,7 +349,7 @@ mod tests {
         let values = state.values().collect::<Vec<_>>();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].description.as_deref(), Some("desc one"));
-        assert_eq!(values[0].status, "pending");
+        assert_eq!(values[0].status, STATUS_PENDING);
     }
 
     #[tokio::test]
@@ -356,7 +374,7 @@ mod tests {
                 source_type: "url".into(),
                 source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
                 description: Some("desc".into()),
-                status: "succeeded".into(),
+                status: STATUS_SUCCEEDED.into(),
                 error: None,
                 attempt_count: 2,
                 first_seen_at: "2026-01-01T00:00:00Z".into(),
@@ -420,7 +438,7 @@ mod tests {
                 source_type: "url".into(),
                 source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
                 description: Some("desc".into()),
-                status: "succeeded".into(),
+                status: STATUS_SUCCEEDED.into(),
                 error: None,
                 attempt_count: 1,
                 first_seen_at: "2026-01-01T00:00:00Z".into(),
@@ -479,7 +497,7 @@ mod tests {
         let state = state_repo.records.lock().unwrap();
         assert_eq!(state.len(), 1);
         let record = state.values().next().unwrap();
-        assert_eq!(record.status, "failed");
+        assert_eq!(record.status, STATUS_FAILED);
         assert!(
             record
                 .error
@@ -513,5 +531,65 @@ mod tests {
 
         assert!(elapsed < Duration::from_millis(200));
         fs::remove_file(input).unwrap();
+    }
+
+    #[tokio::test]
+    async fn skips_permanent_failed_entries_by_default() {
+        let input = temp_path("telegram-export-skip-permanent-failed");
+        fs::write(
+            &input,
+            r#"{
+                "messages": [
+                    {
+                        "id": 1,
+                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let state_repo = SpyStateRepo::default();
+        state_repo
+            .upsert(&TelegramExportStateRecord {
+                source_type: "url".into(),
+                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                description: Some("desc".into()),
+                status: STATUS_PERMANENT_FAILED.into(),
+                error: Some("external service error: share cancelled, 此分享不存在".into()),
+                attempt_count: 1,
+                first_seen_at: "2026-01-01T00:00:00Z".into(),
+                last_attempt_at: "2026-01-01T00:00:00Z".into(),
+            })
+            .await
+            .unwrap();
+
+        let file_repo = SpyFileRepo::default();
+        let runner =
+            TelegramExportIndexRunner::new(FakeResolver::default(), file_repo.clone(), state_repo);
+        runner.run(input.to_str().unwrap(), 0, false).await.unwrap();
+
+        assert!(file_repo.recorded.lock().unwrap().is_empty());
+        fs::remove_file(input).unwrap();
+    }
+
+    #[test]
+    fn classifies_non_retryable_external_service_as_permanent_failed() {
+        let err = AppError::ExternalService("share cancelled, 此分享不存在".into(), false);
+
+        assert_eq!(classify_error_status(&err), STATUS_PERMANENT_FAILED);
+    }
+
+    #[test]
+    fn keeps_retryable_external_service_as_failed() {
+        let err = AppError::ExternalService("too many requests".into(), true);
+        assert_eq!(classify_error_status(&err), STATUS_FAILED);
+    }
+
+    #[test]
+    fn keeps_non_external_service_errors_as_failed() {
+        let err = AppError::InvalidParameter("unsupported share url".into());
+
+        assert_eq!(classify_error_status(&err), STATUS_FAILED);
     }
 }

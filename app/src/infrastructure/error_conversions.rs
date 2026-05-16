@@ -55,15 +55,13 @@ impl From<serde_json::Error> for AppError {
 impl From<RequestError> for AppError {
     fn from(e: RequestError) -> Self {
         match e {
-            RequestError::ShareAuditNotPass | RequestError::ShareCancelled(_) => {
-                Self::ExternalService(e.to_string(), false)
-            }
-            RequestError::Unauthorized | RequestError::NotFound(_) => {
-                Self::ExternalService(e.to_string(), false)
-            }
-            RequestError::TooManyRequests => Self::ExternalService(e.to_string(), true),
+            RequestError::ShareAuditNotPass
+            | RequestError::ShareCancelled(_)
+            | RequestError::NotFound(_) => Self::ExternalService(e.to_string(), false),
+            RequestError::Unauthorized
+            | RequestError::TooManyRequests
+            | RequestError::ServerError(_) => Self::ExternalService(e.to_string(), true),
             RequestError::BadRequest(_) => Self::InvalidParameter(e.to_string()),
-            RequestError::ServerError(_) => Self::ExternalService(e.to_string(), true),
             RequestError::ConnectError(_) | RequestError::Timeout(_) => {
                 Self::Network(e.to_string(), true)
             }
