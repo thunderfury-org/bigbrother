@@ -94,6 +94,8 @@ pub struct TelegramExportIndexArgs {
     pub input: String,
     #[arg(short, long)]
     pub verbose: bool,
+    #[arg(long, default_value_t = 0)]
+    pub delay_ms: u64,
     #[arg(long)]
     pub retry_all: bool,
 }
@@ -125,6 +127,7 @@ pub async fn run(cli: Cli) -> AppResult<()> {
                     args.data_dir.data_dir.as_str(),
                     args.input.as_str(),
                     args.verbose,
+                    args.delay_ms,
                     args.retry_all,
                 )
                 .await
@@ -297,6 +300,8 @@ mod tests {
             "--input",
             "/tmp/result.json",
             "--verbose",
+            "--delay-ms",
+            "250",
             "--retry-all",
         ]);
 
@@ -306,6 +311,7 @@ mod tests {
                     assert_eq!(args.data_dir.data_dir, "./data");
                     assert_eq!(args.input, "/tmp/result.json");
                     assert!(args.verbose);
+                    assert_eq!(args.delay_ms, 250);
                     assert!(args.retry_all);
                 }
             },

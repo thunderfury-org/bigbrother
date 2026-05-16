@@ -1,6 +1,7 @@
-use std::{collections::HashSet, fs, io::BufReader};
+use std::{collections::HashSet, fs, io::BufReader, time::Duration};
 
 use time::OffsetDateTime;
+use tokio::time::sleep;
 use tracing::info;
 
 use crate::{
@@ -52,8 +53,8 @@ where
     FileRepo: FileIndexRepository,
     StateRepo: TelegramExportStateRepository,
 {
-    pub async fn run(&self, input: &str, retry_all: bool) -> AppResult<()> {
-        info!(input = %input, retry_all, "starting telegram export file-index run");
+    pub async fn run(&self, input: &str, delay_ms: u64, retry_all: bool) -> AppResult<()> {
+        info!(input = %input, delay_ms, retry_all, "starting telegram export file-index run");
 
         let file = fs::File::open(input)?;
         let reader = BufReader::new(file);
@@ -159,6 +160,10 @@ where
                 }
 
                 self.state_repo.upsert(&record).await?;
+                if record.source_type == "url" && delay_ms > 0 {
+                    info!(delay_ms, "sleeping after url source");
+                    sleep(Duration::from_millis(delay_ms)).await;
+                }
             }
         }
 
@@ -363,7 +368,7 @@ mod tests {
         let file_repo = SpyFileRepo::default();
         let runner =
             TelegramExportIndexRunner::new(FakeResolver::default(), file_repo.clone(), state_repo);
-        runner.run(input.to_str().unwrap(), false).await.unwrap();
+        runner.run(input.to_str().unwrap(), 0, false).await.unwrap();
 
         assert!(file_repo.recorded.lock().unwrap().is_empty());
         fs::remove_file(input).unwrap();
@@ -384,7 +389,7 @@ mod tests {
             file_repo.clone(),
             SpyStateRepo::default(),
         );
-        runner.run(input.to_str().unwrap(), false).await.unwrap();
+        runner.run(input.to_str().unwrap(), 0, false).await.unwrap();
 
         let recorded = file_repo.recorded.lock().unwrap();
         assert_eq!(recorded.len(), 1);
@@ -441,7 +446,7 @@ mod tests {
             file_repo.clone(),
             state_repo,
         );
-        runner.run(input.to_str().unwrap(), true).await.unwrap();
+        runner.run(input.to_str().unwrap(), 0, true).await.unwrap();
 
         assert_eq!(file_repo.recorded.lock().unwrap().len(), 1);
         fs::remove_file(input).unwrap();
@@ -469,7 +474,7 @@ mod tests {
             SpyFileRepo::default(),
             state_repo.clone(),
         );
-        runner.run(input.to_str().unwrap(), false).await.unwrap();
+        runner.run(input.to_str().unwrap(), 0, false).await.unwrap();
 
         let state = state_repo.records.lock().unwrap();
         assert_eq!(state.len(), 1);
@@ -481,6 +486,32 @@ mod tests {
                 .as_deref()
                 .is_some_and(|e| e.contains("unsupported share url"))
         );
+        fs::remove_file(input).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fslink_path_is_not_delayed() {
+        let input = temp_path("telegram-export-fslink-no-delay");
+        fs::write(
+            &input,
+            r#"{"messages":[{"id":1,"text":"123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv"}]}"#,
+        )
+        .unwrap();
+
+        let runner = TelegramExportIndexRunner::new(
+            FakeResolver::default(),
+            SpyFileRepo::default(),
+            SpyStateRepo::default(),
+        );
+
+        let start = std::time::Instant::now();
+        runner
+            .run(input.to_str().unwrap(), 200, false)
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(elapsed < Duration::from_millis(200));
         fs::remove_file(input).unwrap();
     }
 }

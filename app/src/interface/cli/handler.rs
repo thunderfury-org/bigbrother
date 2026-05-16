@@ -115,6 +115,7 @@ pub(crate) async fn run_telegram_export_index(
     data_dir: &str,
     input: &str,
     verbose: bool,
+    delay_ms: u64,
     retry_all: bool,
 ) -> AppResult<()> {
     if verbose {
@@ -125,7 +126,7 @@ pub(crate) async fn run_telegram_export_index(
     let (share_resolver, file_index_repo, state_repo) =
         ctx.telegram_export_index_services().await?;
     let runner = TelegramExportIndexRuntimeRunner::new(share_resolver, file_index_repo, state_repo);
-    runner.run(input, retry_all).await
+    runner.run(input, delay_ms, retry_all).await
 }
 
 fn format_file_size(size: u64) -> String {
