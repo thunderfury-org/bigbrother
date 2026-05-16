@@ -7,8 +7,8 @@ use url::Url;
 use crate::{
     application::import::ImportedMedia,
     error::AppError,
-    infrastructure::event_bus::Event,
     infrastructure::share::file_parser::ShareFileParser,
+    infrastructure::{event_bus::Event, share::is_supported_share_url},
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
@@ -16,7 +16,7 @@ use super::NotifyService;
 
 // --- MediaSource & ProcessMediaSources event ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaSource {
     ShareUrl(String),
     Fslink(String),
@@ -45,7 +45,7 @@ pub fn extract_media_sources(msg: &Message) -> Vec<MediaSource> {
     let urls = extract_urls_from_msg(msg);
     let mut processed_urls = HashSet::new();
     for url in urls {
-        if processed_urls.insert(url.to_string()) {
+        if is_supported_share_url(&url) && processed_urls.insert(url.to_string()) {
             sources.push(MediaSource::ShareUrl(url.to_string()));
         }
     }
@@ -189,6 +189,8 @@ async fn send_notify(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use teloxide::types::Message;
 
     #[test]
     fn message_description_ignores_fslink_lines() {
@@ -206,5 +208,42 @@ mod tests {
         );
 
         assert_eq!(description, None);
+    }
+
+    #[test]
+    fn extract_media_sources_ignores_unsupported_links() {
+        let msg: Message = serde_json::from_value(json!({
+            "message_id": 1,
+            "date": 1_700_000_000,
+            "chat": {
+                "id": 42,
+                "type": "private"
+            },
+            "text": "https://www.themoviedb.org/tv/314784"
+        }))
+        .unwrap();
+
+        assert!(extract_media_sources(&msg).is_empty());
+    }
+
+    #[test]
+    fn extract_media_sources_keeps_supported_share_links_and_deduplicates_them() {
+        let msg: Message = serde_json::from_value(json!({
+            "message_id": 1,
+            "date": 1_700_000_000,
+            "chat": {
+                "id": 42,
+                "type": "private"
+            },
+            "text": "https://pan.quark.cn/s/share-id?pwd=abc\nhttps://pan.quark.cn/s/share-id?pwd=abc\nhttps://www.themoviedb.org/tv/314784"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_media_sources(&msg),
+            vec![MediaSource::ShareUrl(
+                "https://pan.quark.cn/s/share-id?pwd=abc".to_string()
+            )]
+        );
     }
 }

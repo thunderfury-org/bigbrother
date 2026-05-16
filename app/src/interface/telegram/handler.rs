@@ -200,4 +200,28 @@ mod tests {
         assert!(matches!(err, AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("unsupported share url"));
     }
+
+    #[tokio::test]
+    async fn resolve_share_url_raw_files_keeps_supported_provider_failures_visible() {
+        #[derive(Clone)]
+        struct FailingShareResolver;
+
+        impl ShareResolver for FailingShareResolver {
+            async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
+                Err(AppError::InvalidParameter(
+                    "share password invalid".to_string(),
+                ))
+            }
+        }
+
+        let err = resolve_share_url_raw_files(
+            &FailingShareResolver,
+            "https://pan.quark.cn/s/share-id?pwd=bad",
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::InvalidParameter(_)));
+        assert!(err.to_string().contains("share password invalid"));
+    }
 }
