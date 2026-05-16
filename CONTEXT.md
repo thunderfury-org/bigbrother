@@ -20,6 +20,15 @@ _Avoid_: invalid share link, failed import
 A Telegram message that contains at least one **Media Source** after source extraction and filtering.
 _Avoid_: valid message, usable post
 
+**Telegram Message Snapshot**:
+A JSON export record from a Telegram client that preserves one historical Telegram message for offline replay.
+It is a message archive, not yet a processing result.
+_Avoid_: import JSON, file index dump
+
+**Media Source Observation**:
+One concrete **Media Source** extracted from one **Telegram Message Snapshot** and treated as an independently trackable processing unit.
+_Avoid_: task URL, whole-message job
+
 **Import Failure**:
 A failure that occurs while processing a **Media Source** BigBrother recognizes and has decided to handle.
 _Avoid_: ignored link, unsupported link
@@ -41,9 +50,12 @@ _Avoid_: deduplicated file catalog, canonical file identity
 ## Relationships
 
 - A Telegram message may contain zero or more **Media Sources**
+- A **Telegram Message Snapshot** preserves one historical Telegram message
 - A **Supported Share Link** is a kind of **Media Source**
 - An **Unsupported Link** is not a **Media Source**
 - An **Importable Message** contains at least one **Media Source**
+- One **Telegram Message Snapshot** may yield zero or more **Media Source Observations**
+- One **Media Source Observation** contains exactly one **Media Source**
 - An **Import Failure** can only occur for a **Media Source**, never for an **Unsupported Link**
 - A **File Index** contains one or more **File Fingerprints**
 - A **File Fingerprint** is identified by file size plus exactly one hash value
@@ -63,3 +75,4 @@ _Avoid_: deduplicated file catalog, canonical file identity
 - "无效链接" was ambiguous between **Unsupported Link** and **Import Failure** — resolved: unsupported provider URLs are ignored during source extraction, while failures on supported sources remain visible to the user.
 - "文件索引" was ambiguous between a canonical merged file catalog and an observation index — resolved: **File Index** stores separate **File Fingerprints** per observed hash and does not merge MD5 and SHA1 views.
 - "`etag`" was ambiguous with HTTP terminology — resolved: the domain concept is **File Hash**, a single algorithm-tagged file fingerprint value.
+- "导入 JSON" was ambiguous between ingesting a prebuilt index dump and replaying historical Telegram exports — resolved: this flow consumes a **Telegram Message Snapshot** and tracks work per **Media Source Observation**.

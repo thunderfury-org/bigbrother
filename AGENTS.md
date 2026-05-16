@@ -12,16 +12,6 @@ This repository is a Rust workspace with two crates: `app/` for the runtime appl
 
 Issues and PRDs for this repo live in GitHub Issues. See `docs/agents/issue-tracker.md`.
 
-#### Issue workflow
-
-Prefer the lightest issue flow that preserves clarity.
-
-- If the current branch is `main`, `master`, or another default branch, create the working branch before making code changes, commits, or PR preparation updates.
-- For a small bug fix or otherwise well-bounded change, keep a single source issue and put the intended implementation approach in a comment on that issue if needed.
-- Do not create a separate PRD issue for a small bug fix just to restate the expected implementation.
-- Create a separate PRD issue only when the work has grown beyond a straightforward fix into a larger feature, a multi-step delivery, or a change that needs independent scope, non-goals, and acceptance tracking.
-- When both a source issue and a PRD issue exist, keep the source issue focused on the problem and use the PRD issue for the agreed implementation plan.
-
 #### Triage labels
 
 Use the default five-label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
@@ -31,6 +21,10 @@ Use the default five-label vocabulary: `needs-triage`, `needs-info`, `ready-for-
 Single-context layout. See `docs/agents/domain.md`.
 
 ## Agent Rules
+
+### Working Branch
+
+If the current branch is `main`, `master`, or another default branch, create the working branch before making code changes, commits, or PR preparation updates.
 
 ### Requirement Readiness
 

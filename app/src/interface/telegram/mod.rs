@@ -18,6 +18,7 @@ use crate::{
 
 mod cmd;
 pub(crate) mod delivery;
+pub mod export;
 pub mod file_index;
 pub(crate) mod handler;
 

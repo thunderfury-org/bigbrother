@@ -593,6 +593,7 @@ impl Client {
             401 => Err(RequestError::Unauthorized),
             429 => Err(RequestError::TooManyRequests),
             5066 => Err(RequestError::NotFound(resp.message)),
+            5103 => Err(RequestError::ShareCancelled(resp.message)),
             _ => Err(RequestError::Other(format!(
                 "api error, code: {}, message: {}",
                 resp.code, resp.message
@@ -853,6 +854,14 @@ mod tests {
                 data: None,
             }),
             Err(RequestError::NotFound(message)) if message == "missing"
+        ));
+        assert!(matches!(
+            client.process_response::<serde_json::Value>(CommonResponse {
+                code: 5103,
+                message: "此分享不存在".to_string(),
+                data: None,
+            }),
+            Err(RequestError::ShareCancelled(message)) if message == "此分享不存在"
         ));
     }
 

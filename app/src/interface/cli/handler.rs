@@ -8,7 +8,7 @@ use crate::interface::import::{
     NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes,
 };
 
-use super::{context::CliContext, logger};
+use super::{context::CliContext, logger, telegram_export::TelegramExportIndexRuntimeRunner};
 
 pub(crate) async fn run_import_share_url(
     data_dir: &str,
@@ -109,6 +109,24 @@ pub(crate) async fn run_search_files(data_dir: &str, keyword: &str, limit: u64) 
     }
 
     Ok(())
+}
+
+pub(crate) async fn run_telegram_export_index(
+    data_dir: &str,
+    input: &str,
+    verbose: bool,
+    delay_ms: u64,
+    retry_all: bool,
+) -> AppResult<()> {
+    if verbose {
+        logger::init_console();
+    }
+
+    let ctx = CliContext::new(data_dir)?;
+    let (share_resolver, file_index_repo, state_repo) =
+        ctx.telegram_export_index_services().await?;
+    let runner = TelegramExportIndexRuntimeRunner::new(share_resolver, file_index_repo, state_repo);
+    runner.run(input, delay_ms, retry_all).await
 }
 
 fn format_file_size(size: u64) -> String {
