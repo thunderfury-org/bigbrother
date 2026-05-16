@@ -30,13 +30,12 @@ pub(crate) async fn run_import_share_url(
     let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
 
     // Index: reuse raw files
-    if !raw_files.is_empty() {
-        if let Err(err) = file_index_service
+    if !raw_files.is_empty()
+        && let Err(err) = file_index_service
             .record_raw_files(raw_files.clone(), description)
             .await
-        {
-            eprintln!("Warning: failed to index share url: {err}");
-        }
+    {
+        eprintln!("Warning: failed to index share url: {err}");
     }
 
     // Import: reuse raw files
