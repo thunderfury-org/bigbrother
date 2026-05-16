@@ -18,8 +18,12 @@ impl SeaOrmTelegramExportStateRepository {
 }
 
 impl TelegramExportStateRepository for SeaOrmTelegramExportStateRepository {
-    async fn list_all(&self) -> AppResult<Vec<TelegramExportStateRecord>> {
-        Ok(entity::telegram_export_state::list_all(&self.db).await?)
+    async fn get(
+        &self,
+        source_type: &str,
+        source_value: &str,
+    ) -> AppResult<Option<TelegramExportStateRecord>> {
+        Ok(entity::telegram_export_state::get(&self.db, source_type, source_value).await?)
     }
 
     async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()> {

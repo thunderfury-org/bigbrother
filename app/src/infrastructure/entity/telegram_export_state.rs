@@ -1,28 +1,40 @@
 use chrono::Utc;
-use sea_orm::{ActiveValue::Set, ConnectionTrait, DbErr, EntityTrait, sea_query::OnConflict};
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, QueryFilter,
+    sea_query::OnConflict,
+};
 
 use crate::application::ports::TelegramExportStateRecord;
 
 use super::model::telegram_export_state;
 
-pub async fn list_all<C>(db: &C) -> Result<Vec<TelegramExportStateRecord>, DbErr>
+pub async fn get<C>(
+    db: &C,
+    source_type: &str,
+    source_value: &str,
+) -> Result<Option<TelegramExportStateRecord>, DbErr>
 where
     C: ConnectionTrait,
 {
-    let models = telegram_export_state::Entity::find().all(db).await?;
-    Ok(models
-        .into_iter()
-        .map(|model| TelegramExportStateRecord {
-            source_type: model.source_type,
-            source_value: model.source_value,
-            description: model.description,
-            status: model.status,
-            error: model.error,
-            attempt_count: model.attempt_count,
-            first_seen_at: model.first_seen_at,
-            last_attempt_at: model.last_attempt_at,
-        })
-        .collect())
+    let Some(model) = telegram_export_state::Entity::find()
+        .filter(telegram_export_state::Column::SourceType.eq(source_type))
+        .filter(telegram_export_state::Column::SourceValue.eq(source_value))
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(TelegramExportStateRecord {
+        source_type: model.source_type,
+        source_value: model.source_value,
+        description: model.description,
+        status: model.status,
+        error: model.error,
+        attempt_count: model.attempt_count,
+        first_seen_at: model.first_seen_at,
+        last_attempt_at: model.last_attempt_at,
+    }))
 }
 
 pub async fn upsert<C>(db: &C, record: &TelegramExportStateRecord) -> Result<(), DbErr>

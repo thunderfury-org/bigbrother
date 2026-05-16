@@ -121,6 +121,10 @@ pub struct TelegramExportStateRecord {
 }
 
 pub trait TelegramExportStateRepository: Clone {
-    async fn list_all(&self) -> AppResult<Vec<TelegramExportStateRecord>>;
+    async fn get(
+        &self,
+        source_type: &str,
+        source_value: &str,
+    ) -> AppResult<Option<TelegramExportStateRecord>>;
     async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()>;
 }

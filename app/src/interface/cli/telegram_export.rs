@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io::BufReader};
+use std::{collections::HashSet, fs, io::BufReader};
 
 use time::OffsetDateTime;
 use tracing::info;
@@ -60,76 +60,110 @@ where
         let root: ExportRoot = serde_json::from_reader(reader).map_err(|err| {
             AppError::InvalidParameter(format!("invalid telegram export json: {err}"))
         })?;
-        let mut state = load_state(&self.state_repo).await?;
+        let mut seen = HashSet::new();
+        let mut total = 0usize;
+        let mut succeeded = 0usize;
+        let mut failed = 0usize;
 
-        merge_sources_into_state(&root, &mut state);
-        info!(sources = state.len(), "loaded deduplicated sources");
+        for msg in &root.messages {
+            let description = message_description(msg);
+            for source in extract_media_sources(msg) {
+                let (source_type, source_value) = match source {
+                    MediaSource::ShareUrl(url) => ("url".to_owned(), url),
+                    MediaSource::Fslink(fslink) => ("fslink".to_owned(), fslink),
+                    MediaSource::TgDocument { .. } => continue,
+                };
+                let key = state_key(&source_type, &source_value);
+                if !seen.insert(key) {
+                    continue;
+                }
+                total += 1;
 
-        for record in state.values_mut() {
-            if !retry_all && record.status == "succeeded" {
+                let mut record = self
+                    .state_repo
+                    .get(&source_type, &source_value)
+                    .await?
+                    .unwrap_or_else(|| TelegramExportStateRecord {
+                        source_type: source_type.clone(),
+                        source_value: source_value.clone(),
+                        description: description.clone(),
+                        status: "pending".into(),
+                        error: None,
+                        attempt_count: 0,
+                        first_seen_at: now_string(),
+                        last_attempt_at: now_string(),
+                    });
+
+                if record.description.is_none() {
+                    record.description = description.clone();
+                }
+
+                if !retry_all && record.status == "succeeded" {
+                    info!(
+                        source_type = %record.source_type,
+                        source_value = %record.source_value,
+                        "skipping succeeded source"
+                    );
+                    succeeded += 1;
+                    continue;
+                }
+
+                record.attempt_count += 1;
+                record.status = "pending".into();
+                record.error = None;
+                record.last_attempt_at = now_string();
+                self.state_repo.upsert(&record).await?;
                 info!(
                     source_type = %record.source_type,
                     source_value = %record.source_value,
-                    "skipping succeeded source"
+                    attempt_count = record.attempt_count,
+                    "processing source"
                 );
-                continue;
+
+                let result = match record.source_type.as_str() {
+                    "url" => {
+                        self.process_url(&record.source_value, record.description.clone())
+                            .await
+                    }
+                    "fslink" => {
+                        self.process_fslink(&record.source_value, record.description.clone())
+                            .await
+                    }
+                    other => Err(AppError::InvalidParameter(format!(
+                        "unsupported source type: {other}"
+                    ))),
+                };
+
+                match result {
+                    Ok(()) => {
+                        record.status = "succeeded".into();
+                        record.error = None;
+                        succeeded += 1;
+                        info!(
+                            source_type = %record.source_type,
+                            source_value = %record.source_value,
+                            "source succeeded"
+                        );
+                    }
+                    Err(err) => {
+                        record.status = "failed".into();
+                        record.error = Some(err.to_string());
+                        failed += 1;
+                        info!(
+                            source_type = %record.source_type,
+                            source_value = %record.source_value,
+                            error = %err,
+                            "source failed"
+                        );
+                    }
+                }
+
+                self.state_repo.upsert(&record).await?;
             }
-
-            record.attempt_count += 1;
-            record.last_attempt_at = now_string();
-            info!(
-                source_type = %record.source_type,
-                source_value = %record.source_value,
-                attempt_count = record.attempt_count,
-                "processing source"
-            );
-
-            let result = match record.source_type.as_str() {
-                "url" => {
-                    self.process_url(&record.source_value, record.description.clone())
-                        .await
-                }
-                "fslink" => {
-                    self.process_fslink(&record.source_value, record.description.clone())
-                        .await
-                }
-                other => Err(AppError::InvalidParameter(format!(
-                    "unsupported source type: {other}"
-                ))),
-            };
-
-            match result {
-                Ok(()) => {
-                    record.status = "succeeded".into();
-                    record.error = None;
-                    info!(
-                        source_type = %record.source_type,
-                        source_value = %record.source_value,
-                        "source succeeded"
-                    );
-                }
-                Err(err) => {
-                    record.status = "failed".into();
-                    record.error = Some(err.to_string());
-                    info!(
-                        source_type = %record.source_type,
-                        source_value = %record.source_value,
-                        error = %err,
-                        "source failed"
-                    );
-                }
-            }
-
-            self.state_repo.upsert(record).await?;
         }
 
-        let succeeded = state
-            .values()
-            .filter(|record| record.status == "succeeded")
-            .count();
-        let failed = state.len() - succeeded;
         info!(
-            total = state.len(),
+            total,
             succeeded, failed, "finished telegram export file-index run"
         );
 
@@ -155,9 +189,10 @@ where
     }
 }
 
+#[cfg(test)]
 fn merge_sources_into_state(
     root: &ExportRoot,
-    state: &mut HashMap<String, TelegramExportStateRecord>,
+    state: &mut std::collections::HashMap<String, TelegramExportStateRecord>,
 ) {
     for msg in &root.messages {
         let description = message_description(msg);
@@ -174,7 +209,7 @@ fn merge_sources_into_state(
                     source_type,
                     source_value,
                     description: description.clone(),
-                    status: "failed".into(),
+                    status: "pending".into(),
                     error: None,
                     attempt_count: 0,
                     first_seen_at: now_string(),
@@ -182,19 +217,6 @@ fn merge_sources_into_state(
                 });
         }
     }
-}
-
-async fn load_state<StateRepo>(
-    state_repo: &StateRepo,
-) -> AppResult<HashMap<String, TelegramExportStateRecord>>
-where
-    StateRepo: TelegramExportStateRepository,
-{
-    let records = state_repo.list_all().await?;
-    Ok(records
-        .into_iter()
-        .map(|record| (state_key(&record.source_type, &record.source_value), record))
-        .collect())
 }
 
 fn state_key(source_type: &str, source_value: &str) -> String {
@@ -214,6 +236,7 @@ mod tests {
         application::ports::{FileIndexRecordInput, FileSearchRecord},
         domain::share::{FileHash, RawFile},
     };
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Default)]
@@ -253,8 +276,17 @@ mod tests {
     }
 
     impl TelegramExportStateRepository for SpyStateRepo {
-        async fn list_all(&self) -> AppResult<Vec<TelegramExportStateRecord>> {
-            Ok(self.records.lock().unwrap().values().cloned().collect())
+        async fn get(
+            &self,
+            source_type: &str,
+            source_value: &str,
+        ) -> AppResult<Option<TelegramExportStateRecord>> {
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .get(&state_key(source_type, source_value))
+                .cloned())
         }
 
         async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()> {
@@ -294,7 +326,7 @@ mod tests {
         let values = state.values().collect::<Vec<_>>();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].description.as_deref(), Some("desc one"));
-        assert_eq!(values[0].status, "failed");
+        assert_eq!(values[0].status, "pending");
     }
 
     #[tokio::test]
@@ -439,11 +471,12 @@ mod tests {
         );
         runner.run(input.to_str().unwrap(), false).await.unwrap();
 
-        let state = state_repo.list_all().await.unwrap();
+        let state = state_repo.records.lock().unwrap();
         assert_eq!(state.len(), 1);
-        assert_eq!(state[0].status, "failed");
+        let record = state.values().next().unwrap();
+        assert_eq!(record.status, "failed");
         assert!(
-            state[0]
+            record
                 .error
                 .as_deref()
                 .is_some_and(|e| e.contains("unsupported share url"))
