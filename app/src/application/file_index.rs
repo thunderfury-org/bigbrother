@@ -103,10 +103,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::{
-        application::ports::FileLocationRecord,
-        domain::share::FileHash,
-    };
+    use crate::{application::ports::FileLocationRecord, domain::share::FileHash};
 
     #[derive(Clone, Default)]
     struct FakeRepo {

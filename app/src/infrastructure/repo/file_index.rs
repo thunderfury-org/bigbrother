@@ -119,7 +119,10 @@ mod tests {
         let results = repo.search_files("rare", 20).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].hash_type, "sha1");
-        assert_eq!(results[0].hash_value, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        assert_eq!(
+            results[0].hash_value,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
     }
 
     #[tokio::test]

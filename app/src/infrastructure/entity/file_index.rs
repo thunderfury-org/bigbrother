@@ -95,7 +95,10 @@ async fn add_location_match<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(index) = file_index::Entity::find_by_id(location.file_index_id).one(db).await? else {
+    let Some(index) = file_index::Entity::find_by_id(location.file_index_id)
+        .one(db)
+        .await?
+    else {
         return Ok(());
     };
 
@@ -109,11 +112,9 @@ where
             locations: Vec::new(),
         });
 
-    if let Some(existing) = entry
-        .locations
-        .iter_mut()
-        .find(|existing| existing.file_name == location.file_name && existing.file_path == location.file_path)
-    {
+    if let Some(existing) = entry.locations.iter_mut().find(|existing| {
+        existing.file_name == location.file_name && existing.file_path == location.file_path
+    }) {
         for description in descriptions {
             push_unique(&mut existing.descriptions, description);
         }
