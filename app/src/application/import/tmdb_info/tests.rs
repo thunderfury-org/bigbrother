@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::*;
-use crate::domain::import::{SearchMovieResult, SearchTvResult};
+use crate::domain::import::{SearchMovieResult, SearchTvResult, Season};
 use crate::domain::media::{Metadata, Title};
 
 #[derive(Clone, Default)]
@@ -12,8 +12,11 @@ struct FakeMetadataCatalog {
     movie_detail_calls: Arc<Mutex<Vec<u32>>>,
     tv_detail_calls: Arc<Mutex<Vec<u32>>>,
     movie_search_calls: Arc<Mutex<Vec<(String, String)>>>,
+    tv_search_calls: Arc<Mutex<Vec<(String, String)>>>,
     movie_search_results: Arc<Mutex<Vec<SearchMovieResult>>>,
+    tv_search_results: Arc<Mutex<HashMap<(String, String), Vec<SearchTvResult>>>>,
     movie_details: Arc<Mutex<HashMap<u32, MovieDetail>>>,
+    tv_details: Arc<Mutex<HashMap<u32, TvDetail>>>,
 }
 
 impl MetadataCatalog for FakeMetadataCatalog {
@@ -50,13 +53,23 @@ impl MetadataCatalog for FakeMetadataCatalog {
         }))
     }
 
-    async fn search_tv(&self, _title: &str, _year: &str) -> AppResult<Vec<SearchTvResult>> {
-        Ok(Vec::new())
+    async fn search_tv(&self, title: &str, year: &str) -> AppResult<Vec<SearchTvResult>> {
+        self.tv_search_calls
+            .lock()
+            .unwrap()
+            .push((title.to_string(), year.to_string()));
+        Ok(self
+            .tv_search_results
+            .lock()
+            .unwrap()
+            .get(&(title.to_string(), year.to_string()))
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
         self.tv_detail_calls.lock().unwrap().push(id);
-        Ok(None)
+        Ok(self.tv_details.lock().unwrap().get(&id).cloned())
     }
 }
 
@@ -171,4 +184,66 @@ async fn get_movie_info_matches_normalized_title_and_year_from_multiple_candidat
     let movie = lookup.get_movie_info(&meta).await.unwrap();
 
     assert_eq!(movie.map(|item| item.id), Some(12));
+}
+
+#[tokio::test]
+async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
+    let catalog = FakeMetadataCatalog::default();
+    catalog.tv_search_results.lock().unwrap().insert(
+        ("21世纪大君夫人".to_string(), "2026".to_string()),
+        vec![SearchTvResult {
+            id: 278573,
+            name: "21世纪大君夫人".into(),
+            original_name: "21세기 대군부인".into(),
+        }],
+    );
+    catalog.tv_details.lock().unwrap().insert(
+        278573,
+        TvDetail {
+            id: 278573,
+            name: "21世纪大君夫人".into(),
+            first_air_date: "2026-04-10".into(),
+            number_of_episodes: 12,
+            number_of_seasons: 1,
+            origin_country: vec!["KR".into()],
+            original_language: "ko".into(),
+            original_name: "21세기 대군부인".into(),
+            genres: Vec::new(),
+            seasons: vec![Season {
+                id: 1,
+                name: "Season 1".into(),
+                episode_count: 12,
+                season_number: 1,
+            }],
+        },
+    );
+
+    let mut lookup = TmdbLookup::new(catalog.clone());
+    let meta = Metadata {
+        titles: vec![
+            Title {
+                title: "Perfect Crown DSNP".into(),
+                language: "en".into(),
+            },
+            Title {
+                title: "21世纪大君夫人".into(),
+                language: "zh".into(),
+            },
+        ],
+        year: "2026".into(),
+        ..Default::default()
+    };
+
+    let first = lookup.get_tv_info(&meta).await.unwrap();
+    let second = lookup.get_tv_info(&meta).await.unwrap();
+
+    assert_eq!(first.as_ref().map(|item| item.id), Some(278573));
+    assert_eq!(second.as_ref().map(|item| item.id), Some(278573));
+    assert_eq!(
+        catalog.tv_search_calls.lock().unwrap().as_slice(),
+        &[
+            ("Perfect Crown DSNP".to_string(), "2026".to_string()),
+            ("21世纪大君夫人".to_string(), "2026".to_string()),
+        ]
+    );
 }

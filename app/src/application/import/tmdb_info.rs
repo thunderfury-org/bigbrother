@@ -101,7 +101,10 @@ where
         for title in &meta.titles {
             let cache_key = format!("tv:{}:{}", title.title, meta.year);
             if let Some(tv) = self.tv_info_cache.get(&cache_key) {
-                return Ok(tv.clone());
+                if tv.is_some() {
+                    return Ok(tv.clone());
+                }
+                continue;
             }
             let tvs = self
                 .metadata_catalog
