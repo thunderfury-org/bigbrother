@@ -23,6 +23,11 @@ where
     ) -> AppResult<Vec<ImportedMedia>> {
         let (medias, unmatched) = self.build_import_plan(media_files).await?;
         let mut results = self.execute_import_plan(&medias).await?;
+        info!(
+            media_group_count = medias.len(),
+            unmatched_count = unmatched.len(),
+            "Executed import plan"
+        );
 
         if !unmatched.is_empty() {
             results.push(ImportedMedia::Skipped {

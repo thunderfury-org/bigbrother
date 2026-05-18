@@ -181,23 +181,45 @@ pub(crate) async fn run(bot: teloxide::Bot, runtime: BotRuntime) {
 
 async fn handle_channel_post(runtime: BotRuntime, msg: Message) -> ResponseResult<()> {
     let sources = file_index::extract_media_sources(&msg);
+    let source_context = file_index::telegram_source_context_from_message(&msg, true, None);
     if matches!(
         decide_source_handling(true, &sources),
         SourceHandling::Ignore
     ) {
-        info!("Skipping channel message without media sources");
+        info!(
+            source_chat_id = source_context.source_chat_id(),
+            source_message_id = source_context.source_message_id(),
+            source_message_link = ?source_context.source_message_link(),
+            extracted_media_sources = 0,
+            "Skipping channel source record without media sources"
+        );
         return Ok(());
     }
 
     let description = file_index::message_description(&msg);
+    info!(
+        source_chat_id = source_context.source_chat_id(),
+        source_message_id = source_context.source_message_id(),
+        source_message_link = ?source_context.source_message_link(),
+        extracted_media_sources = sources.len(),
+        "Received channel source record with media sources"
+    );
 
     for source in sources {
         let event = file_index::ProcessMediaSources {
             source,
             description: description.clone(),
+            source_context: Some(source_context.clone()),
             channel_post: true,
             reply_to_message_id: None,
         };
+        info!(
+            source_kind = event.source.kind(),
+            source_chat_id = ?event.source_chat_id(),
+            source_message_id = ?event.source_message_id(),
+            source_message_link = ?event.source_message_link(),
+            "Publishing ProcessMediaSources event"
+        );
         if let Err(err) = runtime.event_bus().publish(&event).await {
             error!("Failed to publish ProcessMediaSources event: {err}");
         }
@@ -224,6 +246,14 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
     let sources = file_index::extract_media_sources(&msg);
     let description = file_index::message_description(&msg);
     let reply_to = msg.from.as_ref().map(|_| msg.id.0);
+    let source_context = file_index::telegram_source_context_from_message(&msg, false, reply_to);
+    info!(
+        source_chat_id = source_context.source_chat_id(),
+        source_message_id = source_context.source_message_id(),
+        source_message_link = ?source_context.source_message_link(),
+        extracted_media_sources = sources.len(),
+        "Received private source record"
+    );
     let handling = decide_source_handling(false, &sources);
 
     match &handling {
@@ -247,9 +277,17 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
         let event = file_index::ProcessMediaSources {
             source,
             description: description.clone(),
+            source_context: Some(source_context.clone()),
             channel_post: false,
             reply_to_message_id: reply_to,
         };
+        info!(
+            source_kind = event.source.kind(),
+            source_chat_id = ?event.source_chat_id(),
+            source_message_id = ?event.source_message_id(),
+            source_message_link = ?event.source_message_link(),
+            "Publishing ProcessMediaSources event"
+        );
         match runtime.event_bus().publish(&event).await {
             Ok(()) => {
                 published_sources += 1;
@@ -262,12 +300,15 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
 
     if published_sources > 0
         && let SourceHandling::Process { confirm } = handling
-        && let Err(err) = runtime
-            .notify_service()
-            .send_message(confirm, reply_to)
-            .await
     {
-        error!("Failed to send instant confirmation: {err}");
+        file_index::send_observation_notification(
+            runtime.notify_service(),
+            Some(&source_context),
+            reply_to,
+            "import_start",
+            confirm,
+        )
+        .await;
     }
 
     Ok(())
