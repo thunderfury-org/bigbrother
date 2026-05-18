@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use tracing::info;
 
 use crate::{
     application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
@@ -27,10 +28,17 @@ where
         description: Option<String>,
     ) -> AppResult<()> {
         let description = normalize_optional_text(description);
+        let raw_file_count = files.len();
         let inputs = files
             .into_iter()
             .filter_map(|file| to_record_input(file, description.clone()))
             .collect::<Vec<_>>();
+        info!(
+            raw_file_count,
+            file_index_record_count = inputs.len(),
+            has_description = description.is_some(),
+            "Prepared file index records from raw files"
+        );
 
         self.repo.record_files(&inputs).await
     }

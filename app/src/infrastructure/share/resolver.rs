@@ -8,6 +8,7 @@ use crate::{
         quark::{self, QuarkShareService, QuarkShareSource},
     },
 };
+use tracing::info;
 
 pub trait ShareResolver: Clone {
     async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>>;
@@ -46,21 +47,25 @@ impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, 
         })?;
 
         if let Some((share_key, password)) = pan123::parse_share_parts(&url) {
+            info!("Resolving supported share url with provider pan123");
             self.pan123
                 .raw_files_from_share(&share_key, &password)
                 .await
                 .map(Some)
         } else if let Some(share_code) = pan189::parse_share_code(&url) {
+            info!("Resolving supported share url with provider pan189");
             self.pan189
                 .raw_files_from_share_code(&share_code)
                 .await
                 .map(Some)
         } else if let Some((share_code, receive_code)) = pan115::parse_share_parts(&url) {
+            info!("Resolving supported share url with provider pan115");
             self.pan115
                 .raw_files_from_share(&share_code, &receive_code)
                 .await
                 .map(Some)
         } else if let Some((share_id, password)) = quark::parse_share_parts(&url) {
+            info!("Resolving supported share url with provider quark");
             self.quark
                 .raw_files_from_share(&share_id, &password)
                 .await

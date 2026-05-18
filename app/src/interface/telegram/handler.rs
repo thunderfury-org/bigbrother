@@ -1,4 +1,4 @@
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     application::import::MetadataLookup,
@@ -29,19 +29,49 @@ pub async fn on_process_media_sources(
     mut handler: ProcessMediaSourcesHandler,
     payload: ProcessMediaSources,
 ) -> AppResult<()> {
-    let reply_to = payload.reply_to_message_id;
+    let reply_to = payload.source_reply_to_message_id();
     let description = payload.description.clone();
+    let source_context = payload.source_context();
     let error_prefix = match &payload.source {
         MediaSource::ShareUrl(_) => "分享处理失败",
         MediaSource::Fslink(_) => "秒传处理失败",
         MediaSource::TgDocument { .. } => "JSON/CAS 文件处理失败",
     };
+    info!(
+        source_kind = payload.source.kind(),
+        channel_post = payload.source_channel_post(),
+        reply_to = ?reply_to,
+        source_chat_id = ?payload.source_chat_id(),
+        source_message_id = ?payload.source_message_id(),
+        source_message_link = ?payload.source_message_link(),
+        "Processing media source observation"
+    );
 
     // Step 1: Fetch raw files (source-specific)
-    let raw_files = fetch_raw_files(&handler, &payload.source, reply_to, error_prefix).await?;
+    let raw_files = fetch_raw_files(
+        &handler,
+        &payload.source,
+        source_context,
+        reply_to,
+        error_prefix,
+    )
+    .await?;
     let Some(raw_files) = raw_files else {
+        info!(
+            source_kind = payload.source.kind(),
+            source_chat_id = ?payload.source_chat_id(),
+            source_message_id = ?payload.source_message_id(),
+            "Media source observation ended without raw files"
+        );
         return Ok(());
     };
+    info!(
+        source_kind = payload.source.kind(),
+        raw_file_count = raw_files.len(),
+        source_chat_id = ?payload.source_chat_id(),
+        source_message_id = ?payload.source_message_id(),
+        "Fetched raw files for media source observation"
+    );
 
     // Step 2: Index
     if let Err(err) = handler
@@ -50,27 +80,65 @@ pub async fn on_process_media_sources(
         .await
     {
         warn!(error = %err, "file index record failed (non-blocking)");
+    } else {
+        info!(
+            source_kind = payload.source.kind(),
+            raw_file_count = raw_files.len(),
+            source_chat_id = ?payload.source_chat_id(),
+            source_message_id = ?payload.source_message_id(),
+            "Recorded raw files into file index"
+        );
     }
 
     // Step 3: Import
-    if should_import(
+    let should_import = should_import(
         &handler.keyword_service,
-        payload.channel_post,
+        payload.source_channel_post(),
         &payload.description,
     )
-    .await
-    {
+    .await;
+    info!(
+        source_kind = payload.source.kind(),
+        should_import,
+        channel_post = payload.source_channel_post(),
+        source_chat_id = ?payload.source_chat_id(),
+        source_message_id = ?payload.source_message_id(),
+        "Evaluated import policy for media source observation"
+    );
+    if should_import {
         let media_files = handler.metadata_lookup.build_media_files(raw_files);
+        info!(
+            source_kind = payload.source.kind(),
+            media_file_count = media_files.len(),
+            source_chat_id = ?payload.source_chat_id(),
+            source_message_id = ?payload.source_message_id(),
+            "Built media files for import"
+        );
         match handler
             .import_service
             .transfer_media_files(&media_files)
             .await
         {
             Ok(imported) => {
-                send_import_results(&handler.notify_service, reply_to, &imported).await;
+                info!(
+                    source_kind = payload.source.kind(),
+                    imported_summary_count = imported.len(),
+                    source_chat_id = ?payload.source_chat_id(),
+                    source_message_id = ?payload.source_message_id(),
+                    "Import completed for media source observation"
+                );
+                send_import_results(&handler.notify_service, source_context, reply_to, &imported)
+                    .await;
             }
             Err(err) if !err.is_retryable() => {
-                send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
+                send_import_error(
+                    &handler.notify_service,
+                    source_context,
+                    reply_to,
+                    error_prefix,
+                    &err,
+                )
+                .await;
             }
             Err(err) => return Err(err),
         }
@@ -83,6 +151,7 @@ pub async fn on_process_media_sources(
 async fn fetch_raw_files(
     handler: &ProcessMediaSourcesHandler,
     source: &MediaSource,
+    source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
     reply_to: Option<i32>,
     error_prefix: &str,
 ) -> AppResult<Option<Vec<RawFile>>> {
@@ -92,7 +161,15 @@ async fn fetch_raw_files(
         }
         MediaSource::Fslink(fslink) => ShareFileParser::parse_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
-            return fetch_tg_document(handler, file_id, file_name, reply_to, error_prefix).await;
+            return fetch_tg_document(
+                handler,
+                file_id,
+                file_name,
+                source_context,
+                reply_to,
+                error_prefix,
+            )
+            .await;
         }
     };
 
@@ -100,7 +177,14 @@ async fn fetch_raw_files(
         Ok(files) => Ok(Some(files)),
         Err(err) if !err.is_retryable() => {
             warn!(error = %err, "skipping permanent error");
-            send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
+            send_import_error(
+                &handler.notify_service,
+                source_context,
+                reply_to,
+                error_prefix,
+                &err,
+            )
+            .await;
             Ok(None)
         }
         Err(err) => Err(err),
@@ -120,6 +204,7 @@ async fn fetch_tg_document(
     handler: &ProcessMediaSourcesHandler,
     file_id: &str,
     file_name: &str,
+    source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
     reply_to: Option<i32>,
     error_prefix: &str,
 ) -> AppResult<Option<Vec<RawFile>>> {
@@ -137,7 +222,14 @@ async fn fetch_tg_document(
             file.meta.size
         ));
         warn!(file_name = %file_name, size = file.meta.size, "document too large");
-        send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
+        send_import_error(
+            &handler.notify_service,
+            source_context,
+            reply_to,
+            error_prefix,
+            &err,
+        )
+        .await;
         return Ok(None);
     }
 
@@ -148,7 +240,14 @@ async fn fetch_tg_document(
         Ok(files) => Ok(Some(files)),
         Err(err) => {
             warn!(file_name = %file_name, error = %err, "failed to parse document");
-            send_import_error(&handler.notify_service, reply_to, error_prefix, &err).await;
+            send_import_error(
+                &handler.notify_service,
+                source_context,
+                reply_to,
+                error_prefix,
+                &err,
+            )
+            .await;
             Ok(None)
         }
     }

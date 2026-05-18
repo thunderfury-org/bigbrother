@@ -1,3 +1,4 @@
+use tracing::info;
 use url::Url;
 
 use crate::{
@@ -115,6 +116,13 @@ impl<S: QuarkShareSource> QuarkShareService<S> {
                 .share_source
                 .list_share_files(share_id, password, &share_info, &parent_id)
                 .await?;
+            info!(
+                share_id,
+                parent_id = %parent_id,
+                folder_count = folders.len(),
+                file_count = files.len(),
+                "Traversed quark share directory"
+            );
 
             for file in &files {
                 file_infos.push((
@@ -137,6 +145,12 @@ impl<S: QuarkShareSource> QuarkShareService<S> {
             .iter()
             .map(|(fid, token, _, _, _)| (fid.clone(), token.clone()))
             .collect();
+        info!(
+            share_id,
+            file_info_count = file_infos.len(),
+            md5_pair_count = md5_pairs.len(),
+            "Prepared quark batch download metadata"
+        );
         let md5_map = self
             .share_source
             .batch_get_file_md5s(share_id, password, &share_info, &md5_pairs)
