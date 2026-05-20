@@ -151,6 +151,9 @@ impl<S: QuarkShareSource> QuarkShareService<S> {
             md5_pair_count = md5_pairs.len(),
             "Prepared quark batch download metadata"
         );
+        if file_infos.is_empty() {
+            return Ok(Vec::new());
+        }
         let md5_map = self
             .share_source
             .batch_get_file_md5s(share_id, password, &share_info, &md5_pairs)
@@ -289,5 +292,46 @@ mod tests {
             &raw_files[0].hash,
             FileHash::Md5(value) if value == "0123456789abcdef0123456789abcdef"
         ));
+    }
+
+    #[derive(Clone, Default)]
+    struct EmptyShareRejectsBatchClient;
+
+    impl super::QuarkShareSource for EmptyShareRejectsBatchClient {
+        async fn get_share_info(&self, _share_id: &str, _password: &str) -> AppResult<String> {
+            Ok("stoken".into())
+        }
+
+        async fn list_share_files(
+            &self,
+            _share_id: &str,
+            _password: &str,
+            _stoken: &str,
+            _pdir_fid: &str,
+        ) -> AppResult<(Vec<quark::Folder>, Vec<quark::File>)> {
+            Ok((Vec::new(), Vec::new()))
+        }
+
+        async fn batch_get_file_md5s(
+            &self,
+            _share_id: &str,
+            _password: &str,
+            _stoken: &str,
+            _file_infos: &[(String, String)],
+        ) -> AppResult<HashMap<String, String>> {
+            Err(crate::error::AppError::Internal(
+                "batch lookup should be skipped for empty share".into(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn returns_empty_list_for_empty_share_without_batch_lookup() {
+        let raw_files = QuarkShareService::new(EmptyShareRejectsBatchClient)
+            .raw_files_from_share("share-id", "")
+            .await
+            .unwrap();
+
+        assert!(raw_files.is_empty());
     }
 }
