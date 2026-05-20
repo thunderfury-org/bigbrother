@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 mod normalize;
 mod parser;
+mod parser_v2;
 
 pub const LANGUAGE_CHINESE: &str = "zh";
 pub const LANGUAGE_JAPANESE: &str = "jp";
@@ -100,7 +101,7 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn parse(value: &str) -> Box<Self> {
-        parser::parse(value)
+        parser_v2::parse(value)
     }
 
     pub fn merge_metadata(&mut self, other: &Metadata) {
@@ -251,6 +252,54 @@ mod tests {
                 .iter()
                 .all(|title| !title.title.contains("DSNP"))
         );
+    }
+
+    #[test]
+    fn parse_movie_title_excludes_source_tag_before_technical_tags() {
+        let metadata = Metadata::parse("Perfect.Crown.DSNP.1080p.WEB-DL.AAC.H.264.mkv");
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.resolution, "1080p");
+        assert_eq!(metadata.quality, "WEB-DL");
+        assert_eq!(metadata.video_codec, "H264");
+        assert_eq!(metadata.audio_codec, "AAC");
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "Perfect Crown")
+        );
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .all(|title| !title.title.contains("DSNP"))
+        );
+    }
+
+    #[test]
+    fn parse_bilingual_tv_scene_title_with_scene_tags() {
+        let metadata = Metadata::parse(
+            "为人父母.2010.S02E16.Amazing.Andy.and.His.Wonderful.World.of.Bugs.1080p.BluRay.Remux.DTS-HD.MA5.1.H.264-BTN.mkv",
+        );
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.extension, ".mkv");
+        assert_eq!(metadata.year, "2010");
+        assert_eq!(metadata.season_number, Some(2));
+        assert_eq!(metadata.episode_number, Some(16));
+        assert_eq!(metadata.resolution, "1080p");
+        assert_eq!(metadata.quality, "Remux");
+        assert_eq!(metadata.video_codec, "H264");
+        assert_eq!(metadata.audio_codec, "DTS-HD.MA.5.1");
+        assert_eq!(metadata.release_group, "BTN");
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "为人父母" && title.language == LANGUAGE_CHINESE)
+        );
+        assert_eq!(metadata.titles.len(), 1);
     }
 
     #[test]

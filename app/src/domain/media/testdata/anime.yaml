@@ -14,9 +14,9 @@
 - input: "【智械尚未危机制作】异世界一击无双姐姐 ～和姐姐一起开始异世界生活～ Isekai One Turn Kill Neesan - 01精校进化版 (1920x1080 AVC AAC MKV)【附外挂字幕】"
   expected:
     titles:
-      - title: "异世界一击无双姐姐 ～和姐姐一起开始异世界生活"
+      - title: "异世界一击无双姐姐 ～和姐姐一起开始异世界生活～"
         language: "zh"
-      - title: "～ Isekai One Turn Kill Neesan"
+      - title: "Isekai One Turn Kill Neesan"
         language: "en"
     release_group: "智械尚未危机制作"
     episode_number: 1
@@ -58,8 +58,10 @@
 - input: "[爱恋字幕社&猫恋汉化组][1月新番][因为太怕痛就全点防御力了。 第二季][Bofuri S2][10][1080P][MP4][GB][简中]"
   expected:
     titles:
-      - title: "因为太怕痛就全点防御力了。 Bofuri"
+      - title: "因为太怕痛就全点防御力了。"
         language: "zh"
+      - title: "Bofuri"
+        language: "en"
     release_group: "爱恋字幕社&猫恋汉化组"
     season_number: 2
     episode_number: 10
@@ -296,7 +298,9 @@
 - input: "[APTX4869][CONAN][名侦探柯南 1038 警校篇 狂野警察物语 CASE. 伊达航][BDRIP][1080P][MKV]"
   expected:
     titles:
-      - title: "CONAN 名侦探柯南"
+      - title: "CONAN"
+        language: "en"
+      - title: "名侦探柯南"
         language: "zh"
     episode_number: 1038
     resolution: "1080p"

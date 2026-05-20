@@ -6,12 +6,21 @@ use lingua::{Language, LanguageDetector, LanguageDetectorBuilder};
 use regex::Regex;
 
 use super::normalize::{
-    normalize_audio_codec, normalize_hdr, normalize_language, normalize_quality,
-    normalize_video_codec,
+    normalize_audio_codec, normalize_hdr, normalize_quality, normalize_video_codec,
 };
+use super::parser_v2::labels::{Label, classify_bare};
+use super::parser_v2::release_group::{
+    is_metadata_fragment as is_metadata_fragment_v2, is_noise_bracket as is_noise_bracket_v2,
+    looks_like_release_group as looks_like_release_group_v2,
+    technical_fragment_spans as technical_fragment_spans_v2,
+    trailing_release_group as trailing_release_group_v2,
+};
+use super::parser_v2::title_resolver::{
+    prefix_contains_title, rebalance_title_boundaries, titles_from_cleaned_part,
+};
+use super::parser_v2::tokenizer::{TokenKind, tokenize};
 use super::{
-    FileType, LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_CHINESE_TRADITIONAL, LANGUAGE_ENGLISH,
-    MediaKind, Metadata, Title,
+    FileType, LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_CHINESE_TRADITIONAL, MediaKind, Metadata,
 };
 
 static TMDB_RE: LazyLock<Regex> =
@@ -141,30 +150,6 @@ static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(||
 });
 static TITLE_TRIM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
 static DIGIT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
-static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        (?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
-        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
-        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
-        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV|OVA|OAD|NCOP|NCED|Fin|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
-        ",
-    )
-    .unwrap()
-});
-static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        ^(?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
-        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
-        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
-        |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|OVA|OAD|NCOP|NCED|Fin
-        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV)$",
-    )
-    .unwrap()
-});
 static NAME_NORMALIZE_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         Regex::new(r"[_（）《》]").unwrap(),
@@ -527,8 +512,8 @@ impl ParsedMediaName {
             let raw_remainder = &self.body[caps.get(0).unwrap().end()..];
             let remainder = raw_remainder.trim();
             if !value.is_empty()
-                && !is_noise_bracket(value)
-                && (looks_like_release_group(value)
+                && !is_noise_bracket_v2(value)
+                && (looks_like_release_group_v2(value, is_noise_bracket_v2)
                     || raw_remainder.trim_start().starts_with('★')
                     || has_promotional_prefix(raw_remainder))
                 && prefix_contains_title(remainder)
@@ -550,7 +535,10 @@ impl ParsedMediaName {
             return;
         };
         let value = value_match.as_str().trim();
-        if value.is_empty() || is_noise_bracket(value) || !looks_like_release_group(value) {
+        if value.is_empty()
+            || is_noise_bracket_v2(value)
+            || !looks_like_release_group_v2(value, is_noise_bracket_v2)
+        {
             return;
         }
 
@@ -570,11 +558,11 @@ impl ParsedMediaName {
                 })
                 .collect::<Vec<_>>();
             for (span, value) in captures {
-                if is_noise_bracket(value.as_str()) {
+                if is_noise_bracket_v2(value.as_str()) {
                     self.mark(span);
                     continue;
                 }
-                if looks_like_release_group(value.as_str())
+                if looks_like_release_group_v2(value.as_str(), is_noise_bracket_v2)
                     && (span.start < title_boundary
                         || has_recent_occupied_before(&self.occupied, span.start, 32))
                 {
@@ -589,7 +577,12 @@ impl ParsedMediaName {
             return;
         }
 
-        if let Some((span, group)) = trailing_release_group(&self.body, &self.occupied) {
+        if let Some((span, group)) = trailing_release_group_v2(
+            &self.body,
+            &self.occupied,
+            is_metadata_fragment_v2,
+            is_noise_bracket_v2,
+        ) {
             self.metadata.release_group = group;
             self.release_group_locked = true;
             self.mark(span);
@@ -646,7 +639,7 @@ impl ParsedMediaName {
             .filter_map(|caps| {
                 let value = caps.name("value")?.as_str().to_owned();
                 let span = caps.get(0).unwrap().range();
-                is_metadata_fragment(value.as_str()).then_some(span)
+                is_metadata_fragment_v2(value.as_str()).then_some(span)
             })
             .collect::<Vec<_>>();
         for span in paren_spans {
@@ -658,17 +651,14 @@ impl ParsedMediaName {
             .filter_map(|caps| {
                 let value = caps.name("value")?.as_str().to_owned();
                 let span = caps.get(0).unwrap().range();
-                is_noise_bracket(value.as_str()).then_some(span)
+                is_noise_bracket_v2(value.as_str()).then_some(span)
             })
             .collect::<Vec<_>>();
         for span in bracket_spans {
             self.mark(span);
         }
 
-        let technical_spans = TECHNICAL_FRAGMENT_RE
-            .find_iter(&self.body)
-            .map(|m| m.range())
-            .collect::<Vec<_>>();
+        let technical_spans = technical_fragment_spans_v2(&self.body);
         for span in technical_spans {
             self.mark(span);
         }
@@ -678,6 +668,18 @@ impl ParsedMediaName {
             .map(|m| m.range())
             .collect::<Vec<_>>();
         for span in audio_noise_spans {
+            self.mark(span);
+        }
+
+        let source_tag_spans = tokenize(&self.body)
+            .into_iter()
+            .filter(|token| token.kind == TokenKind::Bare)
+            .filter_map(|token| {
+                matches!(classify_bare(token.text.as_str()), Some(Label::SourceTag))
+                    .then_some(token.span)
+            })
+            .collect::<Vec<_>>();
+        for span in source_tag_spans {
             self.mark(span);
         }
     }
@@ -706,37 +708,10 @@ impl ParsedMediaName {
             if cleaned.is_empty() {
                 continue;
             }
-
-            if DIGIT_RE.is_match(cleaned.as_str()) {
-                titles.push(Title {
-                    language: LANGUAGE_ENGLISH.to_owned(),
-                    title: cleaned,
-                });
-                continue;
-            }
-
-            for language in LANG_DETECTOR.detect_multiple_languages_of(cleaned.as_str()) {
-                let piece = cleaned[language.start_index()..language.end_index()].trim();
-                if piece.is_empty() {
-                    continue;
-                }
-
-                let title = if language.language() == Language::Chinese {
-                    piece.replace('-', "").trim().to_owned()
-                } else {
-                    piece.to_owned()
-                };
-                if title.is_empty() {
-                    continue;
-                }
-
-                titles.push(Title {
-                    language: normalize_language(language.language()),
-                    title,
-                });
-            }
+            titles.extend(titles_from_cleaned_part(cleaned.as_str(), &LANG_DETECTOR));
         }
 
+        rebalance_title_boundaries(&mut titles);
         if !titles.is_empty() {
             self.metadata.titles = titles;
         }
@@ -763,10 +738,7 @@ impl ParsedMediaName {
         if prefix.is_empty() || prefix.contains('/') {
             return None;
         }
-        if !prefix.chars().any(|ch| ch.is_ascii_alphabetic()) {
-            return None;
-        }
-        if !prefix.is_ascii() {
+        if !prefix_contains_title(prefix) {
             return None;
         }
 
@@ -915,200 +887,11 @@ fn looks_like_year_episode(episode: u32, _span: &Range<usize>) -> bool {
     (1900..=2099).contains(&episode)
 }
 
-fn looks_like_release_group(value: &str) -> bool {
-    if value.to_ascii_lowercase().contains("tmdb") {
-        return false;
-    }
-    if value.contains('第') || value.contains('集') {
-        return false;
-    }
-    if value.contains('/') {
-        return false;
-    }
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_digit() || matches!(ch, '-' | '~' | ' '))
-    {
-        return false;
-    }
-    if value.is_empty() || is_noise_bracket(value) {
-        return false;
-    }
-
-    let lower = value.to_ascii_lowercase();
-    value.contains('-')
-        || value.contains('&')
-        || value.contains("字幕组")
-        || value.contains("Raws")
-        || value.contains("raws")
-        || value.contains("Asia")
-        || value.contains("个人翻译")
-        || value.contains("制作")
-        || (value.contains(' ')
-            && (lower == value
-                || lower.contains("raws")
-                || lower.contains("sub")
-                || lower.contains("team")
-                || lower.contains("group")))
-        || (value.len() <= 20
-            && value.chars().any(|ch| ch.is_ascii_alphabetic())
-            && !value.contains(' '))
-}
-
-fn trailing_release_group(body: &str, occupied: &[bool]) -> Option<(Range<usize>, String)> {
-    trailing_release_group_with_delimiter(body, occupied, '-')
-        .or_else(|| trailing_release_group_with_delimiter(body, occupied, '@'))
-}
-
-fn trailing_release_group_with_delimiter(
-    body: &str,
-    occupied: &[bool],
-    delimiter: char,
-) -> Option<(Range<usize>, String)> {
-    let delimiter_index = body.rfind(delimiter)?;
-    let candidate = body[delimiter_index + delimiter.len_utf8()..].trim();
-    if candidate.is_empty() || !is_release_group_candidate(candidate) {
-        return None;
-    }
-    if !has_trailing_technical_context(occupied, delimiter_index) {
-        return None;
-    }
-    let prefix_token = body[..delimiter_index]
-        .rsplit(['.', ' ', '_', '-', '[', ']', '(', ')'])
-        .next()
-        .unwrap_or_default()
-        .trim();
-    if delimiter == '-'
-        && prefix_token.eq_ignore_ascii_case("dolby")
-        && candidate.eq_ignore_ascii_case("vision")
-    {
-        return None;
-    }
-
-    Some((delimiter_index..body.len(), candidate.to_owned()))
-}
-
-fn has_trailing_technical_context(occupied: &[bool], hyphen_index: usize) -> bool {
-    has_recent_occupied_before(occupied, hyphen_index, 32)
-}
-
 fn has_recent_occupied_before(occupied: &[bool], index: usize, window: usize) -> bool {
     let window_start = index.saturating_sub(window);
     occupied
         .get(window_start..index)
         .is_some_and(|slice| slice.iter().any(|used| *used))
-}
-
-fn is_release_group_candidate(value: &str) -> bool {
-    if value.to_ascii_lowercase().contains("tmdb") {
-        return false;
-    }
-    if value.contains('第') || value.contains('集') {
-        return false;
-    }
-    if value
-        .chars()
-        .any(|ch| matches!(ch, '[' | ']' | '{' | '}' | '/'))
-    {
-        return false;
-    }
-    if looks_like_technical_group(value) {
-        return false;
-    }
-    if is_metadata_fragment(value) {
-        return false;
-    }
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_digit() || matches!(ch, '-' | '~' | ' '))
-    {
-        return false;
-    }
-    if NOISE_BRACKET_RE.is_match(value) {
-        return false;
-    }
-
-    !matches!(
-        normalize_quality(value).as_str(),
-        "WEB-DL" | "WEBRip" | "BluRay" | "Remux" | "BDRip" | "BRRip"
-    )
-}
-
-fn looks_like_technical_group(value: &str) -> bool {
-    let segments = value
-        .split(|ch: char| ch == '.' || ch.is_whitespace())
-        .map(str::trim)
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>();
-    if segments.is_empty() {
-        return false;
-    }
-
-    segments.iter().all(|segment| {
-        let upper = segment.to_ascii_uppercase();
-        matches!(
-            upper.as_str(),
-            "WEB"
-                | "DL"
-                | "DV"
-                | "HDR"
-                | "HDR10"
-                | "HDR10+"
-                | "AAC"
-                | "DD"
-                | "DDP"
-                | "DTS"
-                | "DTS-HD"
-                | "HD"
-                | "MA"
-                | "TRUEHD"
-                | "ATMOS"
-                | "HEVC"
-                | "AVC"
-                | "H264"
-                | "H265"
-                | "REMUX"
-                | "BLURAY"
-                | "HQ"
-        ) || upper.ends_with("FPS")
-            || upper.starts_with("AAC")
-            || upper.starts_with("DDP")
-            || upper.starts_with("DTS")
-            || upper.starts_with("TRUEHD")
-            || segment.parse::<u32>().is_ok()
-    })
-}
-
-fn is_noise_bracket(value: &str) -> bool {
-    let value = value.trim();
-    if value.is_empty() {
-        return true;
-    }
-    if NOISE_BRACKET_RE.is_match(value) {
-        return true;
-    }
-    if value.contains("字幕")
-        && !value.contains("字幕组")
-        && !value.contains("字幕社")
-        && !value.contains("汉化组")
-    {
-        return true;
-    }
-
-    is_metadata_fragment(value)
-}
-
-fn is_metadata_fragment(value: &str) -> bool {
-    let stripped = TECHNICAL_FRAGMENT_RE.replace_all(value, "");
-    stripped
-        .chars()
-        .all(|ch| matches!(ch, ' ' | '.' | '-' | '_' | '/' | '@' | '&'))
-}
-
-fn prefix_contains_title(value: &str) -> bool {
-    value
-        .chars()
-        .any(|ch| ch.is_alphabetic() || ('\u{4e00}'..='\u{9fff}').contains(&ch))
 }
 
 fn has_promotional_prefix(value: &str) -> bool {
