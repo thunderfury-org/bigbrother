@@ -191,6 +191,69 @@ mod tests {
     }
 
     #[test]
+    fn parse_tv_scene_title_excludes_source_tag_after_episode_marker() {
+        let metadata = Metadata::parse("Perfect.Crown.S01E02.1080p.DSNP.WEB-DL.AAC.2.0.H.264.mkv");
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.season_number, Some(1));
+        assert_eq!(metadata.episode_number, Some(2));
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "Perfect Crown")
+        );
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .all(|title| !title.title.contains("DSNP"))
+        );
+    }
+
+    #[test]
+    fn parse_tv_scene_title_keeps_leading_release_group_separate() {
+        let metadata =
+            Metadata::parse("[Group] Perfect.Crown.S01E02.1080p.DSNP.WEB-DL.AAC.2.0.H.264.mkv");
+
+        assert_eq!(metadata.release_group, "Group");
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "Perfect Crown")
+        );
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .all(|title| !title.title.contains("DSNP"))
+        );
+    }
+
+    #[test]
+    fn parse_tv_scene_subtitle_excludes_source_tag_after_episode_marker() {
+        let metadata = Metadata::parse("Perfect.Crown.S01E02.DSNP.zh-Hans.srt");
+
+        assert_eq!(metadata.file_type, FileType::Subtitle);
+        assert_eq!(metadata.season_number, Some(1));
+        assert_eq!(metadata.episode_number, Some(2));
+        assert_eq!(metadata.subtitles, vec![LANGUAGE_CHINESE_SIMPLIFIED]);
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "Perfect Crown")
+        );
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .all(|title| !title.title.contains("DSNP"))
+        );
+    }
+
+    #[test]
     fn merge_metadata_keeps_unique_titles_and_backfills_missing_fields() {
         let mut metadata = Metadata {
             titles: vec![Title {

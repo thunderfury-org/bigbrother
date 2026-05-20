@@ -52,6 +52,10 @@ The searchable collection of observed **File Fingerprints** and their seen locat
 It does not merge different hashes into one record, even if they may refer to the same real file.
 _Avoid_: deduplicated file catalog, canonical file identity
 
+**Source Tag**:
+A short release-scene token that describes distribution channel or source and must not become part of a media title candidate.
+_Avoid_: title word, release group
+
 ## Relationships
 
 - A Telegram message may contain zero or more **Media Sources**
@@ -67,6 +71,7 @@ _Avoid_: deduplicated file catalog, canonical file identity
 - A **File Fingerprint** is identified by file size plus exactly one hash value
 - A **File Fingerprint** carries one **File Hash**
 - Two different hashes may coexist in the **File Index** even when they refer to the same real-world file
+- A **Source Tag** may appear inside a raw media filename but is not part of any parsed title candidate
 
 ## Example dialogue
 
@@ -82,3 +87,4 @@ _Avoid_: deduplicated file catalog, canonical file identity
 - "文件索引" was ambiguous between a canonical merged file catalog and an observation index — resolved: **File Index** stores separate **File Fingerprints** per observed hash and does not merge MD5 and SHA1 views.
 - "`etag`" was ambiguous with HTTP terminology — resolved: the domain concept is **File Hash**, a single algorithm-tagged file fingerprint value.
 - "导入 JSON" was ambiguous between ingesting a prebuilt index dump and replaying historical Telegram exports — resolved: this flow consumes a **Source Record** and tracks work per **Media Source Observation**.
+- "`DSNP` 这类词" was ambiguous between title text and source metadata — resolved: treat it as a **Source Tag**, not as a title candidate or release group.

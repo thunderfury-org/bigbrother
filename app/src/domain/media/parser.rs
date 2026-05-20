@@ -53,6 +53,12 @@ static SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
     .unwrap()
 });
+static COMPACT_SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)S(?P<season>\d{1,2})\s*[-._ ]?E(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?",
+    )
+    .unwrap()
+});
 static CHINESE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"第\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?\s*集").unwrap()
 });
@@ -678,7 +684,7 @@ impl ParsedMediaName {
 
     fn parse_title(&mut self) {
         // 纯数字文件名当作集数（如 "8.mp4" → episode 8）
-        let remaining = self.unoccupied_text();
+        let remaining = self.title_candidate_text();
         let trimmed = remaining.trim();
         if let Some(ep) = (!trimmed.is_empty() && DIGIT_RE.is_match(trimmed))
             .then(|| parse_u32(trimmed))
@@ -734,6 +740,37 @@ impl ParsedMediaName {
         if !titles.is_empty() {
             self.metadata.titles = titles;
         }
+    }
+
+    fn title_candidate_text(&self) -> String {
+        let remaining = self.unoccupied_text();
+        let Some(boundary) = self.standard_scene_episode_boundary() else {
+            return remaining;
+        };
+
+        remaining[..boundary].to_owned()
+    }
+
+    fn standard_scene_episode_boundary(&self) -> Option<usize> {
+        if self.parsed_kind != ParsedMediaKind::TvEpisode {
+            return None;
+        }
+
+        let caps = COMPACT_SEASON_EPISODE_RE.captures(&self.body)?;
+        let span = caps.get(0)?.start();
+        let prefix = self.body[..span]
+            .trim_matches(|ch: char| matches!(ch, '.' | '-' | '_' | ' ' | '[' | ']' | '(' | ')'));
+        if prefix.is_empty() || prefix.contains('/') {
+            return None;
+        }
+        if !prefix.chars().any(|ch| ch.is_ascii_alphabetic()) {
+            return None;
+        }
+        if !prefix.is_ascii() {
+            return None;
+        }
+
+        Some(span)
     }
 
     fn resolve_kind(&mut self) {
