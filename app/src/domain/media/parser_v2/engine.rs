@@ -5,73 +5,25 @@ use std::sync::LazyLock;
 use lingua::{Language, LanguageDetector, LanguageDetectorBuilder};
 use regex::Regex;
 
-use super::super::{
-    FileType, LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_CHINESE_TRADITIONAL, MediaKind, Metadata,
+use super::super::{FileType, MediaKind, Metadata};
+use super::extractors::{
+    apply_basic_extractors_and_collect_spans, collect_noise_spans,
+    extract_episode_and_collect_spans, extract_season_only_with_span, extract_subtitle_suffix_span,
+    extract_subtitles_and_collect_spans,
 };
-use super::extractors::apply_basic_extractors_and_collect_spans;
-use super::labels::{Label, classify_bare};
 use super::release_group::{
     is_metadata_fragment as is_metadata_fragment_v2, is_noise_bracket as is_noise_bracket_v2,
     looks_like_release_group as looks_like_release_group_v2,
-    technical_fragment_spans as technical_fragment_spans_v2,
     trailing_release_group as trailing_release_group_v2,
 };
+use super::span_mask::SpanMask;
 use super::title_resolver::{
     prefix_contains_title, rebalance_title_boundaries, titles_from_cleaned_part,
 };
-use super::tokenizer::{TokenKind, tokenize};
 
-static SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        (?:
-            S(?P<season>\d{1,2})\s*[-._ ]?E(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?
-            |
-            (?:Season|S)\s*(?P<season_alt>\d{1,2}).{0,8}?\[(?P<episode_alt>\d{1,4})(?:-(?P<episode_alt2>\d{1,4}))?\]
-            |
-            第\s*(?P<season_cn>\d{1,2})\s*季.{0,8}?\[(?P<episode_cn>\d{1,4})(?:-(?P<episode_cn2>\d{1,4}))?\]
-        )",
-    )
-    .unwrap()
-});
 static COMPACT_SEASON_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)S(?P<season>\d{1,2})\s*[-._ ]?E(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?",
-    )
-    .unwrap()
-});
-static CHINESE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"第\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?\s*集").unwrap()
-});
-static BRACKET_CHINESE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(?:第\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?\s*集[^\]]*)\]")
-        .unwrap()
-});
-static HASH_EPISODE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"#\s*(?P<episode>\d{1,4})").unwrap());
-static EPISODE_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:^|[ ._\-\[\(])E(?P<episode>\d{1,4})(?:$|[ ._\-\]\)])").unwrap()
-});
-static BRACKET_EPISODE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[(?P<episode>\d{1,4})(?:-(?P<episode2>\d{1,4}))?\]").unwrap());
-static BRACKET_TITLE_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[[^\]]*?[^\d\[\]]+\s+(?P<episode>\d{1,4})(?:\s+(?P<episode2>\d{1,4}))?[^\]]*\]")
-        .unwrap()
-});
-static DASH_EPISODE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)(?:^|[^\p{L}\p{N}])-\s*(?P<episode>\d{1,4})(?:\s*[-~]\s*(?P<episode2>\d{1,4}))?(?:$|[^\p{L}\p{N}])",
-    )
-    .unwrap()
-});
-static SEASON_ONLY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        (?:
-            第\s*(?P<season_cn>[\d一二三四五六七八九十两兩零〇]{1,3})\s*季
-            |
-            \b(?:Season|S)\s*(?P<season>\d{1,2})\b
-        )",
     )
     .unwrap()
 });
@@ -79,40 +31,6 @@ static LEADING_GROUP_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*\[(?P<value>[^\[\]]+)\]").unwrap());
 static BRACKET_CONTENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[(?P<value>[^\[\]]+)\]").unwrap());
-static PAREN_CONTENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\((?P<value>[^()]*)\)").unwrap());
-static SUBTITLE_SUFFIX_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)[._-](?P<value>ja|en|chs|cht|zh-hans|zh-hant)$").unwrap());
-static SUBTITLE_TOKEN_RE: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
-    vec![
-        (
-            LANGUAGE_CHINESE_SIMPLIFIED,
-            Regex::new(
-                r"(?ix)
-                (?:
-                    (^|[^a-z0-9])(?:chs|gb|zh-hans)([^a-z0-9]|$)
-                    |简中|简体|簡中|簡體
-                )
-                ",
-            )
-            .unwrap(),
-        ),
-        (
-            LANGUAGE_CHINESE_TRADITIONAL,
-            Regex::new(
-                r"(?ix)
-                (?:
-                    (^|[^a-z0-9])(?:cht|big5|zh-hant)([^a-z0-9]|$)
-                    |繁中|繁体|繁體
-                )
-                ",
-            )
-            .unwrap(),
-        ),
-    ]
-});
-static AUDIO_NOISE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\]\(\)])MA(?:$|[ ._\-\[\]\(\)])").unwrap());
 static TITLE_REPLACE_RE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
         (Regex::new(r"[\.\[\]\{\}\(\)]").unwrap(), " "),
@@ -155,18 +73,10 @@ enum ParsedMediaKind {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
-struct EpisodeCandidate {
-    season_number: Option<u32>,
-    episode_number: u32,
-    second_episode_number: Option<u32>,
-    span: Range<usize>,
-}
-
 #[derive(Debug)]
 struct ParsedMediaName {
     body: String,
-    occupied: Vec<bool>,
+    occupied: SpanMask,
     metadata: Metadata,
     parsed_kind: ParsedMediaKind,
     release_group_locked: bool,
@@ -182,7 +92,7 @@ impl ParsedMediaName {
         };
 
         Self {
-            occupied: vec![false; body.len()],
+            occupied: SpanMask::new(&body),
             body,
             metadata,
             parsed_kind: ParsedMediaKind::Unknown,
@@ -208,110 +118,15 @@ impl ParsedMediaName {
     }
 
     fn parse_episode(&mut self) {
-        let mut candidate = self.find_episode_with_season();
-        if candidate.is_none() {
-            candidate = self.find_episode_without_season();
-        }
-
-        if let Some(candidate) = candidate {
-            self.mark(candidate.span);
-            self.metadata.season_number = candidate.season_number;
-            self.metadata.episode_number = Some(candidate.episode_number);
-            self.metadata.second_episode_number = candidate.second_episode_number;
+        if let Some(extraction) = extract_episode_and_collect_spans(&self.body) {
+            for span in extraction.spans {
+                self.mark(span);
+            }
+            self.metadata.season_number = extraction.season_number;
+            self.metadata.episode_number = Some(extraction.episode_number);
+            self.metadata.second_episode_number = extraction.second_episode_number;
             self.parsed_kind = ParsedMediaKind::TvEpisode;
-            self.consume_redundant_episode_tags();
         }
-    }
-
-    fn find_episode_with_season(&self) -> Option<EpisodeCandidate> {
-        let mut selected = None;
-        for caps in SEASON_EPISODE_RE.captures_iter(&self.body) {
-            let season_number = parse_u32(
-                caps.name("season")
-                    .or_else(|| caps.name("season_alt"))
-                    .or_else(|| caps.name("season_cn"))?
-                    .as_str(),
-            )?;
-            let episode_number = parse_u32(
-                caps.name("episode")
-                    .or_else(|| caps.name("episode_alt"))
-                    .or_else(|| caps.name("episode_cn"))?
-                    .as_str(),
-            )?;
-            let second_episode_number = caps
-                .name("episode2")
-                .or_else(|| caps.name("episode_alt2"))
-                .or_else(|| caps.name("episode_cn2"))
-                .and_then(|m| parse_u32(m.as_str()));
-
-            selected = Some(EpisodeCandidate {
-                season_number: Some(season_number),
-                episode_number,
-                second_episode_number,
-                span: caps.get(0).unwrap().range(),
-            });
-        }
-
-        selected
-    }
-
-    fn find_episode_without_season(&self) -> Option<EpisodeCandidate> {
-        for re in [
-            &BRACKET_CHINESE_EPISODE_RE,
-            &CHINESE_EPISODE_RE,
-            &EPISODE_PREFIX_RE,
-            &HASH_EPISODE_RE,
-            &BRACKET_EPISODE_RE,
-            &DASH_EPISODE_RE,
-        ] {
-            let mut selected = None;
-            for caps in re.captures_iter(&self.body) {
-                let Some(episode_match) = caps.name("episode") else {
-                    continue;
-                };
-                let episode_number = parse_u32(episode_match.as_str())?;
-                if looks_like_year_episode(episode_number, &caps.get(0).unwrap().range()) {
-                    continue;
-                }
-
-                let second_episode_number =
-                    caps.name("episode2").and_then(|m| parse_u32(m.as_str()));
-                selected = Some(EpisodeCandidate {
-                    season_number: None,
-                    episode_number,
-                    second_episode_number,
-                    span: caps.get(0).unwrap().range(),
-                });
-            }
-
-            if selected.is_some() {
-                return selected;
-            }
-        }
-
-        let mut selected = None;
-        for caps in BRACKET_TITLE_EPISODE_RE.captures_iter(&self.body) {
-            let Some(episode_match) = caps.name("episode") else {
-                continue;
-            };
-            let episode_number = parse_u32(episode_match.as_str())?;
-            if looks_like_year_episode(episode_number, &episode_match.range()) {
-                continue;
-            }
-            let episode_span = episode_match.start()..caps.get(0).unwrap().end();
-            selected = Some(EpisodeCandidate {
-                season_number: None,
-                episode_number,
-                second_episode_number: caps.name("episode2").and_then(|m| parse_u32(m.as_str())),
-                span: episode_span,
-            });
-        }
-
-        if selected.is_some() {
-            return selected;
-        }
-
-        None
     }
 
     fn parse_season_only(&mut self) {
@@ -319,41 +134,9 @@ impl ParsedMediaName {
             return;
         }
 
-        let mut selected = None;
-        for caps in SEASON_ONLY_RE.captures_iter(&self.body) {
-            let value = caps
-                .name("season")
-                .or_else(|| caps.name("season_cn"))
-                .map(|m| m.as_str())
-                .and_then(parse_season_number);
-            if let Some(season_number) = value {
-                selected = Some((caps.get(0).unwrap().range(), season_number));
-            }
-        }
-
-        if let Some((span, season_number)) = selected {
+        if let Some((span, season_number)) = extract_season_only_with_span(&self.body) {
             self.mark(span);
             self.metadata.season_number = Some(season_number);
-        }
-    }
-
-    fn consume_redundant_episode_tags(&mut self) {
-        let spans = [
-            &CHINESE_EPISODE_RE,
-            &BRACKET_CHINESE_EPISODE_RE,
-            &HASH_EPISODE_RE,
-            &EPISODE_PREFIX_RE,
-        ]
-        .into_iter()
-        .flat_map(|re| {
-            re.find_iter(&self.body)
-                .map(|m| m.range())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
-        for span in spans {
-            self.mark(span);
         }
     }
 
@@ -417,7 +200,7 @@ impl ParsedMediaName {
                 }
                 if looks_like_release_group_v2(value.as_str(), is_noise_bracket_v2)
                     && (span.start < title_boundary
-                        || has_recent_occupied_before(&self.occupied, span.start, 32))
+                        || self.occupied.has_recent_occupied_before(span.start, 32))
                 {
                     self.metadata.release_group = value;
                     self.release_group_locked = true;
@@ -432,7 +215,7 @@ impl ParsedMediaName {
 
         if let Some((span, group)) = trailing_release_group_v2(
             &self.body,
-            &self.occupied,
+            self.occupied.as_slice(),
             is_metadata_fragment_v2,
             is_noise_bracket_v2,
         ) {
@@ -443,37 +226,11 @@ impl ParsedMediaName {
     }
 
     fn parse_subtitles(&mut self) {
-        let mut languages = Vec::new();
-        let mut spans = Vec::new();
-
-        for caps in BRACKET_CONTENT_RE.captures_iter(&self.body) {
-            if let Some(value) = caps.name("value")
-                && collect_subtitle_languages(value.as_str(), &mut languages)
-            {
-                spans.push(caps.get(0).unwrap().range());
-            }
-        }
-
-        for caps in PAREN_CONTENT_RE.captures_iter(&self.body) {
-            if let Some(value) = caps.name("value")
-                && collect_subtitle_languages(value.as_str(), &mut languages)
-            {
-                spans.push(caps.get(0).unwrap().range());
-            }
-        }
-
-        if let Some(caps) = SUBTITLE_SUFFIX_RE.captures(&self.body)
-            && let Some(value) = caps.name("value")
-            && collect_subtitle_languages(value.as_str(), &mut languages)
-        {
-            spans.push(caps.get(0).unwrap().range());
-        }
-
-        for span in spans {
+        let extraction = extract_subtitles_and_collect_spans(&self.body);
+        for span in extraction.spans {
             self.mark(span);
         }
-
-        self.metadata.subtitles = languages;
+        self.metadata.subtitles = extraction.languages;
     }
 
     fn parse_subtitle_suffix(&mut self) {
@@ -481,58 +238,13 @@ impl ParsedMediaName {
             return;
         }
 
-        if let Some(caps) = SUBTITLE_SUFFIX_RE.captures(&self.body) {
-            self.mark(caps.get(0).unwrap().range());
+        if let Some(span) = extract_subtitle_suffix_span(&self.body) {
+            self.mark(span);
         }
     }
 
     fn consume_noise_segments(&mut self) {
-        let paren_spans = PAREN_CONTENT_RE
-            .captures_iter(&self.body)
-            .filter_map(|caps| {
-                let value = caps.name("value")?.as_str().to_owned();
-                let span = caps.get(0).unwrap().range();
-                is_metadata_fragment_v2(value.as_str()).then_some(span)
-            })
-            .collect::<Vec<_>>();
-        for span in paren_spans {
-            self.mark(span);
-        }
-
-        let bracket_spans = BRACKET_CONTENT_RE
-            .captures_iter(&self.body)
-            .filter_map(|caps| {
-                let value = caps.name("value")?.as_str().to_owned();
-                let span = caps.get(0).unwrap().range();
-                is_noise_bracket_v2(value.as_str()).then_some(span)
-            })
-            .collect::<Vec<_>>();
-        for span in bracket_spans {
-            self.mark(span);
-        }
-
-        let technical_spans = technical_fragment_spans_v2(&self.body);
-        for span in technical_spans {
-            self.mark(span);
-        }
-
-        let audio_noise_spans = AUDIO_NOISE_RE
-            .find_iter(&self.body)
-            .map(|m| m.range())
-            .collect::<Vec<_>>();
-        for span in audio_noise_spans {
-            self.mark(span);
-        }
-
-        let source_tag_spans = tokenize(&self.body)
-            .into_iter()
-            .filter(|token| token.kind == TokenKind::Bare)
-            .filter_map(|token| {
-                matches!(classify_bare(token.text.as_str()), Some(Label::SourceTag))
-                    .then_some(token.span)
-            })
-            .collect::<Vec<_>>();
-        for span in source_tag_spans {
+        for span in collect_noise_spans(&self.body) {
             self.mark(span);
         }
     }
@@ -542,7 +254,7 @@ impl ParsedMediaName {
         let remaining = self.title_candidate_text();
         let trimmed = remaining.trim();
         if let Some(ep) = (!trimmed.is_empty() && DIGIT_RE.is_match(trimmed))
-            .then(|| parse_u32(trimmed))
+            .then(|| trimmed.parse::<u32>().ok())
             .flatten()
         {
             self.metadata.episode_number = Some(ep);
@@ -613,27 +325,15 @@ impl ParsedMediaName {
     }
 
     fn mark(&mut self, span: Range<usize>) {
-        let end = span.end.min(self.occupied.len());
-        for index in span.start.min(end)..end {
-            self.occupied[index] = true;
-        }
+        self.occupied.mark(span);
     }
 
     fn unoccupied_text(&self) -> String {
-        let mut text = String::with_capacity(self.body.len());
-        for (index, ch) in self.body.char_indices() {
-            let end = index + ch.len_utf8();
-            if self.occupied[index..end].iter().any(|used| *used) {
-                text.push(' ');
-            } else {
-                text.push(ch);
-            }
-        }
-        text
+        self.occupied.unoccupied_text(&self.body)
     }
 
     fn first_occupied_index(&self) -> Option<usize> {
-        self.occupied.iter().position(|used| *used)
+        self.occupied.first_occupied_index()
     }
 }
 
@@ -671,63 +371,12 @@ fn split_extension(name: &str) -> (String, String) {
     (name.to_owned(), String::new())
 }
 
-fn parse_u32(value: &str) -> Option<u32> {
-    value.trim().parse().ok()
-}
-
-fn parse_season_number(value: &str) -> Option<u32> {
-    parse_u32(value).or_else(|| parse_chinese_number(value))
-}
-
-fn parse_chinese_number(value: &str) -> Option<u32> {
-    let value = value.trim();
-    if value.is_empty() {
-        return None;
-    }
-
-    let mut total = 0;
-    let mut current = 0;
-    for ch in value.chars() {
-        match ch {
-            '零' | '〇' => {}
-            '一' => current += 1,
-            '二' | '两' | '兩' => current += 2,
-            '三' => current += 3,
-            '四' => current += 4,
-            '五' => current += 5,
-            '六' => current += 6,
-            '七' => current += 7,
-            '八' => current += 8,
-            '九' => current += 9,
-            '十' => {
-                total += if current == 0 { 10 } else { current * 10 };
-                current = 0;
-            }
-            _ => return None,
-        }
-    }
-
-    let value = total + current;
-    (value > 0).then_some(value)
-}
-
 fn cleanup_title_part(part: &str) -> String {
     let cleaned = part
         .trim_matches(|ch: char| matches!(ch, '.' | '-' | '_' | ' '))
         .trim()
         .to_owned();
     TITLE_TRIM_RE.replace_all(&cleaned, " ").trim().to_owned()
-}
-
-fn looks_like_year_episode(episode: u32, _span: &Range<usize>) -> bool {
-    (1900..=2099).contains(&episode)
-}
-
-fn has_recent_occupied_before(occupied: &[bool], index: usize, window: usize) -> bool {
-    let window_start = index.saturating_sub(window);
-    occupied
-        .get(window_start..index)
-        .is_some_and(|slice| slice.iter().any(|used| *used))
 }
 
 fn has_promotional_prefix(value: &str) -> bool {
@@ -737,33 +386,6 @@ fn has_promotional_prefix(value: &str) -> bool {
     };
 
     matches!(rest.trim_start().chars().next(), Some('[' | '('))
-}
-
-fn collect_subtitle_languages(fragment: &str, output: &mut Vec<String>) -> bool {
-    let fragment = fragment.trim();
-    if fragment.is_empty() {
-        return false;
-    }
-
-    let initial_len = output.len();
-    if fragment.contains("简繁") || fragment.contains("簡繁") || fragment.contains("繁简") {
-        push_language(output, LANGUAGE_CHINESE_SIMPLIFIED);
-        push_language(output, LANGUAGE_CHINESE_TRADITIONAL);
-    }
-
-    for (language, pattern) in SUBTITLE_TOKEN_RE.iter() {
-        if pattern.is_match(fragment) {
-            push_language(output, language);
-        }
-    }
-
-    output.len() != initial_len
-}
-
-fn push_language(output: &mut Vec<String>, language: &str) {
-    if !output.iter().any(|existing| existing == language) {
-        output.push(language.to_owned());
-    }
 }
 
 pub fn parse(name: &str) -> Box<Metadata> {
