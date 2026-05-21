@@ -1,7 +1,76 @@
 use std::ops::Range;
 
+use super::super::Metadata;
 use super::super::normalize::normalize_quality;
-use super::labels::{NOISE_BRACKET_RE, TECHNICAL_FRAGMENT_RE, TECHNICAL_GROUP_RE};
+use super::labels::{Label, NOISE_BRACKET_RE, TECHNICAL_FRAGMENT_RE, TECHNICAL_GROUP_RE};
+use super::spans_overlap;
+use super::tokenizer::{Token, TokenKind};
+
+pub(super) fn extract_release_group(body: &str, tokens: &mut [Token], metadata: &mut Metadata) {
+    // First pass: leading bracket. Accept a non-classifying first bracket as
+    // release group if (a) its content qualifies, OR (b) the trailing body
+    // starts with the promotional '★' marker.
+    for (idx, token) in tokens.iter_mut().enumerate() {
+        if !matches!(token.kind, TokenKind::Bracketed) {
+            continue;
+        }
+        let value = token.text.trim();
+        if value.is_empty() || is_noise_bracket(value) {
+            token.label = Label::PromotionalNoise;
+            continue;
+        }
+        let promotes_via_star = idx == 0 && {
+            let after = body[token.span.end..].trim_start_matches(']');
+            promotional_prefix_after_leading_bracket(after)
+        };
+        if looks_like_release_group(value, is_noise_bracket) || promotes_via_star {
+            metadata.release_group = value.to_owned();
+            token.label = Label::Group;
+            break;
+        }
+    }
+
+    if metadata.release_group.is_empty() {
+        // Second pass: any later bracket that classifies.
+        for token in tokens.iter_mut() {
+            if !matches!(token.kind, TokenKind::Bracketed) {
+                continue;
+            }
+            if !matches!(token.label, Label::Unknown) {
+                continue;
+            }
+            let value = token.text.trim();
+            if looks_like_release_group(value, is_noise_bracket) {
+                metadata.release_group = value.to_owned();
+                token.label = Label::Group;
+                break;
+            }
+        }
+    }
+
+    if metadata.release_group.is_empty()
+        && let Some((span, group)) =
+            trailing_release_group(body, tokens, is_metadata_fragment, is_noise_bracket)
+    {
+        metadata.release_group = group;
+        for token in tokens.iter_mut() {
+            if spans_overlap(&token.span, &span) {
+                token.label = Label::Group;
+            }
+        }
+    }
+}
+
+fn promotional_prefix_after_leading_bracket(after: &str) -> bool {
+    let trimmed = after.trim_start();
+    if trimmed.starts_with('★') {
+        return true;
+    }
+    let Some(rest) = trimmed.strip_prefix('.') else {
+        return false;
+    };
+    matches!(rest.trim_start().chars().next(), Some('[' | '('))
+}
 
 pub(crate) fn looks_like_release_group(value: &str, is_noise_bracket: fn(&str) -> bool) -> bool {
     if value.to_ascii_lowercase().contains("tmdb") {
@@ -71,31 +140,25 @@ pub(crate) fn is_metadata_fragment(value: &str) -> bool {
 
 pub(crate) fn trailing_release_group(
     body: &str,
-    occupied: &[bool],
+    tokens: &[Token],
     is_metadata_fragment: fn(&str) -> bool,
     is_noise_bracket: fn(&str) -> bool,
 ) -> Option<(Range<usize>, String)> {
-    trailing_release_group_with_delimiter(
-        body,
-        occupied,
-        '-',
-        is_metadata_fragment,
-        is_noise_bracket,
-    )
-    .or_else(|| {
-        trailing_release_group_with_delimiter(
-            body,
-            occupied,
-            '@',
-            is_metadata_fragment,
-            is_noise_bracket,
-        )
-    })
+    trailing_release_group_with_delimiter(body, tokens, '-', is_metadata_fragment, is_noise_bracket)
+        .or_else(|| {
+            trailing_release_group_with_delimiter(
+                body,
+                tokens,
+                '@',
+                is_metadata_fragment,
+                is_noise_bracket,
+            )
+        })
 }
 
 fn trailing_release_group_with_delimiter(
     body: &str,
-    occupied: &[bool],
+    tokens: &[Token],
     delimiter: char,
     is_metadata_fragment: fn(&str) -> bool,
     is_noise_bracket: fn(&str) -> bool,
@@ -107,7 +170,7 @@ fn trailing_release_group_with_delimiter(
     {
         return None;
     }
-    if !has_recent_occupied_before(occupied, delimiter_index, 32) {
+    if !preceding_token_is_classified(tokens, delimiter_index) {
         return None;
     }
     let prefix_token = body[..delimiter_index]
@@ -185,11 +248,16 @@ fn looks_like_technical_group(value: &str) -> bool {
     })
 }
 
-fn has_recent_occupied_before(occupied: &[bool], index: usize, window: usize) -> bool {
-    let window_start = index.saturating_sub(window);
-    occupied
-        .get(window_start..index)
-        .is_some_and(|slice| slice.iter().any(|used| *used))
+fn preceding_token_is_classified(tokens: &[Token], byte_index: usize) -> bool {
+    // The trailing release-group heuristic only fires when the delimiter sits
+    // immediately after technical metadata. With token labels available, that
+    // is precisely "the nearest token ending at or before this byte index has
+    // a label other than Title/Unknown".
+    tokens
+        .iter()
+        .rfind(|token| token.span.end <= byte_index)
+        .map(|token| !matches!(token.label, Label::Title | Label::Unknown))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -228,20 +296,45 @@ mod tests {
     #[test]
     fn detects_trailing_release_group_after_technical_context() {
         let body = "Perfect.Crown.S01E02.1080p.WEB-DL.H264-BTN";
-        let mut occupied = vec![false; body.len()];
-        let marker = body.find("1080p.WEB-DL.H264").unwrap();
-        occupied[marker..marker + "1080p.WEB-DL.H264".len()].fill(true);
+        let tokens = vec![
+            Token {
+                span: 0..body.find('-').unwrap(),
+                text: body[..body.find('-').unwrap()].to_owned(),
+                kind: super::super::tokenizer::TokenKind::Bare,
+                label: Label::VideoCodec,
+            },
+            Token {
+                span: body.find('-').unwrap() + 1..body.len(),
+                text: "BTN".to_owned(),
+                kind: super::super::tokenizer::TokenKind::Bare,
+                label: Label::Unknown,
+            },
+        ];
 
         let (_, value) =
-            trailing_release_group(body, &occupied, metadata_fragment, tech_noise).unwrap();
+            trailing_release_group(body, &tokens, metadata_fragment, tech_noise).unwrap();
         assert_eq!(value, "BTN");
     }
 
     #[test]
     fn rejects_dolby_vision_false_positive() {
         let body = "Movie.Dolby-Vision";
-        let occupied = vec![true; body.find('-').unwrap()];
+        let dash = body.find('-').unwrap();
+        let tokens = vec![
+            Token {
+                span: 0..dash,
+                text: body[..dash].to_owned(),
+                kind: super::super::tokenizer::TokenKind::Bare,
+                label: Label::Hdr,
+            },
+            Token {
+                span: dash + 1..body.len(),
+                text: "Vision".to_owned(),
+                kind: super::super::tokenizer::TokenKind::Bare,
+                label: Label::Unknown,
+            },
+        ];
 
-        assert!(trailing_release_group(body, &occupied, metadata_fragment, tech_noise).is_none());
+        assert!(trailing_release_group(body, &tokens, metadata_fragment, tech_noise).is_none());
     }
 }

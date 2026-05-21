@@ -3,13 +3,20 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)]
 pub(crate) enum Label {
     #[default]
     Unknown,
+    // Title and TmdbId are part of the issue-81 Label vocabulary but are not
+    // produced by any current extractor. Title tokens are implied (Unknown
+    // tokens that survive title resolution become title content); TmdbId is
+    // extracted from the body without going through token labels. They are
+    // kept as enum variants so the type matches the PRD and future extractors
+    // can populate them.
+    #[allow(dead_code)]
     Title,
     Episode,
     Year,
+    #[allow(dead_code)]
     TmdbId,
     Resolution,
     Quality,
@@ -124,8 +131,7 @@ pub(crate) const BRACKET_SUBTITLE_PHRASES: &[&str] = &[
 ];
 
 // Tokens that count as "purely technical noise" when they form the whole of a
-// release-group candidate (e.g. a trailing `-WEB-DL`). Mirrors the original
-// `TECHNICAL_GROUP_RE` body.
+// release-group candidate (e.g. a trailing `-WEB-DL`).
 pub(crate) const TECHNICAL_GROUP_PATTERNS: &[&str] = &[
     r"WEB",
     r"DL",
@@ -243,7 +249,6 @@ static QUALITY_MISC_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// Classify a single bare token by its text. Combines literal-keyword
 /// classification (`classify_bare`) with pattern-based labels (`Resolution`,
 /// `FrameRate`, `Year`, `Episode`). Returns `Label::Unknown` if no rule fires.
-#[allow(dead_code)]
 pub(crate) fn classify_token(text: &str) -> Label {
     if let Some(label) = classify_bare(text) {
         return label;
