@@ -7,6 +7,8 @@ use super::*;
 use crate::domain::import::{SearchMovieResult, SearchTvResult, Season};
 use crate::domain::media::{Metadata, Title};
 
+type TvSearchResults = HashMap<(String, String), Vec<SearchTvResult>>;
+
 #[derive(Clone, Default)]
 struct FakeMetadataCatalog {
     movie_detail_calls: Arc<Mutex<Vec<u32>>>,
@@ -14,7 +16,7 @@ struct FakeMetadataCatalog {
     movie_search_calls: Arc<Mutex<Vec<(String, String)>>>,
     tv_search_calls: Arc<Mutex<Vec<(String, String)>>>,
     movie_search_results: Arc<Mutex<Vec<SearchMovieResult>>>,
-    tv_search_results: Arc<Mutex<HashMap<(String, String), Vec<SearchTvResult>>>>,
+    tv_search_results: Arc<Mutex<TvSearchResults>>,
     movie_details: Arc<Mutex<HashMap<u32, MovieDetail>>>,
     tv_details: Arc<Mutex<HashMap<u32, TvDetail>>>,
 }

@@ -254,6 +254,54 @@ mod tests {
     }
 
     #[test]
+    fn parse_movie_title_excludes_source_tag_before_technical_tags() {
+        let metadata = Metadata::parse("Perfect.Crown.DSNP.1080p.WEB-DL.AAC.H.264.mkv");
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.resolution, "1080p");
+        assert_eq!(metadata.quality, "WEB-DL");
+        assert_eq!(metadata.video_codec, "H264");
+        assert_eq!(metadata.audio_codec, "AAC");
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "Perfect Crown")
+        );
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .all(|title| !title.title.contains("DSNP"))
+        );
+    }
+
+    #[test]
+    fn parse_bilingual_tv_scene_title_with_scene_tags() {
+        let metadata = Metadata::parse(
+            "为人父母.2010.S02E16.Amazing.Andy.and.His.Wonderful.World.of.Bugs.1080p.BluRay.Remux.DTS-HD.MA5.1.H.264-BTN.mkv",
+        );
+
+        assert_eq!(metadata.file_type, FileType::Video);
+        assert_eq!(metadata.extension, ".mkv");
+        assert_eq!(metadata.year, "2010");
+        assert_eq!(metadata.season_number, Some(2));
+        assert_eq!(metadata.episode_number, Some(16));
+        assert_eq!(metadata.resolution, "1080p");
+        assert_eq!(metadata.quality, "Remux");
+        assert_eq!(metadata.video_codec, "H264");
+        assert_eq!(metadata.audio_codec, "DTS-HD.MA.5.1");
+        assert_eq!(metadata.release_group, "BTN");
+        assert!(
+            metadata
+                .titles
+                .iter()
+                .any(|title| title.title == "为人父母" && title.language == LANGUAGE_CHINESE)
+        );
+        assert_eq!(metadata.titles.len(), 1);
+    }
+
+    #[test]
     fn merge_metadata_keeps_unique_titles_and_backfills_missing_fields() {
         let mut metadata = Metadata {
             titles: vec![Title {
