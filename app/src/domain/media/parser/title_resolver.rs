@@ -74,6 +74,7 @@ pub(crate) fn rebalance_title_boundaries(titles: &mut [Title]) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn prefix_contains_title(value: &str) -> bool {
     value
         .chars()

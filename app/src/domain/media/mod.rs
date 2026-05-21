@@ -2,7 +2,6 @@ use serde::Deserialize;
 
 mod normalize;
 mod parser;
-mod parser_v2;
 
 pub const LANGUAGE_CHINESE: &str = "zh";
 pub const LANGUAGE_JAPANESE: &str = "jp";
@@ -101,7 +100,7 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn parse(value: &str) -> Box<Self> {
-        parser_v2::parse(value)
+        parser::parse(value)
     }
 
     pub fn merge_metadata(&mut self, other: &Metadata) {

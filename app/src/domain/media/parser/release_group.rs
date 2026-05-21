@@ -1,44 +1,7 @@
 use std::ops::Range;
-use std::sync::LazyLock;
-
-use regex::Regex;
 
 use super::super::normalize::normalize_quality;
-
-static TECHNICAL_GROUP_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        ^(?:WEB|DL|DV|HDR|HDR10|HDR10\+|AAC|DD|DDP|DTS|DTS-HD|HD|MA|TRUEHD|ATMOS|HEVC|AVC|H264|H265|REMUX|BLURAY|HQ|\d{2,3}FPS|\d+)$
-        ",
-    )
-    .unwrap()
-});
-
-static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        (?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
-        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
-        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁日多语|字幕|内封|外挂字幕
-        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV|OVA|OAD|NCOP|NCED|Fin|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|进化版|Web先行版|先行版|英语中字|蓝光原盘)
-        ",
-    )
-    .unwrap()
-});
-
-static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?ix)
-        ^(?:WEB|WEB-?DL|WEB-?RIP|WEBRIP|BLU-?RAY|REMUX|BD-?RIP|BR-?RIP|HEVC|AVC|AV1|VP-9|H\.?26[45]|X26[45]
-        |AAC|FLAC|DTS(?:-?HD)?|TRUEHD|ATMOS|HDR10\+?|HDR|DV|DOVI|HLG
-        |\d{2,3}FPS|4K|\d{3,4}P|\d{3,4}X\d{3,4}|\d+(?:\.\d+)?G(?:B)?|[A-F0-9]{8}|MKV|MP4|SRT|ASS|SSA|PGS
-        |CHS(?:[._-]?JP)?|CHT|BIG5|ZH-HANS|ZH-HANT|JP|简中|繁中|簡中|簡體|繁體|简体|繁体|简繁内封|简繁日内封字幕|简日双语MP4/繁日双语MP4/简繁日多语MKV
-        |字幕|内封|外挂字幕|附外挂字幕|招募翻译校对|日語原聲|日文自動產生字幕|OVA|OAD|NCOP|NCED|Fin
-        |UHD|Ultra\s+HD|SDR|EXTENDED|P\d+|HQ|Baha|B-Global|ViuTV)$",
-    )
-    .unwrap()
-});
+use super::labels::{NOISE_BRACKET_RE, TECHNICAL_FRAGMENT_RE, TECHNICAL_GROUP_RE};
 
 pub(crate) fn looks_like_release_group(value: &str, is_noise_bracket: fn(&str) -> bool) -> bool {
     if value.to_ascii_lowercase().contains("tmdb") {
@@ -104,13 +67,6 @@ pub(crate) fn is_metadata_fragment(value: &str) -> bool {
     stripped
         .chars()
         .all(|ch| matches!(ch, ' ' | '.' | '-' | '_' | '/' | '@' | '&'))
-}
-
-pub(crate) fn technical_fragment_spans(body: &str) -> Vec<Range<usize>> {
-    TECHNICAL_FRAGMENT_RE
-        .find_iter(body)
-        .map(|m| m.range())
-        .collect()
 }
 
 pub(crate) fn trailing_release_group(

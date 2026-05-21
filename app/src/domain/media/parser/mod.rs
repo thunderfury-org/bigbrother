@@ -1,8 +1,14 @@
+pub(super) mod extractors;
+pub(super) mod labels;
+mod pipeline;
+pub(super) mod release_group;
+pub(super) mod title_resolver;
+pub(super) mod tokenizer;
+
 use super::Metadata;
 
-#[allow(dead_code)]
-pub fn parse(name: &str) -> Box<Metadata> {
-    super::parser_v2::parse(name)
+pub(crate) fn parse(value: &str) -> Box<Metadata> {
+    pipeline::parse(value)
 }
 
 #[cfg(test)]
@@ -27,7 +33,7 @@ mod tests {
             .join("media")
             .join("testdata");
 
-        let files = vec![
+        let files = [
             "anime.yaml",
             "dir.yaml",
             "movie.yaml",

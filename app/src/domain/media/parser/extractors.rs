@@ -55,12 +55,6 @@ use super::super::normalize::{
     normalize_audio_codec, normalize_hdr, normalize_quality, normalize_video_codec,
 };
 use super::super::{LANGUAGE_CHINESE_SIMPLIFIED, LANGUAGE_CHINESE_TRADITIONAL, Metadata};
-use super::labels::{Label, classify_bare};
-use super::release_group::{
-    is_metadata_fragment as is_metadata_fragment_v2, is_noise_bracket as is_noise_bracket_v2,
-    technical_fragment_spans as technical_fragment_spans_v2,
-};
-use super::tokenizer::{TokenKind, tokenize};
 
 static TMDB_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\(\{])tmdb(?:id)?[-=](?P<value>\d+)").unwrap());
@@ -122,9 +116,6 @@ static SUBTITLE_TOKEN_RE: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|
         ),
     ]
 });
-static AUDIO_NOISE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(?:^|[ ._\-\[\]\(\)])MA(?:$|[ ._\-\[\]\(\)])").unwrap());
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EpisodeExtraction {
     pub(crate) season_number: Option<u32>,
@@ -204,32 +195,6 @@ pub(crate) fn extract_subtitle_suffix_span(body: &str) -> Option<Range<usize>> {
         .captures(body)?
         .get(0)
         .map(|value| value.range())
-}
-
-pub(crate) fn collect_noise_spans(body: &str) -> Vec<Range<usize>> {
-    let mut spans = Vec::new();
-
-    spans.extend(PAREN_CONTENT_RE.captures_iter(body).filter_map(|caps| {
-        let value = caps.name("value")?.as_str().to_owned();
-        let span = caps.get(0).unwrap().range();
-        is_metadata_fragment_v2(value.as_str()).then_some(span)
-    }));
-
-    spans.extend(BRACKET_CONTENT_RE.captures_iter(body).filter_map(|caps| {
-        let value = caps.name("value")?.as_str().to_owned();
-        let span = caps.get(0).unwrap().range();
-        is_noise_bracket_v2(value.as_str()).then_some(span)
-    }));
-
-    spans.extend(technical_fragment_spans_v2(body));
-    spans.extend(AUDIO_NOISE_RE.find_iter(body).map(|value| value.range()));
-    spans.extend(tokenize(body).into_iter().filter_map(|token| {
-        (token.kind == TokenKind::Bare
-            && matches!(classify_bare(token.text.as_str()), Some(Label::SourceTag)))
-        .then_some(token.span)
-    }));
-
-    spans
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,19 +474,6 @@ mod episode_tests {
         let span = extract_subtitle_suffix_span("Show.ja").unwrap();
 
         assert_eq!(&"Show.ja"[span], ".ja");
-    }
-
-    #[test]
-    fn collects_noise_spans_for_source_tags_and_bracket_noise() {
-        let input = "Show.[简繁内封].DSNP.1080p";
-        let spans = collect_noise_spans(input);
-
-        assert!(
-            spans
-                .iter()
-                .any(|span| &input[span.clone()] == "[简繁内封]")
-        );
-        assert!(spans.iter().any(|span| &input[span.clone()] == "DSNP"));
     }
 }
 

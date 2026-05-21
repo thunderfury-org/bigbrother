@@ -1,10 +1,13 @@
 use std::ops::Range;
 
+use super::labels::Label;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Token {
     pub span: Range<usize>,
     pub text: String,
     pub kind: TokenKind,
+    pub label: Label,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +54,7 @@ pub(crate) fn tokenize(input: &str) -> Vec<Token> {
                     span: inner_start..inner_end,
                     text: input[inner_start..inner_end].to_owned(),
                     kind: TokenKind::Bracketed,
+                    label: Label::default(),
                 });
                 pos = end;
                 i = j + 1;
@@ -86,6 +90,7 @@ pub(crate) fn tokenize(input: &str) -> Vec<Token> {
                     span: inner_start..inner_end,
                     text: input[inner_start..inner_end].to_owned(),
                     kind: TokenKind::Parenthesized,
+                    label: Label::default(),
                 });
                 pos = end;
                 i = j + 1;
@@ -126,6 +131,7 @@ fn push_bare(tokens: &mut Vec<Token>, input: &str, start: usize, end: usize) {
         span: start..end,
         text,
         kind: TokenKind::Bare,
+        label: Label::default(),
     });
 }
 
