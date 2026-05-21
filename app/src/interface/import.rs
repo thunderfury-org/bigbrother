@@ -80,7 +80,7 @@ pub(crate) fn format_imported_media(media: &ImportedMedia) -> Option<String> {
             let total_size_gb = *total_size as f64 / 1024.0 / 1024.0 / 1024.0;
 
             let success_line = if episodes.is_empty() {
-                String::new()
+                format!("📺 剧集 {} ({}) S{:02}\n", name, year, season)
             } else {
                 format!(
                     "📺 剧集 {} ({}) S{:02} {} 已入库\n",
@@ -340,8 +340,55 @@ mod tests {
         })
         .unwrap();
 
+        assert!(summary.contains("Show"));
+        assert!(summary.contains("2025"));
+        assert!(summary.contains("S01"));
         assert!(summary.contains("E01-E03 入库失败"));
         assert!(!summary.contains("已入库"));
+    }
+
+    #[test]
+    fn format_tv_with_missing_and_failed_no_success_keeps_show_identity() {
+        let summary = format_imported_media(&ImportedMedia::Tv {
+            name: "Show".into(),
+            year: "2025".into(),
+            season: 1,
+            episodes: vec![],
+            missing_episodes: vec![1, 2, 4],
+            max_episode_number: 6,
+            total_size: 0,
+            number_of_episodes: 10,
+            cost: Duration::from_secs(5),
+            has_failed: true,
+            failed_episodes: vec![7, 8],
+        })
+        .unwrap();
+
+        assert!(summary.contains("Show"));
+        assert!(summary.contains("2025"));
+        assert!(summary.contains("S01"));
+        assert!(summary.contains("缺失集: E01-E02,E04"));
+        assert!(summary.contains("E07-E08 入库失败"));
+        assert!(!summary.contains("已入库"));
+    }
+
+    #[test]
+    fn format_tv_without_any_episodes_or_failures_returns_none() {
+        let result = format_imported_media(&ImportedMedia::Tv {
+            name: "Show".into(),
+            year: "2025".into(),
+            season: 1,
+            episodes: vec![],
+            missing_episodes: vec![2, 5],
+            max_episode_number: 6,
+            total_size: 0,
+            number_of_episodes: 6,
+            cost: Duration::from_secs(1),
+            has_failed: false,
+            failed_episodes: vec![],
+        });
+
+        assert!(result.is_none());
     }
 
     #[test]
