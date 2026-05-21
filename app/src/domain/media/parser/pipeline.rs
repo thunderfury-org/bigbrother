@@ -404,7 +404,9 @@ fn bracket_content_is_pure_noise(content: &str) -> bool {
     if pieces.len() <= 1 {
         return false;
     }
-    pieces.iter().all(|piece| is_noise_label(classify_token(piece)))
+    pieces
+        .iter()
+        .all(|piece| is_noise_label(classify_token(piece)))
 }
 
 fn is_noise_label(label: Label) -> bool {

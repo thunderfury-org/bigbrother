@@ -52,16 +52,21 @@ pub(crate) const SUBTITLE_MARKER_KEYWORDS: &[&str] = &[
 // contain regex metacharacters (e.g. optional hyphen `WEB-?DL`).
 
 pub(crate) const QUALITY_PATTERNS: &[&str] = &[
-    r"WEB-?DL", r"WEB-?RIP", r"WEBRIP", r"BLU-?RAY", r"REMUX", r"BD-?RIP", r"BR-?RIP", r"WEB",
+    r"WEB-?DL",
+    r"WEB-?RIP",
+    r"WEBRIP",
+    r"BLU-?RAY",
+    r"REMUX",
+    r"BD-?RIP",
+    r"BR-?RIP",
+    r"WEB",
 ];
 
-pub(crate) const VIDEO_CODEC_PATTERNS: &[&str] = &[
-    r"HEVC", r"AVC", r"AV1", r"VP-9", r"H\.?26[45]", r"X26[45]",
-];
+pub(crate) const VIDEO_CODEC_PATTERNS: &[&str] =
+    &[r"HEVC", r"AVC", r"AV1", r"VP-9", r"H\.?26[45]", r"X26[45]"];
 
-pub(crate) const AUDIO_CODEC_PATTERNS: &[&str] = &[
-    r"AAC", r"FLAC", r"DTS(?:-?HD)?", r"TRUEHD", r"ATMOS",
-];
+pub(crate) const AUDIO_CODEC_PATTERNS: &[&str] =
+    &[r"AAC", r"FLAC", r"DTS(?:-?HD)?", r"TRUEHD", r"ATMOS"];
 
 pub(crate) const HDR_PATTERNS: &[&str] = &[r"HDR10\+?", r"HDR", r"DV", r"DOVI", r"HLG"];
 
@@ -99,14 +104,8 @@ pub(crate) const SUBTITLE_NOISE_FRAGMENTS: &[&str] = &["字幕", "内封", "外�
 // `BRACKET_SUBTITLE_PHRASES` such as `简繁日多语MKV`).
 pub(crate) const SUBTITLE_MULTILANG_FRAGMENTS: &[&str] = &["简繁日多语"];
 
-pub(crate) const QUALITY_MISC_PATTERNS: &[&str] = &[
-    r"UHD",
-    r"Ultra\s+HD",
-    r"SDR",
-    r"EXTENDED",
-    r"P\d+",
-    r"HQ",
-];
+pub(crate) const QUALITY_MISC_PATTERNS: &[&str] =
+    &[r"UHD", r"Ultra\s+HD", r"SDR", r"EXTENDED", r"P\d+", r"HQ"];
 
 pub(crate) const STREAMING_PROVIDER_KEYWORDS: &[&str] = &["Baha", "B-Global", "ViuTV"];
 
@@ -115,13 +114,8 @@ pub(crate) const EPISODE_TYPE_KEYWORDS: &[&str] = &["OVA", "OAD", "NCOP", "NCED"
 pub(crate) const PROMOTIONAL_NOISE_KEYWORDS: &[&str] =
     &["附外挂字幕", "招募翻译校对", "日語原聲", "日文自動產生字幕"];
 
-pub(crate) const TECHNICAL_FRAGMENT_EXTRAS: &[&str] = &[
-    "进化版",
-    "Web先行版",
-    "先行版",
-    "英语中字",
-    "蓝光原盘",
-];
+pub(crate) const TECHNICAL_FRAGMENT_EXTRAS: &[&str] =
+    &["进化版", "Web先行版", "先行版", "英语中字", "蓝光原盘"];
 
 pub(crate) const BRACKET_SUBTITLE_PHRASES: &[&str] = &[
     "简繁内封",
@@ -236,13 +230,10 @@ static CRC_HASH_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!("(?i)^(?:{alternatives})$")).unwrap()
 });
 
-static SEASON_EPISODE_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^S\d{1,2}E\d{1,4}(?:-E?\d{1,4})?$").unwrap()
-});
+static SEASON_EPISODE_TOKEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^S\d{1,2}E\d{1,4}(?:-E?\d{1,4})?$").unwrap());
 
-static SEASON_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^S\d{1,2}$").unwrap()
-});
+static SEASON_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^S\d{1,2}$").unwrap());
 
 static QUALITY_MISC_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     let alternatives = collect_alternatives(&[QUALITY_MISC_PATTERNS]);
