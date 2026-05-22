@@ -7,6 +7,7 @@ use crate::error::AppError;
 struct AppConfig {
     pub media_server: MediaServerConfig,
     pub emby_proxy: EmbyProxyConfig,
+    pub console: ConsoleConfig,
     pub pan123: Pan123Config,
     pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
@@ -31,6 +32,14 @@ pub struct EmbyProxyConfig {
     pub port: Option<u16>,
     pub upstream_base_url: Option<String>,
     pub api_key: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ConsoleConfig {
+    pub enable: bool,
+    pub host: Option<String>,
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -98,6 +107,10 @@ impl Manager {
 
     pub fn get_emby_proxy_config(&self) -> &EmbyProxyConfig {
         &self.app_config.emby_proxy
+    }
+
+    pub fn get_console_config(&self) -> &ConsoleConfig {
+        &self.app_config.console
     }
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
@@ -220,6 +233,24 @@ impl EmbyProxyConfig {
     }
 }
 
+impl ConsoleConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enable
+    }
+
+    fn get_host(&self) -> &str {
+        self.host.as_deref().unwrap_or("0.0.0.0")
+    }
+
+    fn get_port(&self) -> u16 {
+        self.port.unwrap_or(3200)
+    }
+
+    pub fn get_addr(&self) -> String {
+        format!("{}:{}", self.get_host(), self.get_port())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,5 +343,32 @@ emby_proxy:
             "http://emby.example:8096"
         );
         assert_eq!(emby_proxy.get_api_key(), Some("secret"));
+    }
+
+    #[test]
+    fn console_defaults_to_disabled_on_port_3200() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let console = config.get_console_config();
+        assert!(!console.is_enabled());
+        assert_eq!(console.get_addr(), "0.0.0.0:3200");
+    }
+
+    #[test]
+    fn console_parses_enabled_config_with_custom_host_and_port() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+console:
+  enable: true
+  host: 127.0.0.1
+  port: 18200
+"#,
+        );
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let console = config.get_console_config();
+        assert!(console.is_enabled());
+        assert_eq!(console.get_addr(), "127.0.0.1:18200");
     }
 }

@@ -6,6 +6,7 @@ mod m20260130_000000_create_table_cache;
 mod m20260506_000000_create_table_file_index;
 mod m20260516_000000_reset_table_file_index;
 mod m20260516_120000_create_table_telegram_export_state;
+mod m20260522_000000_create_table_import_record;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260506_000000_create_table_file_index::Migration),
             Box::new(m20260516_000000_reset_table_file_index::Migration),
             Box::new(m20260516_120000_create_table_telegram_export_state::Migration),
+            Box::new(m20260522_000000_create_table_import_record::Migration),
         ]
     }
 }

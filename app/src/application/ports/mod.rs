@@ -1,6 +1,11 @@
 use std::time::Duration;
 
-use crate::error::AppResult;
+use chrono::{DateTime, Utc};
+
+use crate::{
+    domain::import_record::{ImportSourceKind, ImportStatus},
+    error::AppResult,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeywordRecord {
@@ -127,4 +132,65 @@ pub trait TelegramExportStateRepository: Clone {
         source_value: &str,
     ) -> AppResult<Option<TelegramExportStateRecord>>;
     async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportRecordCreate {
+    pub source_kind: ImportSourceKind,
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportRecordFinalize {
+    pub status: ImportStatus,
+    pub summary_json: String,
+    pub error_kind: Option<String>,
+    pub error_message: Option<String>,
+    pub finished_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportRecordView {
+    pub id: i64,
+    pub source_kind: ImportSourceKind,
+    pub source: String,
+    pub status: ImportStatus,
+    pub summary_json: Option<String>,
+    pub error_kind: Option<String>,
+    pub error_message: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportRecordFilter {
+    pub status: Option<ImportStatus>,
+    pub source_kind: Option<ImportSourceKind>,
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportRecordPaging {
+    pub cursor: Option<i64>,
+    pub limit: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportRecordPage {
+    pub items: Vec<ImportRecordView>,
+    pub next_cursor: Option<i64>,
+}
+
+pub trait ImportRecordRepository: Clone {
+    async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64>;
+    async fn finalize(&self, id: i64, update: &ImportRecordFinalize) -> AppResult<()>;
+    async fn get(&self, id: i64) -> AppResult<Option<ImportRecordView>>;
+    async fn list(
+        &self,
+        filter: &ImportRecordFilter,
+        paging: ImportRecordPaging,
+    ) -> AppResult<ImportRecordPage>;
 }
