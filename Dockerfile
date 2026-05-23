@@ -1,3 +1,11 @@
+FROM node:24-bookworm-slim AS web-builder
+RUN npm install -g pnpm@11
+WORKDIR /web
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
+RUN pnpm install --frozen-lockfile
+COPY web ./
+RUN pnpm build
+
 FROM rust:1-slim-bookworm AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
@@ -11,6 +19,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY . .
+COPY --from=web-builder /web/dist /app/web/dist
 RUN cargo build --release --bin bigbrother
 
 FROM debian:bookworm-slim
