@@ -225,7 +225,7 @@ impl Client {
             if is_share_audit_not_pass_payload(&payload) {
                 return Err(RequestError::ShareAuditNotPass);
             }
-            if let Some(message) = file_not_found_payload(&payload) {
+            if let Some(message) = not_found_payload(&payload) {
                 return Err(RequestError::NotFound(message));
             }
             return Err(RequestError::Other(format!(
@@ -846,11 +846,13 @@ fn is_share_audit_not_pass_payload(payload: &str) -> bool {
         .unwrap_or_else(|_| is_share_audit_not_pass(payload))
 }
 
-fn file_not_found_payload(payload: &str) -> Option<String> {
+fn not_found_payload(payload: &str) -> Option<String> {
     let parsed: ErrorCodeResponse = serde_json::from_str(payload).ok()?;
-    if parsed.error_code.eq_ignore_ascii_case("FileNotFound") {
+    if parsed.error_code.eq_ignore_ascii_case("FileNotFound")
+        || parsed.error_code.eq_ignore_ascii_case("ShareNotFound")
+    {
         Some(format!(
-            "pan189 share file not found, res_code: {}, res_message: {}",
+            "pan189 share not found, res_code: {}, res_message: {}",
             parsed.error_code,
             parsed.error_message.trim()
         ))
@@ -1034,6 +1036,29 @@ mod tests {
         match error {
             RequestError::NotFound(message) => {
                 assert!(message.contains("FileNotFound") || message.contains("not found"));
+            }
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_share_info_returns_not_found_on_http_400_share_not_found() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/share/getShareInfoByCodeV2.action"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "res_code": "ShareNotFound",
+                "res_message": "shareUserRightcheck() - sessionKey=null, shareId=12515118548202, share not found or invalid. "
+            })))
+            .mount(&server)
+            .await;
+
+        let error = client(&server).get_share_info("abc123").await.unwrap_err();
+
+        match error {
+            RequestError::NotFound(message) => {
+                assert!(message.contains("ShareNotFound"));
+                assert!(message.contains("share not found"));
             }
             other => panic!("expected NotFound, got {other:?}"),
         }
