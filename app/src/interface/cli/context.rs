@@ -11,7 +11,8 @@ use crate::{
             local_store::FilesystemImportLocalStore,
         },
         repo::{
-            file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository,
+            file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+            keyword::SeaOrmKeywordRepository,
             telegram_export_state::SeaOrmTelegramExportStateRepository,
         },
         services::{FileIndexRuntimeService, ImportService, ShareResolverRuntimeService},
@@ -142,5 +143,10 @@ impl CliContext {
             SeaOrmFileIndexRepository::new(db.clone()),
             SeaOrmTelegramExportStateRepository::new(db),
         ))
+    }
+
+    pub(super) async fn import_record_repository(&self) -> AppResult<SeaOrmImportRecordRepository> {
+        let db = self.db().await?.clone();
+        Ok(SeaOrmImportRecordRepository::new(db))
     }
 }

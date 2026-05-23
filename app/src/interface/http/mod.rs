@@ -4,12 +4,13 @@ use tracing::info;
 
 use crate::{error::AppResult, util::signal::shutdown_signal};
 
+pub(crate) mod console;
 pub(crate) mod emby_proxy;
 pub(crate) mod log;
 pub(crate) mod media;
 
-pub(crate) async fn run(addr: String, app: Router) -> AppResult<()> {
-    info!("Starting media server at {}", addr);
+pub(crate) async fn run(name: &'static str, addr: String, app: Router) -> AppResult<()> {
+    info!("Starting {name} at {}", addr);
 
     let app = app
         .layer(log::LogLayer)
@@ -17,8 +18,8 @@ pub(crate) async fn run(addr: String, app: Router) -> AppResult<()> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal("media server"))
+        .with_graceful_shutdown(shutdown_signal(name))
         .await?;
-    info!("Media server has shutdown gracefully.");
+    info!("{name} has shutdown gracefully.");
     Ok(())
 }

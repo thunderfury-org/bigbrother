@@ -7,6 +7,7 @@ use crate::{
         delete_media::DeleteMediaService,
         import::MetadataLookup,
         notify::PublishTelegramMessageService,
+        recorded_import::RecordedImportService,
         sync_strm::{SyncStrmConfig, SyncStrmService},
     },
     error::{AppError, AppResult},
@@ -24,6 +25,7 @@ use crate::{
     },
     interface::{
         http,
+        http::console::{self, ConsoleContext},
         http::media::{self, MediaServerContext},
         telegram::{
             self,
@@ -144,6 +146,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         file_index_service: ctx.file_index_service().await?,
         share_resolver: ctx.share_resolver(),
         import_service: ctx.import_service(),
+        recorded_import: RecordedImportService::new(ctx.import_record_repository().await?),
         metadata_lookup: MetadataLookup::default(),
         notify_service,
         keyword_service,
@@ -168,19 +171,33 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     });
     let emby_proxy_addr = emby_proxy_config.map(|config| config.addr);
 
+    // Console
+    let (console_addr, console_router) = if config.get_console_config().is_enabled() {
+        let repo = ctx.import_record_repository().await?;
+        (
+            Some(config.get_console_config().get_addr()),
+            Some(console::new_router(ConsoleContext::new(repo))),
+        )
+    } else {
+        (None, None)
+    };
+
     // Concurrent run
     let event_bus_for_delivery = event_bus.clone();
     let (server_result, event_result, _) = tokio::join!(
-        // Server: HTTP + Telegram bot + optional Emby proxy
+        // Server: HTTP + Telegram bot + optional Emby proxy + optional Console
         async move {
             let mut tasks = tokio::task::JoinSet::new();
-            tasks.spawn(http::run(media_server_addr, media_server));
+            tasks.spawn(http::run("media server", media_server_addr, media_server));
             tasks.spawn(async move {
                 telegram::run(bot, bot_runtime).await;
                 Ok(())
             });
             if let (Some(addr), Some(router)) = (emby_proxy_addr, emby_proxy_router) {
-                tasks.spawn(http::run(addr, router));
+                tasks.spawn(http::run("emby proxy", addr, router));
+            }
+            if let (Some(addr), Some(router)) = (console_addr, console_router) {
+                tasks.spawn(http::run("console", addr, router));
             }
             match tasks.join_next().await {
                 Some(Ok(result)) => {

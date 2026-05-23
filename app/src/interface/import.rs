@@ -1,4 +1,31 @@
 use crate::application::import::ImportedMedia;
+use crate::domain::import_record::{ImportSource, ImportSourceKind};
+use crate::infrastructure::share::share_provider_kind;
+
+pub(crate) fn source_for_share_url(raw_url: &str) -> ImportSource {
+    let kind = url::Url::parse(raw_url)
+        .ok()
+        .and_then(|url| share_provider_kind(&url))
+        .unwrap_or(ImportSourceKind::Other);
+    ImportSource {
+        kind,
+        raw: raw_url.to_owned(),
+    }
+}
+
+pub(crate) fn source_for_fslink(raw: &str) -> ImportSource {
+    ImportSource {
+        kind: ImportSourceKind::Other,
+        raw: raw.to_owned(),
+    }
+}
+
+pub(crate) fn source_for_telegram_document(file_name: &str) -> ImportSource {
+    ImportSource {
+        kind: ImportSourceKind::Telegram,
+        raw: file_name.to_owned(),
+    }
+}
 
 fn format_episodes(episodes: &[u32]) -> String {
     if episodes.is_empty() {
@@ -199,6 +226,47 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn source_for_share_url_uses_share_module_provider_detection() {
+        assert_eq!(
+            source_for_share_url("https://pan.quark.cn/s/share-id?pwd=abc").kind,
+            ImportSourceKind::Quark
+        );
+        assert_eq!(
+            source_for_share_url("https://cloud.189.cn/t/share189").kind,
+            ImportSourceKind::Pan189
+        );
+        assert_eq!(
+            source_for_share_url("https://115.com/s/share115?rc=recv").kind,
+            ImportSourceKind::Pan115
+        );
+        assert_eq!(
+            source_for_share_url("https://www.123684.com/s/share-key?pwd=pass").kind,
+            ImportSourceKind::Pan123
+        );
+        assert_eq!(
+            source_for_share_url("https://example.com/share").kind,
+            ImportSourceKind::Other
+        );
+        assert_eq!(
+            source_for_share_url("not a url").kind,
+            ImportSourceKind::Other
+        );
+    }
+
+    #[test]
+    fn source_for_telegram_document_uses_telegram_kind() {
+        let source = source_for_telegram_document("dump.json");
+        assert_eq!(source.kind, ImportSourceKind::Telegram);
+        assert_eq!(source.raw, "dump.json");
+    }
+
+    #[test]
+    fn source_for_fslink_uses_other_kind() {
+        let source = source_for_fslink("aria2://...");
+        assert_eq!(source.kind, ImportSourceKind::Other);
+    }
 
     #[test]
     fn test_format_episodes_empty() {

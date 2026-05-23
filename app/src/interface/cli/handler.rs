@@ -1,11 +1,13 @@
 use crate::{
     application::import::MetadataLookup,
+    application::recorded_import::RecordedImportService,
     error::{self, AppResult},
     infrastructure::share::resolver::ShareResolver,
 };
 
 use crate::interface::import::{
     NO_NEW_MEDIA_MESSAGE, format_import_summaries, format_verbose_import_notes,
+    source_for_share_url,
 };
 
 use super::{context::CliContext, logger, telegram_export::TelegramExportIndexRuntimeRunner};
@@ -25,6 +27,7 @@ pub(crate) async fn run_import_share_url(
     let mut import_service = ctx.import_service();
     let mut metadata_lookup = MetadataLookup::default();
     let file_index_service = ctx.file_index_service().await?;
+    let recorded = RecordedImportService::new(ctx.import_record_repository().await?);
 
     // Fetch raw files once
     let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
@@ -40,7 +43,11 @@ pub(crate) async fn run_import_share_url(
 
     // Import: reuse raw files
     let media_files = metadata_lookup.build_media_files(raw_files);
-    let imported = import_service.transfer_media_files(&media_files).await?;
+    let imported = recorded
+        .execute(source_for_share_url(url), || async {
+            import_service.transfer_media_files(&media_files).await
+        })
+        .await?;
     let summaries = format_import_summaries(&imported);
     let verbose_notes = if verbose {
         format_verbose_import_notes(&imported)

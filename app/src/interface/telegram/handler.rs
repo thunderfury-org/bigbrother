@@ -2,13 +2,17 @@ use tracing::{info, warn};
 
 use crate::{
     application::import::MetadataLookup,
+    application::recorded_import::RecordedImportService,
+    domain::import_record::ImportSource,
     domain::share::RawFile,
     error::AppResult,
+    infrastructure::repo::import_record::SeaOrmImportRecordRepository,
     infrastructure::services::{
         FileIndexRuntimeService, ImportService, KeywordService, NotifyService,
         ShareResolverRuntimeService,
     },
     infrastructure::share::{file_parser::ShareFileParser, resolver::ShareResolver},
+    interface::import::{source_for_fslink, source_for_share_url, source_for_telegram_document},
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
@@ -19,10 +23,19 @@ pub struct ProcessMediaSourcesHandler {
     pub file_index_service: FileIndexRuntimeService,
     pub share_resolver: ShareResolverRuntimeService,
     pub import_service: ImportService,
+    pub recorded_import: RecordedImportService<SeaOrmImportRecordRepository>,
     pub metadata_lookup: MetadataLookup,
     pub notify_service: NotifyService,
     pub keyword_service: KeywordService,
     pub bot: teloxide::Bot,
+}
+
+fn source_of(source: &MediaSource) -> ImportSource {
+    match source {
+        MediaSource::ShareUrl(url) => source_for_share_url(url),
+        MediaSource::Fslink(raw) => source_for_fslink(raw),
+        MediaSource::TgDocument { file_name, .. } => source_for_telegram_document(file_name),
+    }
 }
 
 pub async fn on_process_media_sources(
@@ -114,11 +127,15 @@ pub async fn on_process_media_sources(
             source_message_id = ?payload.source_message_id(),
             "Built media files for import"
         );
-        match handler
-            .import_service
-            .transfer_media_files(&media_files)
-            .await
-        {
+        let import_source = source_of(&payload.source);
+        let mut import_service = handler.import_service.clone();
+        let outcome = handler
+            .recorded_import
+            .execute(import_source, || async {
+                import_service.transfer_media_files(&media_files).await
+            })
+            .await;
+        match outcome {
             Ok(imported) => {
                 info!(
                     source_kind = payload.source.kind(),
