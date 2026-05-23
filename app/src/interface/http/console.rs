@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{OriginalUri, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use rust_embed::Embed;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -23,12 +24,23 @@ use crate::{
     infrastructure::repo::{
         file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
     },
+    interface::http::console_assets::{AssetFile, resolve_asset},
 };
 
-const INDEX_HTML: &str = include_str!("./console_index.html");
-const FILES_INDEX_HTML: &str = include_str!("./console_files_index.html");
 const DEFAULT_LIMIT: u64 = 50;
 const MAX_LIMIT: u64 = 200;
+
+#[derive(Embed)]
+#[folder = "../web/dist"]
+struct Assets;
+
+fn embedded_lookup(path: &str) -> Option<AssetFile> {
+    let file = Assets::get(path)?;
+    Some(AssetFile {
+        bytes: file.data,
+        mime: file.metadata.mimetype().to_owned().into(),
+    })
+}
 
 #[derive(Clone)]
 pub(crate) struct ConsoleContext {
@@ -50,31 +62,15 @@ impl ConsoleContext {
 
 pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
     Router::new()
-        .route("/", get(index))
-        .route("/imports", get(index))
-        .route("/files", get(files_index))
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
+        .fallback(get(static_handler))
         .with_state(ctx)
 }
 
-async fn index() -> Response {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        INDEX_HTML,
-    )
-        .into_response()
-}
-
-async fn files_index() -> Response {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        FILES_INDEX_HTML,
-    )
-        .into_response()
+async fn static_handler(OriginalUri(uri): OriginalUri) -> Response {
+    resolve_asset(uri.path(), embedded_lookup)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -468,44 +464,6 @@ mod tests {
             .uri(uri)
             .body(axum::body::Body::empty())
             .unwrap()
-    }
-
-    #[tokio::test]
-    async fn get_root_serves_embedded_html() {
-        let repo = fresh_repo().await;
-        let router = router_with(repo).await;
-
-        let response = router.oneshot(request("/")).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or(""),
-            "text/html; charset=utf-8"
-        );
-        let body = body_string(response).await;
-        assert!(body.contains("<html"));
-    }
-
-    #[tokio::test]
-    async fn get_files_serves_embedded_html() {
-        let repo = fresh_repo().await;
-        let router = router_with(repo).await;
-
-        let response = router.oneshot(request("/files")).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or(""),
-            "text/html; charset=utf-8"
-        );
-        let body = body_string(response).await;
-        assert!(body.contains("<html"));
     }
 
     #[tokio::test]
