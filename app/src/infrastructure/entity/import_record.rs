@@ -121,7 +121,7 @@ where
 }
 
 fn model_to_view(model: import_record::Model) -> ImportRecordView {
-    let status = ImportStatus::from_str(&model.status).unwrap_or(ImportStatus::Pending);
+    let status = ImportStatus::from_str(&model.status).unwrap_or(ImportStatus::Running);
     let source_kind = ImportSourceKind::from_str(&model.source_kind);
     ImportRecordView {
         id: model.id,

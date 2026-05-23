@@ -15,7 +15,7 @@ use crate::{
         ImportRecordFilter, ImportRecordPage, ImportRecordPaging, ImportRecordRepository,
         ImportRecordView,
     },
-    domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary},
+    domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
     error::AppError,
     infrastructure::repo::import_record::SeaOrmImportRecordRepository,
 };
@@ -105,14 +105,32 @@ async fn get_import(State(ctx): State<ConsoleContext>, Path(id): Path<i64>) -> R
 
 async fn get_with_repo<R: ImportRecordRepository>(repo: &R, id: i64) -> Response {
     match repo.get(id).await {
-        Ok(Some(view)) => json_response(StatusCode::OK, &record_to_json(&view)),
+        Ok(Some(view)) => json_response(StatusCode::OK, &detail_to_json(&view)),
         Ok(None) => (StatusCode::NOT_FOUND, "not found").into_response(),
         Err(err) => app_error_to_response(err),
     }
 }
 
 #[derive(Debug, Serialize)]
-struct ImportRecordJson {
+struct ListItemJson {
+    id: i64,
+    source_kind: String,
+    source: String,
+    status: String,
+    title: String,
+    year: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    season: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    episode_summary: Option<String>,
+    total_size: u64,
+    cost_ms: u64,
+    created_at: DateTime<Utc>,
+    finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+struct DetailJson {
     id: i64,
     source_kind: String,
     source: String,
@@ -132,18 +150,65 @@ struct ImportRecordErrorJson {
 
 #[derive(Debug, Serialize)]
 struct ImportRecordPageJson {
-    items: Vec<ImportRecordJson>,
+    items: Vec<ListItemJson>,
     next_cursor: Option<i64>,
 }
 
 fn list_to_json(page: ImportRecordPage) -> ImportRecordPageJson {
     ImportRecordPageJson {
-        items: page.items.iter().map(record_to_json).collect(),
+        items: page.items.iter().map(list_item_to_json).collect(),
         next_cursor: page.next_cursor,
     }
 }
 
-fn record_to_json(view: &ImportRecordView) -> ImportRecordJson {
+fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
+    let summary = view
+        .summary_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
+
+    let (title, year, season, episode_summary) = match summary.as_ref().and_then(|s| s.items.first()) {
+        Some(SummaryItem::Movie {
+            title, year, ..
+        }) => (title.clone(), year.clone(), None, None),
+        Some(SummaryItem::Tv {
+            name,
+            year,
+            season,
+            episodes,
+            missing_episodes,
+            ..
+        }) => {
+            let total = episodes.len() + missing_episodes.len();
+            let succeeded = episodes.iter().filter(|e| e.succeeded).count();
+            let summary_str = format!("{succeeded}/{total}");
+            (name.clone(), year.clone(), Some(*season), Some(summary_str))
+        }
+        Some(SummaryItem::Skipped { .. }) | None => {
+            (String::new(), String::new(), None, None)
+        }
+    };
+
+    let total_size = summary.as_ref().map_or(0, |s| s.total_size);
+    let cost_ms = summary.as_ref().map_or(0, |s| s.total_cost_ms);
+
+    ListItemJson {
+        id: view.id,
+        source_kind: view.source_kind.as_str().to_owned(),
+        source: view.source.clone(),
+        status: view.status.as_str().to_owned(),
+        title,
+        year,
+        season,
+        episode_summary,
+        total_size,
+        cost_ms,
+        created_at: view.created_at,
+        finished_at: view.finished_at,
+    }
+}
+
+fn detail_to_json(view: &ImportRecordView) -> DetailJson {
     let summary = view
         .summary_json
         .as_deref()
@@ -159,7 +224,7 @@ fn record_to_json(view: &ImportRecordView) -> ImportRecordJson {
         }),
         _ => None,
     };
-    ImportRecordJson {
+    DetailJson {
         id: view.id,
         source_kind: view.source_kind.as_str().to_owned(),
         source: view.source.clone(),
@@ -232,11 +297,23 @@ mod tests {
             .await
             .unwrap();
         if let Some(status) = terminal_status {
+            let summary = RecordSummary {
+                items: vec![SummaryItem::Movie {
+                    title: "TestMovie".into(),
+                    year: "2024".into(),
+                    size: 1_000_000_000,
+                    cost_ms: 5000,
+                    succeeded: true,
+                }],
+                total_size: 1_000_000_000,
+                total_cost_ms: 5000,
+                skipped_files: vec![],
+            };
             repo.finalize(
                 id,
                 &ImportRecordFinalize {
                     status,
-                    summary_json: serde_json::to_string(&RecordSummary::default()).unwrap(),
+                    summary_json: serde_json::to_string(&summary).unwrap(),
                     error_kind: error.map(|e| e.0.to_owned()),
                     error_message: error.map(|e| e.1.to_owned()),
                     finished_at: Utc.timestamp_opt(seconds + 100, 0).unwrap(),
@@ -301,6 +378,10 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0]["status"], "failed");
         assert_eq!(items[1]["status"], "succeeded");
+        // list returns flat fields, not nested summary
+        assert!(items[0]["title"].is_string());
+        assert!(items[0]["cost_ms"].is_number());
+        assert!(items[0]["summary"].is_null());
     }
 
     #[tokio::test]

@@ -88,6 +88,13 @@
         white-space: nowrap;
         text-overflow: ellipsis;
       }
+      .source-cell a {
+        color: #1a73e8;
+        text-decoration: none;
+      }
+      .source-cell a:hover {
+        text-decoration: underline;
+      }
       .status {
         display: inline-block;
         padding: 2px 8px;
@@ -194,8 +201,11 @@
         <tr>
           <th>ID</th>
           <th>来源</th>
-          <th>来源链接</th>
+          <th>链接</th>
+          <th>标题</th>
+          <th>季集</th>
           <th>状态</th>
+          <th>耗时</th>
           <th>开始</th>
           <th>结束</th>
         </tr>
@@ -253,14 +263,30 @@
         return d.toLocaleString();
       }
 
+      function formatCost(ms) {
+        if (!ms) return "—";
+        if (ms < 1000) return `${ms}ms`;
+        return `${(ms / 1000).toFixed(1)}s`;
+      }
+
       function renderRow(item) {
         const tr = document.createElement("tr");
         tr.dataset.id = item.id;
+        const title = item.year ? `${item.title} (${item.year})` : (item.title || "—");
+        const seasonEp = item.season != null
+          ? `S${String(item.season).padStart(2, "0")} ${item.episode_summary || ""}`.trim()
+          : (item.episode_summary || "—");
+        const sourceLink = item.source.startsWith("http")
+          ? `<a href="${item.source}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${item.source}</a>`
+          : item.source;
         tr.innerHTML = `
           <td>${item.id}</td>
           <td>${item.source_kind}</td>
-          <td class="source-cell" title="${item.source}">${item.source}</td>
+          <td class="source-cell" title="${item.source}">${sourceLink}</td>
+          <td>${title}</td>
+          <td>${seasonEp}</td>
           <td><span class="status status-${item.status}">${item.status}</span></td>
+          <td>${formatCost(item.cost_ms)}</td>
           <td>${formatTimestamp(item.created_at)}</td>
           <td>${formatTimestamp(item.finished_at)}</td>
         `;
