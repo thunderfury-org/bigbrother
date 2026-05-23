@@ -145,6 +145,9 @@ fn decode_list_response_data(data: Value) -> RequestResult<ListResponseData> {
 
 fn map_list_error(errno: i32, error: &str) -> RequestError {
     match errno {
+        4100010 => RequestError::ShareCancelled(format!(
+            "pan115 share cancelled, errno: {errno}, error: {error}"
+        )),
         4100012 => RequestError::BadRequest(format!(
             "pan115 share requires receive code, errno: {errno}, error: {error}"
         )),
@@ -305,6 +308,16 @@ mod tests {
                 assert!(message.contains("4100012"));
             }
             other => panic!("Expected BadRequest, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_list_error_classifies_share_cancelled_errno() {
+        match map_list_error(4100010, "分享已取消") {
+            RequestError::ShareCancelled(message) => {
+                assert!(message.contains("分享已取消"));
+            }
+            other => panic!("Expected ShareCancelled, got: {other:?}"),
         }
     }
 
