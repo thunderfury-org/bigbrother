@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文件索引</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px 32px;
+        background: #f5f6f8;
+        color: #1c1f23;
+      }
+      nav.tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid #e3e5e8;
+      }
+      nav.tabs a {
+        padding: 8px 14px;
+        font-size: 13px;
+        text-decoration: none;
+        color: #4a4f56;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      nav.tabs a:hover {
+        color: #1c1f23;
+      }
+      nav.tabs a.active {
+        color: #1a73e8;
+        border-bottom-color: #1a73e8;
+        font-weight: 500;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      .filters {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 16px;
+        background: #ffffff;
+        border: 1px solid #e3e5e8;
+        border-radius: 6px;
+        margin-bottom: 16px;
+      }
+      .filters label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+      }
+      .filters input[name="q"] {
+        min-width: 280px;
+      }
+      select,
+      input,
+      button {
+        font-size: 13px;
+        padding: 4px 8px;
+        border: 1px solid #cdd1d6;
+        border-radius: 4px;
+        background: #ffffff;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      thead {
+        background: #eef0f3;
+        text-align: left;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      th,
+      td {
+        padding: 10px 14px;
+        border-bottom: 1px solid #edf0f3;
+        font-size: 13px;
+        vertical-align: top;
+      }
+      .hash-cell {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        max-width: 320px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .hash-cell .hash-type {
+        color: #6e7480;
+        margin-right: 6px;
+      }
+      details.locations summary {
+        cursor: pointer;
+        color: #1a73e8;
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      details.locations summary::-webkit-details-marker {
+        display: none;
+      }
+      details.locations[open] summary {
+        margin-bottom: 8px;
+      }
+      ul.location-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      ul.location-list li {
+        padding: 8px 10px;
+        background: #f8fafc;
+        border: 1px solid #edf0f3;
+        border-radius: 4px;
+      }
+      ul.location-list .file-name {
+        font-weight: 500;
+      }
+      ul.location-list .file-path {
+        color: #6e7480;
+        font-size: 12px;
+        margin-top: 2px;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        word-break: break-all;
+      }
+      ul.location-list .descriptions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 6px;
+      }
+      ul.location-list .descriptions .chip {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #eaf2ff;
+        color: #1a4d8a;
+        border-radius: 999px;
+        font-size: 12px;
+        max-width: 360px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .empty {
+        padding: 24px;
+        text-align: center;
+        color: #6e7480;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="tabs">
+      <a href="/imports">导入历史</a>
+      <a href="/files" class="active">文件索引</a>
+    </nav>
+    <header>
+      <h1>文件索引</h1>
+      <span id="meta"></span>
+    </header>
+
+    <form class="filters" id="filters">
+      <label>
+        关键字
+        <input type="text" name="q" placeholder="文件名、路径或描述片段" />
+      </label>
+      <label>
+        条数
+        <select name="limit">
+          <option value="20">20</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </label>
+      <button type="submit">搜索</button>
+      <button type="button" id="reset">重置</button>
+    </form>
+
+    <table id="records">
+      <thead>
+        <tr>
+          <th>大小</th>
+          <th>哈希</th>
+          <th>位置</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>请输入关键字开始搜索</div>
+
+    <script>
+      const filtersForm = document.getElementById("filters");
+      const tableBody = document.querySelector("#records tbody");
+      const emptyEl = document.getElementById("empty");
+      const metaEl = document.getElementById("meta");
+
+      function formatSize(bytes) {
+        if (bytes == null) return "—";
+        const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        let value = Number(bytes);
+        let unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+          value /= 1024;
+          unitIndex += 1;
+        }
+        const formatted = unitIndex === 0 ? value.toFixed(0) : value.toFixed(2);
+        return `${formatted} ${units[unitIndex]}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderLocations(locations) {
+        if (!locations.length) {
+          return `<span class="empty">—</span>`;
+        }
+        const items = locations.map((loc) => {
+          const descChips = (loc.descriptions || [])
+            .map(
+              (d) =>
+                `<span class="chip" title="${escapeHtml(d)}">${escapeHtml(d)}</span>`,
+            )
+            .join("");
+          return `
+            <li>
+              <div class="file-name">${escapeHtml(loc.file_name)}</div>
+              <div class="file-path">${escapeHtml(loc.file_path || "/")}</div>
+              ${descChips ? `<div class="descriptions">${descChips}</div>` : ""}
+            </li>`;
+        });
+        const summary = `${locations.length} 个位置`;
+        return `
+          <details class="locations" open>
+            <summary>${summary}</summary>
+            <ul class="location-list">${items.join("")}</ul>
+          </details>`;
+      }
+
+      function renderRow(item) {
+        const tr = document.createElement("tr");
+        const hashFull = `${item.hash_type}:${item.hash_value}`;
+        tr.innerHTML = `
+          <td>${formatSize(item.size)}</td>
+          <td class="hash-cell" title="${escapeHtml(hashFull)}">
+            <span class="hash-type">${escapeHtml(item.hash_type)}</span>${escapeHtml(item.hash_value)}
+          </td>
+          <td>${renderLocations(item.locations || [])}</td>
+        `;
+        return tr;
+      }
+
+      async function load(params) {
+        const response = await fetch(`/api/files?${params.toString()}`);
+        if (!response.ok) {
+          alert(`加载失败: ${response.status} ${await response.text()}`);
+          return;
+        }
+        const data = await response.json();
+        tableBody.innerHTML = "";
+        for (const item of data.items) {
+          tableBody.appendChild(renderRow(item));
+        }
+        if (!params.get("q")) {
+          emptyEl.textContent = "请输入关键字开始搜索";
+          emptyEl.hidden = false;
+          metaEl.textContent = "";
+        } else if (data.items.length === 0) {
+          emptyEl.textContent = "没有匹配的文件";
+          emptyEl.hidden = false;
+          metaEl.textContent = "";
+        } else {
+          emptyEl.hidden = true;
+          metaEl.textContent = `共 ${data.items.length} 条`;
+        }
+      }
+
+      filtersForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const data = new FormData(filtersForm);
+        const params = new URLSearchParams();
+        const q = (data.get("q") || "").trim();
+        if (q) params.set("q", q);
+        const limit = data.get("limit");
+        if (limit) params.set("limit", limit);
+        load(params);
+      });
+
+      document.getElementById("reset").addEventListener("click", () => {
+        filtersForm.reset();
+        load(new URLSearchParams());
+      });
+
+      load(new URLSearchParams());
+    </script>
+  </body>
+</html>

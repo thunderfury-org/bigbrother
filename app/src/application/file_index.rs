@@ -48,7 +48,11 @@ where
         keyword: &str,
         limit: u64,
     ) -> AppResult<Vec<FileSearchRecord>> {
-        self.repo.search_files(keyword.trim(), limit).await
+        let keyword = keyword.trim();
+        if keyword.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.repo.search_files(keyword, limit).await
     }
 }
 
@@ -205,6 +209,20 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].hash_type, "md5");
         assert_eq!(results[0].locations.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn search_files_returns_empty_for_empty_keyword() {
+        let service = FileIndexService::new(FakeRepo::default());
+        let results = service.search_files("", 10).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_files_returns_empty_for_whitespace_keyword() {
+        let service = FileIndexService::new(FakeRepo::default());
+        let results = service.search_files("   \t ", 10).await.unwrap();
+        assert!(results.is_empty());
     }
 
     #[test]

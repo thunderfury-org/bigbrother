@@ -11,28 +11,39 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::ports::{
-        ImportRecordFilter, ImportRecordPage, ImportRecordPaging, ImportRecordRepository,
-        ImportRecordView,
+    application::{
+        file_index::FileIndexService,
+        ports::{
+            FileIndexRepository, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
+            ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
+        },
     },
     domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
     error::AppError,
-    infrastructure::repo::import_record::SeaOrmImportRecordRepository,
+    infrastructure::repo::{
+        file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+    },
 };
 
 const INDEX_HTML: &str = include_str!("./console_index.html");
+const FILES_INDEX_HTML: &str = include_str!("./console_files_index.html");
 const DEFAULT_LIMIT: u64 = 50;
 const MAX_LIMIT: u64 = 200;
 
 #[derive(Clone)]
 pub(crate) struct ConsoleContext {
     repo: Arc<SeaOrmImportRecordRepository>,
+    file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
 }
 
 impl ConsoleContext {
-    pub(crate) fn new(repo: SeaOrmImportRecordRepository) -> Self {
+    pub(crate) fn new(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+    ) -> Self {
         Self {
             repo: Arc::new(repo),
+            file_index_service: Arc::new(file_index_service),
         }
     }
 }
@@ -41,8 +52,10 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/imports", get(index))
+        .route("/files", get(files_index))
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
+        .route("/api/files", get(search_files))
         .with_state(ctx)
 }
 
@@ -51,6 +64,15 @@ async fn index() -> Response {
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
         INDEX_HTML,
+    )
+        .into_response()
+}
+
+async fn files_index() -> Response {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        FILES_INDEX_HTML,
     )
         .into_response()
 }
@@ -96,6 +118,78 @@ async fn list_with_repo<R: ImportRecordRepository>(repo: &R, query: ListQuery) -
     match repo.list(&filter, paging).await {
         Ok(page) => json_response(StatusCode::OK, &list_to_json(page)),
         Err(err) => app_error_to_response(err),
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SearchQuery {
+    q: Option<String>,
+    limit: Option<u64>,
+}
+
+async fn search_files(
+    State(ctx): State<ConsoleContext>,
+    Query(query): Query<SearchQuery>,
+) -> Response {
+    search_files_with_service(ctx.file_index_service.as_ref(), query).await
+}
+
+async fn search_files_with_service<R: FileIndexRepository>(
+    service: &FileIndexService<R>,
+    query: SearchQuery,
+) -> Response {
+    let keyword = query.q.unwrap_or_default();
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+
+    match service.search_files(&keyword, limit).await {
+        Ok(records) => json_response(StatusCode::OK, &file_search_to_json(records)),
+        Err(err) => app_error_to_response(err),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct FileSearchPageJson {
+    items: Vec<FileSearchItemJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct FileSearchItemJson {
+    size: u64,
+    hash_type: String,
+    hash_value: String,
+    locations: Vec<FileLocationJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct FileLocationJson {
+    file_name: String,
+    file_path: String,
+    descriptions: Vec<String>,
+}
+
+fn file_search_to_json(records: Vec<FileSearchRecord>) -> FileSearchPageJson {
+    FileSearchPageJson {
+        items: records
+            .into_iter()
+            .map(|record| FileSearchItemJson {
+                size: record.size,
+                hash_type: record.hash_type,
+                hash_value: record.hash_value,
+                locations: record
+                    .locations
+                    .into_iter()
+                    .map(file_location_to_json)
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+fn file_location_to_json(location: FileLocationRecord) -> FileLocationJson {
+    FileLocationJson {
+        file_name: location.file_name,
+        file_path: location.file_path,
+        descriptions: location.descriptions,
     }
 }
 
@@ -269,16 +363,30 @@ mod tests {
     use sea_orm::{ConnectOptions, Database};
     use tower::ServiceExt;
 
-    use crate::application::ports::{ImportRecordCreate, ImportRecordFinalize};
+    use crate::{
+        application::{
+            file_index::FileIndexService,
+            ports::{FileIndexRecordInput, ImportRecordCreate, ImportRecordFinalize},
+        },
+        infrastructure::repo::file_index::SeaOrmFileIndexRepository,
+    };
 
     use super::*;
 
-    async fn fresh_repo() -> SeaOrmImportRecordRepository {
+    async fn fresh_db() -> sea_orm::DatabaseConnection {
         let mut options = ConnectOptions::new("sqlite::memory:");
         options.sqlx_logging(false);
         let db = Database::connect(options).await.unwrap();
         Migrator::up(&db, None).await.unwrap();
-        SeaOrmImportRecordRepository::new(db)
+        db
+    }
+
+    async fn fresh_repo() -> SeaOrmImportRecordRepository {
+        SeaOrmImportRecordRepository::new(fresh_db().await)
+    }
+
+    async fn fresh_file_repo() -> SeaOrmFileIndexRepository {
+        SeaOrmFileIndexRepository::new(fresh_db().await)
     }
 
     async fn seed_record(
@@ -334,7 +442,25 @@ mod tests {
     }
 
     async fn router_with(repo: SeaOrmImportRecordRepository) -> Router {
-        new_router(ConsoleContext::new(repo))
+        let file_service = FileIndexService::new(fresh_file_repo().await);
+        new_router(ConsoleContext::new(repo, file_service))
+    }
+
+    async fn router_with_files(file_repo: SeaOrmFileIndexRepository) -> Router {
+        let import_repo = fresh_repo().await;
+        let file_service = FileIndexService::new(file_repo);
+        new_router(ConsoleContext::new(import_repo, file_service))
+    }
+
+    fn file_input(file_name: &str, hash: &str) -> FileIndexRecordInput {
+        FileIndexRecordInput {
+            size: 1024,
+            hash_type: "md5".into(),
+            hash_value: hash.into(),
+            file_name: file_name.into(),
+            file_path: "/Movies".into(),
+            description: Some("from share xyz".into()),
+        }
     }
 
     fn request(uri: &str) -> axum::http::Request<axum::body::Body> {
@@ -350,6 +476,25 @@ mod tests {
         let router = router_with(repo).await;
 
         let response = router.oneshot(request("/")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or(""),
+            "text/html; charset=utf-8"
+        );
+        let body = body_string(response).await;
+        assert!(body.contains("<html"));
+    }
+
+    #[tokio::test]
+    async fn get_files_serves_embedded_html() {
+        let repo = fresh_repo().await;
+        let router = router_with(repo).await;
+
+        let response = router.oneshot(request("/files")).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response
@@ -455,5 +600,111 @@ mod tests {
         let body = json_body(response).await;
         assert_eq!(body["error"]["kind"], "network");
         assert_eq!(body["error"]["message"], "upstream timeout");
+    }
+
+    #[tokio::test]
+    async fn search_files_returns_matching_records_as_json() {
+        let file_repo = fresh_file_repo().await;
+        file_repo
+            .record_files(&[file_input("movie.mkv", &"a".repeat(32))])
+            .await
+            .unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router.oneshot(request("/api/files?q=movie")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["hash_type"], "md5");
+        assert_eq!(items[0]["size"], 1024);
+        let locations = items[0]["locations"].as_array().unwrap();
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0]["file_name"], "movie.mkv");
+        assert_eq!(locations[0]["file_path"], "/Movies");
+        assert_eq!(locations[0]["descriptions"][0], "from share xyz");
+    }
+
+    #[tokio::test]
+    async fn search_files_returns_empty_items_when_no_match() {
+        let file_repo = fresh_file_repo().await;
+        file_repo
+            .record_files(&[file_input("movie.mkv", &"a".repeat(32))])
+            .await
+            .unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router
+            .oneshot(request("/api/files?q=somethingnotpresent"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["items"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn search_files_without_query_returns_empty_items_not_400() {
+        let file_repo = fresh_file_repo().await;
+        file_repo
+            .record_files(&[file_input("movie.mkv", &"a".repeat(32))])
+            .await
+            .unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router.oneshot(request("/api/files")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["items"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn search_files_clamps_oversized_limit_to_max() {
+        let file_repo = fresh_file_repo().await;
+        let inputs: Vec<_> = (0..(MAX_LIMIT + 5))
+            .map(|i| FileIndexRecordInput {
+                size: 100 + i,
+                hash_type: "md5".into(),
+                hash_value: format!("{i:032x}"),
+                file_name: "movie.mkv".into(),
+                file_path: "/Movies".into(),
+                description: None,
+            })
+            .collect();
+        file_repo.record_files(&inputs).await.unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router
+            .oneshot(request("/api/files?q=movie&limit=99999"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["items"].as_array().unwrap().len(), MAX_LIMIT as usize);
+    }
+
+    #[tokio::test]
+    async fn search_files_respects_limit_param() {
+        let file_repo = fresh_file_repo().await;
+        let inputs: Vec<_> = (0..3)
+            .map(|i| FileIndexRecordInput {
+                size: 100 + i,
+                hash_type: "md5".into(),
+                hash_value: format!("{i:032x}"),
+                file_name: format!("movie-{i}.mkv"),
+                file_path: "/Movies".into(),
+                description: None,
+            })
+            .collect();
+        file_repo.record_files(&inputs).await.unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router
+            .oneshot(request("/api/files?q=movie&limit=1"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["items"].as_array().unwrap().len(), 1);
     }
 }

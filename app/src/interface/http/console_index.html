@@ -152,9 +152,35 @@
         text-align: center;
         color: #6e7480;
       }
+      nav.tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid #e3e5e8;
+      }
+      nav.tabs a {
+        padding: 8px 14px;
+        font-size: 13px;
+        text-decoration: none;
+        color: #4a4f56;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      nav.tabs a:hover {
+        color: #1c1f23;
+      }
+      nav.tabs a.active {
+        color: #1a73e8;
+        border-bottom-color: #1a73e8;
+        font-weight: 500;
+      }
     </style>
   </head>
   <body>
+    <nav class="tabs">
+      <a href="/imports" class="active">导入历史</a>
+      <a href="/files">文件索引</a>
+    </nav>
     <header>
       <h1>导入历史</h1>
       <span id="meta"></span>
