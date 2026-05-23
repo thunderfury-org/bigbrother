@@ -5,6 +5,7 @@ use tracing::info;
 use crate::{error::AppResult, util::signal::shutdown_signal};
 
 pub(crate) mod console;
+pub(crate) mod console_assets;
 pub(crate) mod emby_proxy;
 pub(crate) mod log;
 pub(crate) mod media;
