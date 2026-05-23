@@ -167,10 +167,11 @@ fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
         .as_deref()
         .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
 
-    let (title, year, season, episode_summary) = match summary.as_ref().and_then(|s| s.items.first()) {
-        Some(SummaryItem::Movie {
-            title, year, ..
-        }) => (title.clone(), year.clone(), None, None),
+    let (title, year, season, episode_summary) = match summary
+        .as_ref()
+        .and_then(|s| s.items.first())
+    {
+        Some(SummaryItem::Movie { title, year, .. }) => (title.clone(), year.clone(), None, None),
         Some(SummaryItem::Tv {
             name,
             year,
@@ -184,9 +185,7 @@ fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
             let summary_str = format!("{succeeded}/{total}");
             (name.clone(), year.clone(), Some(*season), Some(summary_str))
         }
-        Some(SummaryItem::Skipped { .. }) | None => {
-            (String::new(), String::new(), None, None)
-        }
+        Some(SummaryItem::Skipped { .. }) | None => (String::new(), String::new(), None, None),
     };
 
     let total_size = summary.as_ref().map_or(0, |s| s.total_size);
