@@ -197,7 +197,10 @@ where
     }
 
     async fn process_fslink(&self, fslink: &str, description: Option<String>) -> AppResult<()> {
-        let raw_files = ShareFileParser::parse_fslink(fslink)?;
+        // Unparseable fslinks can't recover on retry; mark them as non-retryable here so
+        // classify_error_status keeps its simple "ExternalService(_, false) == permanent" rule.
+        let raw_files = ShareFileParser::parse_fslink(fslink)
+            .map_err(|err| AppError::ExternalService(err.to_string(), false))?;
         self.file_index_service
             .record_raw_files(raw_files, description)
             .await
@@ -503,6 +506,36 @@ mod tests {
                 .error
                 .as_deref()
                 .is_some_and(|e| e.contains("unsupported share url"))
+        );
+        fs::remove_file(input).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fslink_parse_failure_marks_record_permanent_failed() {
+        let input = temp_path("telegram-export-fslink-invalid");
+        fs::write(
+            &input,
+            r#"{"messages":[{"id":1,"text":"123FSLinkV2$1tR77Cnb9Rax8VlFVVtSeh#"}]}"#,
+        )
+        .unwrap();
+
+        let state_repo = SpyStateRepo::default();
+        let runner = TelegramExportIndexRunner::new(
+            FakeResolver::default(),
+            SpyFileRepo::default(),
+            state_repo.clone(),
+        );
+        runner.run(input.to_str().unwrap(), 0, false).await.unwrap();
+
+        let state = state_repo.records.lock().unwrap();
+        let record = state.values().next().expect("expected one record");
+        assert_eq!(record.source_type, "fslink");
+        assert_eq!(record.status, STATUS_PERMANENT_FAILED);
+        assert!(
+            record
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("invalid fslink"))
         );
         fs::remove_file(input).unwrap();
     }
