@@ -174,9 +174,13 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     // Console
     let (console_addr, console_router) = if config.get_console_config().is_enabled() {
         let repo = ctx.import_record_repository().await?;
+        let file_index_service = ctx.file_index_service().await?;
         (
             Some(config.get_console_config().get_addr()),
-            Some(console::new_router(ConsoleContext::new(repo))),
+            Some(console::new_router(ConsoleContext::new(
+                repo,
+                file_index_service,
+            ))),
         )
     } else {
         (None, None)
