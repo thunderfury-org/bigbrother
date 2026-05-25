@@ -1,9 +1,13 @@
+use std::{sync::Arc, time::Duration};
+
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use super::{RequestError, RequestResult, http};
 
 const API_URL: &str = "https://115cdn.com/webapi/share/snap";
+const DEFAULT_REQUEST_INTERVAL: Duration = Duration::from_millis(1500);
 
 // Custom deserializer to handle both string and number types
 fn string_or_number<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -73,12 +77,28 @@ struct ListResponseData {
     pub list: Vec<FileEntry>,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct Client {}
+#[derive(Debug, Clone)]
+pub struct Client {
+    api_url: Arc<str>,
+    limiter: Arc<RequestLimiter>,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Client {
     pub fn new() -> Self {
-        Self {}
+        Self::with_request_interval(DEFAULT_REQUEST_INTERVAL)
+    }
+
+    pub fn with_request_interval(min_interval: Duration) -> Self {
+        Self {
+            api_url: Arc::from(API_URL),
+            limiter: Arc::new(RequestLimiter::new(min_interval)),
+        }
     }
 
     /// List files and folders in a shared directory
@@ -100,8 +120,9 @@ impl Client {
         let mut offset = 0;
 
         loop {
-            let response: ListResponse = http::get(
-                API_URL,
+            self.limiter.acquire().await;
+            let response = http::get_response(
+                self.api_url.as_ref(),
                 Some(vec![
                     ("share_code", share_code),
                     ("offset", offset.to_string().as_str()),
@@ -114,6 +135,7 @@ impl Client {
                 None,
             )
             .await?;
+            let response: ListResponse = decode_list_response(response).await?;
 
             if !response.state {
                 return Err(map_list_error(response.errno, &response.error));
@@ -136,6 +158,95 @@ impl Client {
 
         Ok(files)
     }
+
+    #[cfg(test)]
+    fn new_for_test(api_url: impl Into<String>) -> Self {
+        Self::new_for_test_with_interval(api_url, DEFAULT_REQUEST_INTERVAL)
+    }
+
+    #[cfg(test)]
+    fn new_for_test_with_interval(api_url: impl Into<String>, min_interval: Duration) -> Self {
+        Self {
+            api_url: Arc::from(api_url.into()),
+            limiter: Arc::new(RequestLimiter::new(min_interval)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn min_request_interval(&self) -> Duration {
+        self.limiter.min_interval()
+    }
+}
+
+#[derive(Debug)]
+struct RequestLimiter {
+    min_interval: Duration,
+    state: Mutex<Option<tokio::time::Instant>>,
+}
+
+impl RequestLimiter {
+    fn new(min_interval: Duration) -> Self {
+        Self {
+            min_interval,
+            state: Mutex::new(None),
+        }
+    }
+
+    async fn acquire(&self) {
+        let mut last_request_at = self.state.lock().await;
+        if let Some(previous) = *last_request_at {
+            let next_allowed_at = previous + self.min_interval;
+            let now = tokio::time::Instant::now();
+            if now < next_allowed_at {
+                tokio::time::sleep_until(next_allowed_at).await;
+            }
+        }
+        *last_request_at = Some(tokio::time::Instant::now());
+    }
+
+    #[cfg(test)]
+    fn min_interval(&self) -> Duration {
+        self.min_interval
+    }
+}
+
+async fn decode_list_response(response: reqwest::Response) -> RequestResult<ListResponse> {
+    let status = response.status();
+    let url = response.url().to_string();
+    let payload = response.text().await?;
+
+    if status.is_success() {
+        return serde_json::from_str::<ListResponse>(&payload).map_err(|err| {
+            RequestError::Other(format!(
+                "http request to {url} failed, decode payload failed, {err}, payload: {payload}",
+            ))
+        });
+    }
+
+    if status == reqwest::StatusCode::METHOD_NOT_ALLOWED && looks_like_pan115_risk_control(&payload)
+    {
+        return Err(RequestError::TooManyRequests);
+    }
+
+    match status {
+        reqwest::StatusCode::UNAUTHORIZED => Err(RequestError::Unauthorized),
+        reqwest::StatusCode::NOT_FOUND => Err(RequestError::NotFound(format!(
+            "resource not found, url: {url}"
+        ))),
+        reqwest::StatusCode::TOO_MANY_REQUESTS => Err(RequestError::TooManyRequests),
+        s if s.is_client_error() => Err(RequestError::BadRequest(format!(
+            "http request to {url} failed, status: {status}, payload: {payload}",
+        ))),
+        _ => Err(RequestError::ServerError(format!(
+            "http request to {url} failed, status: {status}, payload: {payload}",
+        ))),
+    }
+}
+
+fn looks_like_pan115_risk_control(payload: &str) -> bool {
+    payload.contains("访问被阻断")
+        || payload.contains("block_message")
+        || payload.contains("potential threats to the server's security")
 }
 
 fn decode_list_response_data(data: Value) -> RequestResult<ListResponseData> {
@@ -160,6 +271,48 @@ fn map_list_error(errno: i32, error: &str) -> RequestError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use wiremock::{
+        Mock, MockServer, Request, Respond, ResponseTemplate,
+        matchers::{method, path, query_param},
+    };
+
+    struct TimestampResponder {
+        first_seen_at_ms: Arc<AtomicU64>,
+        second_seen_at_ms: Arc<AtomicU64>,
+    }
+
+    impl Respond for TimestampResponder {
+        fn respond(&self, _request: &Request) -> ResponseTemplate {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            if self
+                .first_seen_at_ms
+                .compare_exchange(0, now, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                self.second_seen_at_ms.store(now, Ordering::SeqCst);
+            }
+
+            ResponseTemplate::new(200).set_body_string(
+                r#"{
+                    "state": true,
+                    "error": "",
+                    "errno": 0,
+                    "data": {
+                        "count": 0,
+                        "list": []
+                    }
+                }"#,
+            )
+        }
+    }
 
     #[test]
     fn test_file_entry_is_file() {
@@ -369,5 +522,75 @@ mod tests {
         assert_eq!(entry.cid, Some("3351075729570791276".to_string()));
         assert_eq!(entry.name, "Anaconda.2025.mkv");
         assert!(entry.is_file());
+    }
+
+    #[tokio::test]
+    async fn list_share_files_treats_pan115_risk_control_as_too_many_requests() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/webapi/share/snap"))
+            .and(query_param("share_code", "share115"))
+            .and(query_param("receive_code", "recv"))
+            .and(query_param("cid", "0"))
+            .respond_with(ResponseTemplate::new(405).set_body_string(
+                r#"<!doctypehtml><html lang="zh-cn"><body>
+                    很抱歉，由于您访问的URL有可能对网站造成安全威胁，您的访问被阻断。
+                    </body></html>"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let client = Client::new_for_test(format!("{}/webapi/share/snap", server.uri()));
+        let result = client.list_share_files("share115", "recv", "0").await;
+
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, RequestError::TooManyRequests),
+            "expected TooManyRequests, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_share_files_rate_limits_across_cloned_clients() {
+        let server = MockServer::start().await;
+        let first_seen_at_ms = Arc::new(AtomicU64::new(0));
+        let second_seen_at_ms = Arc::new(AtomicU64::new(0));
+
+        Mock::given(method("GET"))
+            .and(path("/webapi/share/snap"))
+            .respond_with(TimestampResponder {
+                first_seen_at_ms: first_seen_at_ms.clone(),
+                second_seen_at_ms: second_seen_at_ms.clone(),
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+
+        let client = Client::new_for_test_with_interval(
+            format!("{}/webapi/share/snap", server.uri()),
+            Duration::from_millis(200),
+        );
+        let cloned = client.clone();
+
+        client
+            .list_share_files("share115", "recv", "0")
+            .await
+            .unwrap();
+        cloned
+            .list_share_files("share115", "recv", "0")
+            .await
+            .unwrap();
+
+        let first = first_seen_at_ms.load(Ordering::SeqCst);
+        let second = second_seen_at_ms.load(Ordering::SeqCst);
+        assert!(
+            first > 0 && second > 0,
+            "expected both requests to be observed"
+        );
+        let observed_gap = second.saturating_sub(first);
+        assert!(
+            observed_gap >= 180,
+            "expected second request to be delayed, first={first}, second={second}, gap={observed_gap}"
+        );
     }
 }

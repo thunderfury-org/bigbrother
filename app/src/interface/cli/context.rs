@@ -1,4 +1,5 @@
 use sea_orm::DatabaseConnection;
+use std::time::Duration;
 use tokio::sync::OnceCell;
 
 use crate::{
@@ -38,7 +39,9 @@ pub(super) struct CliContext {
 impl CliContext {
     pub(super) fn new(data_dir: &str) -> AppResult<Self> {
         let config = config::Manager::try_from(data_dir.trim())?;
-        let pan115 = client::pan115::Client::new();
+        let pan115 = client::pan115::Client::with_request_interval(Duration::from_millis(
+            config.get_pan115_config().get_request_interval_ms(),
+        ));
         let pan123 = client::pan123::Client::new(
             &config.get_pan123_config().passport,
             &config.get_pan123_config().password,

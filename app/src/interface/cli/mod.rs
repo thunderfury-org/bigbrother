@@ -183,6 +183,10 @@ mod tests {
         fn path(&self) -> &Path {
             &self.path
         }
+
+        fn write_config(&self, config: &str) {
+            fs::write(self.path.join("config/config.yaml"), config).unwrap();
+        }
     }
 
     impl Drop for TempCliDataDir {
@@ -355,5 +359,20 @@ mod tests {
             std::path::Path::new(&format!("{}/db/data.db", data_dir.path().display())).exists()
         );
         assert_eq!(format!("{first:?}"), format!("{second:?}"));
+    }
+
+    #[tokio::test]
+    async fn cli_context_passes_pan115_request_interval_to_client() {
+        let data_dir = TempCliDataDir::new();
+        data_dir.write_config(
+            r#"
+pan115:
+  request_interval_ms: 900
+"#,
+        );
+
+        let ctx = CliContext::new(data_dir.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(ctx.pan115().min_request_interval().await.as_millis(), 900);
     }
 }

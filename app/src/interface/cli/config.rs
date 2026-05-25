@@ -8,6 +8,7 @@ struct AppConfig {
     pub media_server: MediaServerConfig,
     pub emby_proxy: EmbyProxyConfig,
     pub console: ConsoleConfig,
+    pub pan115: Pan115Config,
     pub pan123: Pan123Config,
     pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
@@ -40,6 +41,20 @@ pub struct ConsoleConfig {
     pub enable: bool,
     pub host: Option<String>,
     pub port: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct Pan115Config {
+    pub request_interval_ms: u64,
+}
+
+impl Default for Pan115Config {
+    fn default() -> Self {
+        Self {
+            request_interval_ms: 1500,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -115,6 +130,10 @@ impl Manager {
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
         &self.app_config.pan123
+    }
+
+    pub fn get_pan115_config(&self) -> &Pan115Config {
+        &self.app_config.pan115
     }
 
     pub fn get_pan189_config(&self) -> &Pan189Config {
@@ -251,6 +270,12 @@ impl ConsoleConfig {
     }
 }
 
+impl Pan115Config {
+    pub fn get_request_interval_ms(&self) -> u64 {
+        self.request_interval_ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +395,30 @@ console:
         let console = config.get_console_config();
         assert!(console.is_enabled());
         assert_eq!(console.get_addr(), "127.0.0.1:18200");
+    }
+
+    #[test]
+    fn pan115_request_interval_defaults_to_zero() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(config.get_pan115_config().get_request_interval_ms(), 1500);
+    }
+
+    #[test]
+    fn pan115_request_interval_parses_from_config() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+pan115:
+  request_interval_ms: 900
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(config.get_pan115_config().get_request_interval_ms(), 900);
     }
 }
