@@ -31,6 +31,12 @@ pub enum FileType {
     Unknown,
 }
 
+impl FileType {
+    pub fn from_file_name(name: &str) -> Self {
+        parser::file_type_from_name(name)
+    }
+}
+
 /// Represents a media title with language information
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -188,6 +194,31 @@ mod tests {
         assert_eq!(metadata.quality, "WEB-DL");
         assert_eq!(metadata.video_codec, "H264");
         assert_eq!(metadata.audio_codec, "AAC");
+    }
+
+    #[test]
+    fn file_type_from_file_name_detects_known_video_extensions_case_insensitively() {
+        assert_eq!(FileType::from_file_name("movie.mkv"), FileType::Video);
+        assert_eq!(FileType::from_file_name("movie.MP4"), FileType::Video);
+        assert_eq!(FileType::from_file_name("clip.m2ts"), FileType::Video);
+    }
+
+    #[test]
+    fn file_type_from_file_name_detects_known_subtitle_extensions_case_insensitively() {
+        assert_eq!(FileType::from_file_name("episode.srt"), FileType::Subtitle);
+        assert_eq!(FileType::from_file_name("episode.ASS"), FileType::Subtitle);
+        assert_eq!(FileType::from_file_name("episode.IDX"), FileType::Subtitle);
+    }
+
+    #[test]
+    fn file_type_from_file_name_returns_unknown_for_non_media_or_missing_extension() {
+        assert_eq!(FileType::from_file_name("poster.jpg"), FileType::Unknown);
+        assert_eq!(
+            FileType::from_file_name("archive.mkv.txt"),
+            FileType::Unknown
+        );
+        assert_eq!(FileType::from_file_name("README"), FileType::Unknown);
+        assert_eq!(FileType::from_file_name("episode."), FileType::Unknown);
     }
 
     #[test]
