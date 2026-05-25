@@ -3,6 +3,7 @@ use tracing::info;
 
 use crate::{
     application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
+    domain::media::FileType,
     domain::share::RawFile,
     error::AppResult,
 };
@@ -70,6 +71,10 @@ pub fn description_hash(description: &str) -> String {
 
 fn to_record_input(file: RawFile, description: Option<String>) -> Option<FileIndexRecordInput> {
     if file.size == 0 {
+        return None;
+    }
+
+    if FileType::from_file_name(&file.name) == FileType::Unknown {
         return None;
     }
 
@@ -147,7 +152,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_raw_files_filters_files_without_hash_or_size() {
+    async fn record_raw_files_filters_non_media_files_and_files_without_hash_or_size() {
         let repo = FakeRepo::default();
         let service = FileIndexService::new(repo.clone());
 
@@ -163,21 +168,28 @@ mod tests {
                     },
                     RawFile {
                         id: Some(2),
+                        name: "poster.jpg".into(),
+                        hash: FileHash::Md5("abc".into()),
+                        size: 10,
+                        path: "/a".into(),
+                    },
+                    RawFile {
+                        id: Some(3),
                         name: "missing.mkv".into(),
                         hash: FileHash::Md5(" ".into()),
                         size: 10,
                         path: "/a".into(),
                     },
                     RawFile {
-                        id: Some(3),
+                        id: Some(4),
                         name: "movie.mkv".into(),
                         hash: FileHash::Md5(" ABCDEF ".into()),
                         size: 20,
                         path: " / ".into(),
                     },
                     RawFile {
-                        id: Some(4),
-                        name: "episode.mkv".into(),
+                        id: Some(5),
+                        name: "episode.srt".into(),
                         hash: FileHash::Sha1(" 0123456789012345678901234567890123456789 ".into()),
                         size: 30,
                         path: "/Shows".into(),

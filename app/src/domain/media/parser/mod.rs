@@ -105,6 +105,18 @@ pub(crate) fn parse(name: &str) -> Box<Metadata> {
     Box::new(metadata)
 }
 
+pub(super) fn file_type_from_name(name: &str) -> FileType {
+    let (_, extension) = split_extension(name);
+
+    if VIDEO_EXTENSIONS.contains(extension.as_str()) {
+        FileType::Video
+    } else if SUBTITLE_EXTENSIONS.contains(extension.as_str()) {
+        FileType::Subtitle
+    } else {
+        FileType::Unknown
+    }
+}
+
 pub(super) fn span_fully_covers(outer: &Range<usize>, inner: &Range<usize>) -> bool {
     outer.start <= inner.start && outer.end >= inner.end
 }
@@ -133,13 +145,7 @@ fn normalize_name(name: &str) -> (String, FileType, String) {
     }
     let normalized = normalized.trim().to_owned();
 
-    let file_type = if VIDEO_EXTENSIONS.contains(extension.as_str()) {
-        FileType::Video
-    } else if SUBTITLE_EXTENSIONS.contains(extension.as_str()) {
-        FileType::Subtitle
-    } else {
-        FileType::Unknown
-    };
+    let file_type = file_type_from_name(name);
 
     (normalized, file_type, extension)
 }
