@@ -3,64 +3,22 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SendTelegramMessage {
+pub struct Message {
     pub message: String,
     pub reply_to: Option<i32>,
 }
 
-pub trait TelegramMessagePublisher {
-    async fn publish(&self, payload: &SendTelegramMessage) -> AppResult<()>;
-}
-
-pub trait TelegramMessageSender {
-    async fn send(&self, payload: &SendTelegramMessage) -> AppResult<()>;
-}
-
-#[derive(Clone)]
-pub struct PublishTelegramMessageService<P> {
-    publisher: P,
-}
-
-impl<P> PublishTelegramMessageService<P> {
-    pub fn new(publisher: P) -> Self {
-        Self { publisher }
-    }
-}
-
-impl<P> PublishTelegramMessageService<P>
-where
-    P: TelegramMessagePublisher,
-{
-    pub async fn send_message<T: Into<String>>(
-        &self,
-        text: T,
-        reply_to: Option<i32>,
-    ) -> AppResult<()> {
-        let payload = SendTelegramMessage {
+impl Message {
+    pub fn new<T: Into<String>>(text: T, reply_to: Option<i32>) -> Self {
+        Self {
             message: text.into(),
             reply_to,
-        };
-        self.publisher.publish(&payload).await
+        }
     }
 }
 
-pub struct DeliverTelegramMessageService<S> {
-    sender: S,
-}
-
-impl<S> DeliverTelegramMessageService<S> {
-    pub fn new(sender: S) -> Self {
-        Self { sender }
-    }
-}
-
-impl<S> DeliverTelegramMessageService<S>
-where
-    S: TelegramMessageSender,
-{
-    pub async fn deliver(&self, payload: &SendTelegramMessage) -> AppResult<()> {
-        self.sender.send(payload).await
-    }
+pub trait MessageSender {
+    async fn send(&self, payload: &Message) -> AppResult<()>;
 }
 
 #[cfg(test)]
@@ -71,32 +29,17 @@ mod tests {
     use crate::error::AppError;
 
     #[derive(Clone, Default)]
-    struct FakePublisher {
-        payloads: Arc<Mutex<Vec<SendTelegramMessage>>>,
-    }
-
-    impl TelegramMessagePublisher for FakePublisher {
-        async fn publish(&self, payload: &SendTelegramMessage) -> AppResult<()> {
-            self.payloads.lock().unwrap().push(SendTelegramMessage {
-                message: payload.message.clone(),
-                reply_to: payload.reply_to,
-            });
-            Ok(())
-        }
-    }
-
-    #[derive(Clone, Default)]
     struct FakeSender {
-        payloads: Arc<Mutex<Vec<SendTelegramMessage>>>,
+        payloads: Arc<Mutex<Vec<Message>>>,
         fail: bool,
     }
 
-    impl TelegramMessageSender for FakeSender {
-        async fn send(&self, payload: &SendTelegramMessage) -> AppResult<()> {
+    impl MessageSender for FakeSender {
+        async fn send(&self, payload: &Message) -> AppResult<()> {
             if self.fail {
                 return Err(AppError::Internal("send failed".to_string()));
             }
-            self.payloads.lock().unwrap().push(SendTelegramMessage {
+            self.payloads.lock().unwrap().push(Message {
                 message: payload.message.clone(),
                 reply_to: payload.reply_to,
             });
@@ -105,62 +48,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_text_publishes_payload() {
-        let publisher = FakePublisher::default();
-        let service = PublishTelegramMessageService::new(publisher.clone());
+    async fn sender_receives_payload() {
+        let sender = FakeSender::default();
+        let payload = Message::new("hello", Some(1));
 
-        service.send_message("hello", Some(1)).await.unwrap();
+        sender.send(&payload).await.unwrap();
 
-        let payloads = publisher.payloads.lock().unwrap();
+        let payloads = sender.payloads.lock().unwrap();
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].message, "hello");
         assert_eq!(payloads[0].reply_to, Some(1));
     }
 
     #[tokio::test]
-    async fn deliver_uses_sender() {
-        let sender = FakeSender::default();
-        let service = DeliverTelegramMessageService::new(sender.clone());
-        let payload = SendTelegramMessage {
-            message: "hi".to_string(),
-            reply_to: None,
-        };
-
-        service.deliver(&payload).await.unwrap();
-
-        let payloads = sender.payloads.lock().unwrap();
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0].message, "hi");
-    }
-
-    #[tokio::test]
-    async fn deliver_propagates_sender_error() {
+    async fn send_propagates_sender_error() {
         let sender = FakeSender {
             payloads: Arc::new(Mutex::new(Vec::new())),
             fail: true,
         };
-        let service = DeliverTelegramMessageService::new(sender);
-        let payload = SendTelegramMessage {
-            message: "hi".to_string(),
-            reply_to: None,
-        };
+        let payload = Message::new("hi", None);
 
-        let error = service.deliver(&payload).await.unwrap_err();
+        let error = sender.send(&payload).await.unwrap_err();
 
         assert!(matches!(error, AppError::Internal(message) if message.contains("send failed")));
     }
 
     #[test]
-    fn send_telegram_message_serializes_stably() {
-        let payload = SendTelegramMessage {
-            message: "hello".to_string(),
-            reply_to: Some(42),
+    fn message_constructor_sets_fields() {
+        let payload = Message::new("hi", None);
+
+        assert_eq!(payload.message, "hi");
+        assert_eq!(payload.reply_to, None);
+    }
+
+    #[test]
+    fn message_serializes_stably() {
+        let payload = Message {
+            message: "hi".to_string(),
+            reply_to: None,
         };
 
         let json = serde_json::to_string(&payload).unwrap();
-        assert_eq!(json, r#"{"message":"hello","reply_to":42}"#);
+        assert_eq!(json, r#"{"message":"hi","reply_to":null}"#);
 
-        let restored: SendTelegramMessage = serde_json::from_str(&json).unwrap();
+        let restored: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, payload);
     }
 }

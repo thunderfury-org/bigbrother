@@ -1,9 +1,9 @@
-use crate::{application::notify::SendTelegramMessage, infrastructure::event_bus::Event};
+use crate::{application::notify::Message, infrastructure::event_bus::Event};
 
 pub mod publisher;
 pub mod store;
 
-impl Event for SendTelegramMessage {
+impl Event for Message {
     const NAME: &'static str = "SendTelegramMessage";
 }
 
@@ -13,6 +13,6 @@ mod tests {
 
     #[test]
     fn send_telegram_message_event_name_is_stable() {
-        assert_eq!(SendTelegramMessage::NAME, "SendTelegramMessage");
+        assert_eq!(Message::NAME, "SendTelegramMessage");
     }
 }

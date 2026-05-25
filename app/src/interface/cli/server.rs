@@ -6,7 +6,6 @@ use crate::{
     application::{
         delete_media::DeleteMediaService,
         import::MetadataLookup,
-        notify::PublishTelegramMessageService,
         recorded_import::RecordedImportService,
         sync_strm::{SyncStrmConfig, SyncStrmService},
     },
@@ -113,9 +112,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
         keyword_service: ctx.keyword_service().await?,
-        notify_service: PublishTelegramMessageService::new(EventBusPublisher::new(
-            event_bus.clone(),
-        )),
+        notify_service: EventBusPublisher::new(event_bus.clone()),
         sync_service: SyncStrmService::new(
             Pan123LibraryRemote::new(pan123.clone()),
             TokioFileStore,
@@ -140,8 +137,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         user_id: config.get_telegram_config().user_id,
     };
     let keyword_service = ctx.keyword_service().await?;
-    let notify_service =
-        PublishTelegramMessageService::new(EventBusPublisher::new(event_bus.clone()));
+    let notify_service = EventBusPublisher::new(event_bus.clone());
     let event_delivery_media_handler = ProcessMediaSourcesHandler {
         file_index_service: ctx.file_index_service().await?,
         share_resolver: ctx.share_resolver(),
