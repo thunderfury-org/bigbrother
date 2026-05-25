@@ -1,3 +1,6 @@
+pan115:
+  request_interval_ms: 1500
+
 pan123:
   passport: ""
   password: ""
