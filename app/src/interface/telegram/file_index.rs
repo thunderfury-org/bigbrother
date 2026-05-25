@@ -7,6 +7,7 @@ use url::Url;
 
 use crate::{
     application::import::ImportedMedia,
+    application::notify::{Message as OutboundMessage, MessageSender},
     error::AppError,
     infrastructure::share::file_parser::ShareFileParser,
     infrastructure::{event_bus::Event, share::is_supported_share_url},
@@ -424,7 +425,10 @@ async fn send_notify(
         has_source_message_link,
         "Sending Telegram observation notification"
     );
-    if let Err(e) = notify_service.send_message(text, reply_to).await {
+    if let Err(e) = notify_service
+        .send(&OutboundMessage::new(text, reply_to))
+        .await
+    {
         tracing::error!(
             notification_kind,
             reply_to = ?reply_to,

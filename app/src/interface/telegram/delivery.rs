@@ -1,5 +1,5 @@
 use crate::{
-    application::notify::{DeliverTelegramMessageService, SendTelegramMessage},
+    application::notify::{Message, MessageSender},
     error::AppResult,
     infrastructure::telegram::sender::TelegramBotSender,
 };
@@ -12,9 +12,9 @@ pub struct TelegramDeliveryContext {
 
 pub async fn on_send_telegram_message(
     ctx: TelegramDeliveryContext,
-    payload: SendTelegramMessage,
+    payload: Message,
 ) -> AppResult<()> {
-    DeliverTelegramMessageService::new(TelegramBotSender::new(ctx.bot, ctx.user_id))
-        .deliver(&payload)
+    TelegramBotSender::new(ctx.bot, ctx.user_id)
+        .send(&payload)
         .await
 }

@@ -1,5 +1,5 @@
 use crate::{
-    application::notify::{SendTelegramMessage, TelegramMessagePublisher},
+    application::notify::{Message, MessageSender},
     error::AppResult,
     infrastructure::event_bus::EventBus,
 };
@@ -15,8 +15,8 @@ impl EventBusPublisher {
     }
 }
 
-impl TelegramMessagePublisher for EventBusPublisher {
-    async fn publish(&self, payload: &SendTelegramMessage) -> AppResult<()> {
+impl MessageSender for EventBusPublisher {
+    async fn send(&self, payload: &Message) -> AppResult<()> {
         self.bus.publish(payload).await
     }
 }

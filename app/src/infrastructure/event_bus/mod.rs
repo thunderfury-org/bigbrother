@@ -110,7 +110,7 @@ mod tests {
     use tokio::time::{Duration, sleep};
 
     use crate::{
-        application::notify::PublishTelegramMessageService,
+        application::notify::{Message, MessageSender},
         infrastructure::event::publisher::EventBusPublisher,
     };
     use migration::{Migrator, MigratorTrait};
@@ -151,7 +151,7 @@ mod tests {
         let bus = test_bus().await;
         let received = Arc::new(Mutex::new(Vec::new()));
 
-        bus.subscribe::<Arc<Mutex<Vec<String>>>, crate::application::notify::SendTelegramMessage, _, _>(
+        bus.subscribe::<Arc<Mutex<Vec<String>>>, crate::application::notify::Message, _, _>(
             received.clone(),
             |received, payload| async move {
                 received.lock().unwrap().push(payload.message);
@@ -161,8 +161,8 @@ mod tests {
         .await
         .unwrap();
 
-        PublishTelegramMessageService::new(EventBusPublisher::new(bus.clone()))
-            .send_message("hello chain", Some(7))
+        EventBusPublisher::new(bus.clone())
+            .send(&Message::new("hello chain", Some(7)))
             .await
             .unwrap();
 

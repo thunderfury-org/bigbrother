@@ -1,8 +1,8 @@
 use crate::{
     application::{
         delete_media::DeleteMediaService, file_index::FileIndexService, import::TransferWorkflow,
-        manage_keywords::ManageKeywordsService, notify::PublishTelegramMessageService,
-        resolve_download_url::ResolveDownloadUrlService, sync_strm::SyncStrmService,
+        manage_keywords::ManageKeywordsService, resolve_download_url::ResolveDownloadUrlService,
+        sync_strm::SyncStrmService,
     },
     infrastructure::{
         cache::string_store::StringCacheStore,
@@ -24,7 +24,7 @@ pub type ShareResolverRuntimeService =
     ShareResolverService<pan123::Client, pan189::Client, pan115::Client, quark::Client>;
 pub type ImportService =
     TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
-pub type NotifyService = PublishTelegramMessageService<EventBusPublisher>;
+pub type NotifyService = EventBusPublisher;
 pub type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 pub type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;
 pub type DeleteMediaServiceRuntime =

@@ -10,6 +10,7 @@ use tracing::{error, info};
 
 use crate::{
     application::delete_media::MediaDeleteCandidate,
+    application::notify::{Message as OutboundMessage, MessageSender},
     infrastructure::event_bus::EventBus,
     infrastructure::services::{
         DeleteMediaServiceRuntime, KeywordService, NotifyService, SyncService,
@@ -261,7 +262,10 @@ async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> Response
         SourceHandling::NotifyNoValidMediaSource => {
             if let Err(err) = runtime
                 .notify_service()
-                .send_message(NO_VALID_MEDIA_SOURCE_MESSAGE, reply_to)
+                .send(&OutboundMessage::new(
+                    NO_VALID_MEDIA_SOURCE_MESSAGE,
+                    reply_to,
+                ))
                 .await
             {
                 error!("Failed to send no-valid-media-source message: {err}");
