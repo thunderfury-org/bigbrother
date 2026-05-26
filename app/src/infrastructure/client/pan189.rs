@@ -73,9 +73,9 @@ pub struct Folder {
 struct FileListResponse {
     #[serde(rename = "count")]
     count: u32,
-    #[serde(rename = "fileList")]
+    #[serde(rename = "fileList", default)]
     file_list: Vec<File>,
-    #[serde(rename = "folderList")]
+    #[serde(rename = "folderList", default)]
     folder_list: Vec<Folder>,
 }
 
@@ -1166,6 +1166,38 @@ mod tests {
             }
             other => panic!("expected business error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn list_share_files_treats_missing_arrays_as_empty_collections() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/open/share/listShareDir.action"))
+            .and(query_param("pageNum", "1"))
+            .and(query_param("pageSize", "100"))
+            .and(query_param("shareId", "42"))
+            .and(query_param("shareMode", "1"))
+            .and(query_param("shareDirFileId", "root"))
+            .and(query_param("fileId", "root"))
+            .and(header("sign-type", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "res_code": 0,
+                "res_message": "ok",
+                "fileListAO": {
+                    "count": 0,
+                    "fileListSize": 0
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let (folders, files) = client(&server)
+            .list_share_files(42, 1, "root")
+            .await
+            .unwrap();
+
+        assert!(folders.is_empty());
+        assert!(files.is_empty());
     }
 
     #[tokio::test]
