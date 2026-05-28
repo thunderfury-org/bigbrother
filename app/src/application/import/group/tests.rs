@@ -71,13 +71,14 @@ fn create_tv_media_file(
         }),
         video: create_raw_file(file_name),
         subtitles: Vec::new(),
+        descriptions: Vec::new(),
     }
 }
 
 #[test]
 fn test_group_empty_files() {
     let raw_files = vec![];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 0);
 }
 
@@ -87,7 +88,7 @@ fn test_group_no_video_files() {
         (create_subtitle_metadata(), create_raw_file("sub1.srt")),
         (create_subtitle_metadata(), create_raw_file("sub2.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 0);
 }
 
@@ -97,7 +98,7 @@ fn test_group_only_video_files_no_subtitles() {
         (create_video_metadata(), create_raw_file("video1.mp4")),
         (create_video_metadata(), create_raw_file("video2.mkv")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 2);
     assert_eq!(result[0].subtitles.len(), 0);
     assert_eq!(result[1].subtitles.len(), 0);
@@ -109,7 +110,7 @@ fn test_group_single_video_with_matching_subtitle() {
         (create_video_metadata(), create_raw_file("movie.mp4")),
         (create_subtitle_metadata(), create_raw_file("movie.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].video.name, "movie.mp4");
     assert_eq!(result[0].subtitles.len(), 1);
@@ -123,7 +124,7 @@ fn test_group_video_with_multiple_subtitles() {
         (create_subtitle_metadata(), create_raw_file("movie.en.srt")),
         (create_subtitle_metadata(), create_raw_file("movie.zh.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].subtitles.len(), 2);
 }
@@ -136,7 +137,7 @@ fn test_group_multiple_videos_with_matching_subtitles() {
         (create_subtitle_metadata(), create_raw_file("video1.srt")),
         (create_subtitle_metadata(), create_raw_file("video2.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 2);
 
     let video1_file = result
@@ -160,7 +161,7 @@ fn test_group_video_without_matching_subtitle() {
         (create_video_metadata(), create_raw_file("video1.mp4")),
         (create_subtitle_metadata(), create_raw_file("different.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].subtitles.len(), 0);
 }
@@ -174,7 +175,7 @@ fn test_group_subtitle_matches_by_prefix() {
             create_raw_file("movie.en.forced.srt"),
         ),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].subtitles.len(), 1);
 }
@@ -185,7 +186,7 @@ fn test_group_video_without_extension() {
         (create_video_metadata(), create_raw_file("videofile")),
         (create_subtitle_metadata(), create_raw_file("videofile.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].video.name, "videofile");
     assert_eq!(result[0].subtitles.len(), 1);
@@ -202,7 +203,7 @@ fn test_group_complex_scenario() {
         (create_subtitle_metadata(), create_raw_file("movie2.srt")),
         (create_subtitle_metadata(), create_raw_file("unmatched.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 3);
 
     let movie1 = result
@@ -229,7 +230,7 @@ fn test_group_subtitle_matches_only_once() {
         (create_video_metadata(), create_raw_file("movie.mp4")),
         (create_subtitle_metadata(), create_raw_file("movie.srt")),
     ];
-    let result = group_video_and_subtitle_files(raw_files);
+    let result = group_video_and_subtitle_files(raw_files, Vec::new());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].subtitles.len(), 1);
 }

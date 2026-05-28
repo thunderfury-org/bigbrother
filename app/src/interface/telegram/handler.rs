@@ -89,7 +89,7 @@ pub async fn on_process_media_sources(
     // Step 2: Index
     if let Err(err) = handler
         .file_index_service
-        .record_raw_files(raw_files.clone(), description)
+        .record_raw_files(raw_files.clone(), description.clone())
         .await
     {
         warn!(error = %err, "file index record failed (non-blocking)");
@@ -119,7 +119,10 @@ pub async fn on_process_media_sources(
         "Evaluated import policy for media source observation"
     );
     if should_import {
-        let media_files = handler.metadata_lookup.build_media_files(raw_files);
+        let descriptions: Vec<String> = description.into_iter().collect();
+        let media_files = handler
+            .metadata_lookup
+            .build_media_files(raw_files, descriptions);
         info!(
             source_kind = payload.source.kind(),
             media_file_count = media_files.len(),

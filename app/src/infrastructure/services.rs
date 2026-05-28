@@ -16,14 +16,19 @@ use crate::{
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
         share::resolver::ShareResolverService,
+        title_extractor::TitleExtractorService,
     },
 };
 
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareResolverRuntimeService =
     ShareResolverService<pan123::Client, pan189::Client, pan115::Client, quark::Client>;
-pub type ImportService =
-    TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
+pub type ImportService = TransferWorkflow<
+    PanLibraryGateway,
+    TmdbMetadataGateway,
+    FilesystemImportLocalStore,
+    TitleExtractorService,
+>;
 pub type NotifyService = EventBusPublisher;
 pub type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 pub type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;

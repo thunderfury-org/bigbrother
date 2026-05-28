@@ -12,6 +12,7 @@ struct AppConfig {
     pub pan123: Pan123Config,
     pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
+    pub openai: OpenaiConfig,
     pub telegram: TelegramConfig,
     pub library: LibraryConfig,
     pub quark: QuarkConfig,
@@ -93,6 +94,20 @@ pub struct TmdbConfig {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
+pub struct OpenaiConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+}
+
+impl OpenaiConfig {
+    pub fn is_configured(&self) -> bool {
+        !self.api_key.is_empty() && !self.base_url.is_empty() && !self.model.is_empty()
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
 pub struct QuarkConfig {
     pub cookie: String,
 }
@@ -142,6 +157,10 @@ impl Manager {
 
     pub fn get_tmdb_config(&self) -> &TmdbConfig {
         &self.app_config.tmdb
+    }
+
+    pub fn get_openai_config(&self) -> &OpenaiConfig {
+        &self.app_config.openai
     }
 
     pub fn get_telegram_config(&self) -> &TelegramConfig {

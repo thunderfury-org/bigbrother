@@ -19,6 +19,7 @@ pub(crate) fn should_skip_existing_media(
 
 pub(crate) fn group_video_and_subtitle_files(
     raw_files: Vec<(Box<Metadata>, RawFile)>,
+    descriptions: Vec<String>,
 ) -> Vec<MediaFile> {
     if raw_files.is_empty() {
         return Vec::new();
@@ -39,6 +40,7 @@ pub(crate) fn group_video_and_subtitle_files(
                 metadata,
                 video: raw_file,
                 subtitles: Vec::new(),
+                descriptions: descriptions.clone(),
             })
             .collect();
     }
@@ -56,6 +58,7 @@ pub(crate) fn group_video_and_subtitle_files(
                     metadata,
                     video: raw_file,
                     subtitles: Vec::new(),
+                    descriptions: descriptions.clone(),
                 },
             )
         })
@@ -235,6 +238,7 @@ mod tests {
                 path: "/path".to_string(),
             },
             subtitles: Vec::new(),
+            descriptions: Vec::new(),
         }
     }
 
@@ -249,6 +253,7 @@ mod tests {
                 path: "/path".to_string(),
             },
             subtitles: Vec::new(),
+            descriptions: Vec::new(),
         }
     }
 

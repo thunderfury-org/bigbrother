@@ -21,6 +21,7 @@ use crate::{
             pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
             quark::QuarkShareService,
         },
+        title_extractor::TitleExtractorService,
     },
 };
 
@@ -105,8 +106,21 @@ impl CliContext {
         )
     }
 
-    pub(super) fn import_service(&self) -> ImportService {
-        ImportService::new(
+    pub(super) async fn import_service(&self) -> AppResult<ImportService> {
+        let openai_config = self.config.get_openai_config();
+        let openai_client = if openai_config.is_configured() {
+            Some(client::openai::Client::new(
+                &openai_config.api_key,
+                &openai_config.base_url,
+                &openai_config.model,
+            ))
+        } else {
+            None
+        };
+        let db = self.db().await?.clone();
+        let title_extractor = TitleExtractorService::new(openai_client, db);
+
+        Ok(ImportService::new(
             PanLibraryGateway::new(self.pan123()),
             TmdbMetadataGateway::new(self.tmdb()),
             FilesystemImportLocalStore::new(
@@ -116,7 +130,8 @@ impl CliContext {
                     .get_media_server_config()
                     .get_strm_download_url(),
             ),
-        )
+            title_extractor,
+        ))
     }
 
     pub(super) async fn file_index_service(&self) -> AppResult<FileIndexRuntimeService> {

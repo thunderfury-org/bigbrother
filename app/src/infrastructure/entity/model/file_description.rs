@@ -12,6 +12,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub description: String,
     pub create_time: DateTimeUtc,
+    pub extracted_title: Option<String>,
+    pub extracted_language: Option<String>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

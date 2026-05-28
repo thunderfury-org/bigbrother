@@ -8,14 +8,17 @@ use tracing::info;
 use crate::domain::import::inner::{Media, MediaFile};
 
 use super::{ImportedMedia, TransferWorkflow, TvDetail};
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
 use crate::error::AppResult;
 
-impl<L, M, F> TransferWorkflow<L, M, F>
+impl<L, M, F, T> TransferWorkflow<L, M, F, T>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
+    T: TitleExtractor,
 {
     pub(crate) async fn transfer_media_files(
         &mut self,

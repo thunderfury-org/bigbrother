@@ -8,14 +8,17 @@ use super::{
     TransferWorkflow,
     transfer_support::{build_subtitle_transfer_plan, log_file_not_saved},
 };
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
 use crate::error::AppResult;
 
-impl<L, M, F> TransferWorkflow<L, M, F>
+impl<L, M, F, T> TransferWorkflow<L, M, F, T>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
+    T: TitleExtractor,
 {
     pub(super) async fn transfer_media_file(
         &self,

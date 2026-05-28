@@ -11,6 +11,7 @@ pub(crate) struct MediaFile {
     pub metadata: Box<Metadata>,
     pub video: RawFile,
     pub subtitles: Vec<RawFile>,
+    pub descriptions: Vec<String>,
 }
 
 pub(crate) enum Media<'a> {

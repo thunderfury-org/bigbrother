@@ -2,7 +2,9 @@ mod path;
 
 use std::collections::HashMap;
 
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
 use crate::domain::import::{inner::MediaFile, policy::group_video_and_subtitle_files};
 use crate::domain::media::Metadata;
 use crate::domain::share::RawFile;
@@ -26,7 +28,11 @@ impl MetadataLookup {
         meta
     }
 
-    pub(crate) fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
+    pub(crate) fn build_media_files(
+        &mut self,
+        raw_files: Vec<RawFile>,
+        descriptions: Vec<String>,
+    ) -> Vec<MediaFile> {
         let mut parsed_files = Vec::new();
 
         for raw_file in raw_files {
@@ -38,18 +44,24 @@ impl MetadataLookup {
             parsed_files.push((metadata, raw_file));
         }
 
-        group_video_and_subtitle_files(parsed_files)
+        group_video_and_subtitle_files(parsed_files, descriptions)
     }
 }
 
-impl<L, M, F> TransferWorkflow<L, M, F>
+impl<L, M, F, T> TransferWorkflow<L, M, F, T>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
+    T: TitleExtractor,
 {
-    pub(super) fn build_media_files(&mut self, raw_files: Vec<RawFile>) -> Vec<MediaFile> {
-        self.metadata_lookup.build_media_files(raw_files)
+    pub(super) fn build_media_files(
+        &mut self,
+        raw_files: Vec<RawFile>,
+        descriptions: Vec<String>,
+    ) -> Vec<MediaFile> {
+        self.metadata_lookup
+            .build_media_files(raw_files, descriptions)
     }
 }
 

@@ -16,6 +16,11 @@ quark:
 tmdb:
   api_key: ""
 
+openai:
+  api_key: ""
+  base_url: ""
+  model: ""
+
 telegram:
   bot_token: ""
   user_id:

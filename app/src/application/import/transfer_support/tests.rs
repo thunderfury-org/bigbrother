@@ -21,6 +21,7 @@ fn create_media_file(name: &str, size: u64) -> MediaFile {
             path: "/remote/path".into(),
         },
         subtitles: Vec::new(),
+        descriptions: Vec::new(),
     }
 }
 

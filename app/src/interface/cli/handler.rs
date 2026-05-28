@@ -24,7 +24,7 @@ pub(crate) async fn run_import_share_url(
 
     let ctx = CliContext::new(data_dir)?;
     let share_resolver = ctx.share_resolver();
-    let mut import_service = ctx.import_service();
+    let mut import_service = ctx.import_service().await?;
     let mut metadata_lookup = MetadataLookup::default();
     let file_index_service = ctx.file_index_service().await?;
     let recorded = RecordedImportService::new(ctx.import_record_repository().await?);
@@ -35,14 +35,15 @@ pub(crate) async fn run_import_share_url(
     // Index: reuse raw files
     if !raw_files.is_empty()
         && let Err(err) = file_index_service
-            .record_raw_files(raw_files.clone(), description)
+            .record_raw_files(raw_files.clone(), description.clone())
             .await
     {
         eprintln!("Warning: failed to index share url: {err}");
     }
 
     // Import: reuse raw files
-    let media_files = metadata_lookup.build_media_files(raw_files);
+    let descriptions: Vec<String> = description.into_iter().collect();
+    let media_files = metadata_lookup.build_media_files(raw_files, descriptions);
     let imported = recorded
         .execute(source_for_share_url(url), || async {
             import_service.transfer_media_files(&media_files).await
