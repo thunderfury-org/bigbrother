@@ -59,10 +59,8 @@ impl TitleExtractor for TitleExtractorService {
                     language: record.extracted_language.unwrap_or_default(),
                 }));
             }
-            // Already processed but no title found — return None without re-calling LLM
-            if record.extracted_language.is_some() {
-                return Ok(None);
-            }
+            // Record exists but no valid title — already processed, skip LLM
+            return Ok(None);
         }
 
         // Call LLM

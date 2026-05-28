@@ -62,7 +62,10 @@ where
         for title in &meta.titles {
             let cache_key = format!("movie:{}:{}", title.title, meta.year);
             if let Some(movie) = self.movie_info_cache.get(&cache_key) {
-                return Ok(movie.clone());
+                if movie.is_some() {
+                    return Ok(movie.clone());
+                }
+                continue;
             }
             let movies = self
                 .metadata_catalog
@@ -87,7 +90,10 @@ where
             if let Some(extracted) = self.title_extractor.extract_title(desc).await? {
                 let cache_key = format!("movie:{}:{}", extracted.title, meta.year);
                 if let Some(cached) = self.movie_info_cache.get(&cache_key) {
-                    return Ok(cached.clone());
+                    if cached.is_some() {
+                        return Ok(cached.clone());
+                    }
+                    continue;
                 }
                 let movies = self
                     .metadata_catalog
@@ -172,7 +178,10 @@ where
             if let Some(extracted) = self.title_extractor.extract_title(desc).await? {
                 let cache_key = format!("tv:{}:{}", extracted.title, meta.year);
                 if let Some(cached) = self.tv_info_cache.get(&cache_key) {
-                    return Ok(cached.clone());
+                    if cached.is_some() {
+                        return Ok(cached.clone());
+                    }
+                    continue;
                 }
                 let tvs = self
                     .metadata_catalog
