@@ -1,7 +1,10 @@
 use crate::{
     application::{
-        delete_media::DeleteMediaService, file_index::FileIndexService, import::TransferWorkflow,
-        manage_keywords::ManageKeywordsService, resolve_download_url::ResolveDownloadUrlService,
+        delete_media::DeleteMediaService,
+        file_index::FileIndexService,
+        import::{ParseService, TransferWorkflow},
+        manage_keywords::ManageKeywordsService,
+        resolve_download_url::ResolveDownloadUrlService,
         sync_strm::SyncStrmService,
     },
     infrastructure::{
@@ -35,3 +38,4 @@ pub type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, P
 pub type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
+pub type ParseRuntimeService = ParseService<TmdbMetadataGateway, TitleExtractorService>;
