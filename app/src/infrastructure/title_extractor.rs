@@ -78,7 +78,7 @@ impl TitleExtractor for TitleExtractorService {
             .await?;
 
         let Some(content) = response else {
-            write_cache(&self.db, &content_hash, None, None).await?;
+            write_cache(&self.db, &content_hash, None).await?;
             return Ok(None);
         };
 
@@ -89,19 +89,13 @@ impl TitleExtractor for TitleExtractorService {
                 let language = resp.language.and_then(|l| normalize_language(&l));
                 let title_obj = title.map(|t| Title {
                     title: t,
-                    language: language.clone().unwrap_or_default(),
+                    language: language.unwrap_or_default(),
                 });
-                write_cache(
-                    &self.db,
-                    &content_hash,
-                    title_obj.as_ref(),
-                    language.as_deref(),
-                )
-                .await?;
+                write_cache(&self.db, &content_hash, title_obj.as_ref()).await?;
                 title_obj
             }
             Err(_) => {
-                write_cache(&self.db, &content_hash, None, None).await?;
+                write_cache(&self.db, &content_hash, None).await?;
                 None
             }
         };
@@ -124,7 +118,6 @@ async fn write_cache(
     db: &sea_orm::DatabaseConnection,
     content_hash: &str,
     title: Option<&Title>,
-    language: Option<&str>,
 ) -> AppResult<()> {
     if let Some(record) = file_description::Entity::find()
         .filter(file_description::Column::ContentHash.eq(content_hash))
@@ -133,7 +126,7 @@ async fn write_cache(
     {
         let mut active: file_description::ActiveModel = record.into();
         active.extracted_title = ActiveValue::Set(title.map(|t| t.title.clone()));
-        active.extracted_language = ActiveValue::Set(language.map(|l| l.to_string()));
+        active.extracted_language = ActiveValue::Set(title.map(|t| t.language.clone()));
         active.update(db).await?;
     }
     Ok(())

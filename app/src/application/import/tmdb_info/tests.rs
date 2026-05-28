@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use super::super::import_tests::FakeTitleExtractor;
 use super::*;
 use crate::application::import_ports::TitleExtractor;
 use crate::domain::import::{SearchMovieResult, SearchTvResult, Season};
@@ -73,15 +74,6 @@ impl MetadataCatalog for FakeMetadataCatalog {
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
         self.tv_detail_calls.lock().unwrap().push(id);
         Ok(self.tv_details.lock().unwrap().get(&id).cloned())
-    }
-}
-
-#[derive(Clone, Default)]
-struct FakeTitleExtractor;
-
-impl TitleExtractor for FakeTitleExtractor {
-    async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
-        Ok(None)
     }
 }
 

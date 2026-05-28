@@ -74,7 +74,7 @@ struct FakeLibraryState {
 struct FakeMetadataCatalog;
 
 #[derive(Clone)]
-struct FakeTitleExtractor;
+pub(crate) struct FakeTitleExtractor;
 
 impl TitleExtractor for FakeTitleExtractor {
     async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
