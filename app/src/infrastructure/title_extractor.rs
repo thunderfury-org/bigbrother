@@ -59,8 +59,12 @@ impl TitleExtractor for TitleExtractorService {
                     language: record.extracted_language.unwrap_or_default(),
                 }));
             }
-            // Record exists but no valid title — already processed, skip LLM
-            return Ok(None);
+            // extracted_language is set as "processed" sentinel by write_cache.
+            // NULL means the record was pre-created (e.g. by file indexing) and
+            // the LLM has not run yet — fall through to call it.
+            if record.extracted_language.is_some() {
+                return Ok(None);
+            }
         }
 
         // Call LLM
@@ -126,7 +130,10 @@ async fn write_cache(
     {
         let mut active: file_description::ActiveModel = record.into();
         active.extracted_title = ActiveValue::Set(title.map(|t| t.title.clone()));
-        active.extracted_language = ActiveValue::Set(title.map(|t| t.language.clone()));
+        // Use empty string as "processed" sentinel when no title found,
+        // so extract_title can distinguish "never processed" from "processed, no result".
+        active.extracted_language =
+            ActiveValue::Set(Some(title.map(|t| t.language.clone()).unwrap_or_default()));
         active.update(db).await?;
     }
     Ok(())
