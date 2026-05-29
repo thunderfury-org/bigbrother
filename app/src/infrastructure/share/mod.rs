@@ -3,7 +3,6 @@ pub mod file_parser;
 pub mod pan115;
 pub mod pan123;
 pub mod pan189;
-pub mod quark;
 pub mod resolver;
 mod traversal;
 
@@ -16,8 +15,6 @@ pub fn share_provider_kind(url: &url::Url) -> Option<ImportSourceKind> {
         Some(ImportSourceKind::Pan189)
     } else if pan115::parse_share_parts(url).is_some() {
         Some(ImportSourceKind::Pan115)
-    } else if quark::parse_share_parts(url).is_some() {
-        Some(ImportSourceKind::Quark)
     } else {
         None
     }
@@ -36,9 +33,6 @@ mod tests {
 
     #[test]
     fn identifies_supported_share_urls() {
-        assert!(is_supported_share_url(
-            &Url::parse("https://pan.quark.cn/s/share-id?pwd=abc").unwrap()
-        ));
         assert!(is_supported_share_url(
             &Url::parse("https://cloud.189.cn/t/share189").unwrap()
         ));
@@ -59,10 +53,6 @@ mod tests {
 
     #[test]
     fn share_provider_kind_maps_each_supported_provider() {
-        assert_eq!(
-            share_provider_kind(&Url::parse("https://pan.quark.cn/s/abc?pwd=x").unwrap()),
-            Some(ImportSourceKind::Quark)
-        );
         assert_eq!(
             share_provider_kind(&Url::parse("https://cloud.189.cn/t/share189").unwrap()),
             Some(ImportSourceKind::Pan189)

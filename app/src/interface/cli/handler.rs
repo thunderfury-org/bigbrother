@@ -383,7 +383,7 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 ) -> AppResult<Vec<crate::domain::share::RawFile>> {
     resolver.raw_files_from_url(url).await?.ok_or_else(|| {
         error::AppError::InvalidParameter(format!(
-            "unsupported share url '{url}', expected pan123, pan189, pan115, or quark share link"
+            "unsupported share url '{url}', expected pan123, pan189, or pan115 share link"
         ))
     })
 }

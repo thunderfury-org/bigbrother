@@ -61,10 +61,10 @@ mod tests {
         SeaOrmImportRecordRepository::new(db)
     }
 
-    fn quark_at(seconds: i64) -> ImportRecordCreate {
+    fn pan189_at(seconds: i64) -> ImportRecordCreate {
         ImportRecordCreate {
-            source_kind: ImportSourceKind::Quark,
-            source: format!("https://pan.quark.cn/s/{seconds}"),
+            source_kind: ImportSourceKind::Pan189,
+            source: format!("https://cloud.189.cn/t/{seconds}"),
             created_at: Utc.timestamp_opt(seconds, 0).unwrap(),
         }
     }
@@ -72,12 +72,12 @@ mod tests {
     #[tokio::test]
     async fn create_returns_id_and_get_finds_running_record() {
         let repo = repo().await;
-        let input = quark_at(1_700_000_000);
+        let input = pan189_at(1_700_000_000);
         let id = repo.create(&input).await.unwrap();
 
         let view = repo.get(id).await.unwrap().unwrap();
         assert_eq!(view.id, id);
-        assert_eq!(view.source_kind, ImportSourceKind::Quark);
+        assert_eq!(view.source_kind, ImportSourceKind::Pan189);
         assert_eq!(view.source, input.source);
         assert_eq!(view.status, ImportStatus::Running);
         assert!(view.summary_json.is_none());
@@ -89,7 +89,7 @@ mod tests {
     #[tokio::test]
     async fn finalize_writes_terminal_status_and_summary_and_finished_at() {
         let repo = repo().await;
-        let id = repo.create(&quark_at(1_700_000_000)).await.unwrap();
+        let id = repo.create(&pan189_at(1_700_000_000)).await.unwrap();
 
         let finished_at = Utc.timestamp_opt(1_700_000_500, 0).unwrap();
         repo.finalize(
@@ -114,7 +114,7 @@ mod tests {
     #[tokio::test]
     async fn finalize_persists_failure_error_classification() {
         let repo = repo().await;
-        let id = repo.create(&quark_at(1_700_000_000)).await.unwrap();
+        let id = repo.create(&pan189_at(1_700_000_000)).await.unwrap();
 
         repo.finalize(
             id,
@@ -139,7 +139,7 @@ mod tests {
     async fn list_returns_newest_first_by_default() {
         let repo = repo().await;
         for seconds in [1_700_000_000_i64, 1_700_000_100, 1_700_000_200] {
-            repo.create(&quark_at(seconds)).await.unwrap();
+            repo.create(&pan189_at(seconds)).await.unwrap();
         }
 
         let page = repo
@@ -157,9 +157,9 @@ mod tests {
         assert_eq!(
             sources,
             vec![
-                "https://pan.quark.cn/s/1700000200",
-                "https://pan.quark.cn/s/1700000100",
-                "https://pan.quark.cn/s/1700000000",
+                "https://cloud.189.cn/t/1700000200",
+                "https://cloud.189.cn/t/1700000100",
+                "https://cloud.189.cn/t/1700000000",
             ]
         );
         assert_eq!(page.next_cursor, None);
@@ -168,8 +168,8 @@ mod tests {
     #[tokio::test]
     async fn list_filters_by_status() {
         let repo = repo().await;
-        let succeeded_id = repo.create(&quark_at(1_700_000_000)).await.unwrap();
-        let _running_id = repo.create(&quark_at(1_700_000_100)).await.unwrap();
+        let succeeded_id = repo.create(&pan189_at(1_700_000_000)).await.unwrap();
+        let _running_id = repo.create(&pan189_at(1_700_000_100)).await.unwrap();
         repo.finalize(
             succeeded_id,
             &ImportRecordFinalize {
@@ -204,7 +204,7 @@ mod tests {
     #[tokio::test]
     async fn list_filters_by_source_kind() {
         let repo = repo().await;
-        repo.create(&quark_at(1_700_000_000)).await.unwrap();
+        repo.create(&pan189_at(1_700_000_000)).await.unwrap();
         repo.create(&ImportRecordCreate {
             source_kind: ImportSourceKind::Pan123,
             source: "https://www.123pan.com/s/abc".into(),
@@ -235,7 +235,7 @@ mod tests {
     async fn list_filters_by_created_at_since_and_until() {
         let repo = repo().await;
         for seconds in [1_700_000_000_i64, 1_700_000_100, 1_700_000_200] {
-            repo.create(&quark_at(seconds)).await.unwrap();
+            repo.create(&pan189_at(seconds)).await.unwrap();
         }
 
         let page = repo
@@ -265,7 +265,7 @@ mod tests {
         let mut ids = Vec::new();
         for seconds in 0..5_i64 {
             ids.push(
-                repo.create(&quark_at(1_700_000_000 + seconds * 10))
+                repo.create(&pan189_at(1_700_000_000 + seconds * 10))
                     .await
                     .unwrap(),
             );

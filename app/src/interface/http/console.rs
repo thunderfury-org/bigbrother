@@ -393,8 +393,8 @@ mod tests {
     ) -> i64 {
         let id = repo
             .create(&ImportRecordCreate {
-                source_kind: ImportSourceKind::Quark,
-                source: format!("https://pan.quark.cn/s/{seconds}"),
+                source_kind: ImportSourceKind::Pan189,
+                source: format!("https://cloud.189.cn/t/{seconds}"),
                 created_at: Utc.timestamp_opt(seconds, 0).unwrap(),
             })
             .await

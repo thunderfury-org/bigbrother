@@ -276,14 +276,14 @@ mod tests {
             "list",
             "--data-dir",
             "./data",
-            "https://pan.quark.cn/s/test?pwd=pass",
+            "https://115.com/s/test?rc=pass",
         ]);
 
         match cli.command {
             Commands::Share(args) => match args.command {
                 ShareCommands::List(args) => {
                     assert_eq!(args.data_dir.data_dir, "./data");
-                    assert_eq!(args.url, "https://pan.quark.cn/s/test?pwd=pass");
+                    assert_eq!(args.url, "https://115.com/s/test?rc=pass");
                 }
                 _ => panic!("expected share list command"),
             },
@@ -301,7 +301,7 @@ mod tests {
             "test desc",
             "--data-dir",
             "./data",
-            "https://pan.quark.cn/s/test?pwd=pass",
+            "https://115.com/s/test?rc=pass",
         ]);
 
         match cli.command {
@@ -309,7 +309,7 @@ mod tests {
                 ShareCommands::Parse(args) => {
                     assert_eq!(args.data_dir.data_dir, "./data");
                     assert_eq!(args.description.as_deref(), Some("test desc"));
-                    assert_eq!(args.url, "https://pan.quark.cn/s/test?pwd=pass");
+                    assert_eq!(args.url, "https://115.com/s/test?rc=pass");
                 }
                 _ => panic!("expected share parse command"),
             },

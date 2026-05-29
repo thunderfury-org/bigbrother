@@ -8,18 +8,17 @@ use super::status::ImportStatus;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ImportSourceKind {
-    Quark,
     Pan123,
     Pan189,
     Pan115,
     Telegram,
+    #[serde(other)]
     Other,
 }
 
 impl ImportSourceKind {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::Quark => "quark",
             Self::Pan123 => "pan123",
             Self::Pan189 => "pan189",
             Self::Pan115 => "pan115",
@@ -30,7 +29,6 @@ impl ImportSourceKind {
 
     pub(crate) fn from_str(value: &str) -> Self {
         match value {
-            "quark" => Self::Quark,
             "pan123" => Self::Pan123,
             "pan189" => Self::Pan189,
             "pan115" => Self::Pan115,
@@ -334,7 +332,6 @@ mod tests {
     #[test]
     fn source_kind_round_trips_through_string() {
         for kind in [
-            ImportSourceKind::Quark,
             ImportSourceKind::Pan123,
             ImportSourceKind::Pan189,
             ImportSourceKind::Pan115,

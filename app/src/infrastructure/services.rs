@@ -10,7 +10,7 @@ use crate::{
     infrastructure::{
         cache::string_store::StringCacheStore,
         client::library_remote::Pan123LibraryRemote,
-        client::{pan115, pan123, pan189, quark},
+        client::{pan115, pan123, pan189},
         event::publisher::EventBusPublisher,
         fs::tokio_file_store::TokioFileStore,
         import::{
@@ -25,7 +25,7 @@ use crate::{
 
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareResolverRuntimeService =
-    ShareResolverService<pan123::Client, pan189::Client, pan115::Client, quark::Client>;
+    ShareResolverService<pan123::Client, pan189::Client, pan115::Client>;
 pub type ImportService = TransferWorkflow<
     PanLibraryGateway,
     TmdbMetadataGateway,

@@ -1,11 +1,11 @@
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Genre {
+pub struct Genre {
     pub id: u32,
     pub name: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct MovieDetail {
+pub struct MovieDetail {
     pub id: u32,
     pub title: String,
     pub adult: bool,
@@ -17,14 +17,14 @@ pub(crate) struct MovieDetail {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct SearchMovieResult {
+pub struct SearchMovieResult {
     pub id: u32,
     pub title: String,
     pub original_title: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Season {
+pub struct Season {
     pub id: u32,
     pub name: String,
     pub episode_count: u32,
@@ -32,7 +32,7 @@ pub(crate) struct Season {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct TvDetail {
+pub struct TvDetail {
     pub id: u32,
     pub name: String,
     pub first_air_date: String,
@@ -46,14 +46,14 @@ pub(crate) struct TvDetail {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct SearchTvResult {
+pub struct SearchTvResult {
     pub id: u32,
     pub name: String,
     pub original_name: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct LibraryFile {
+pub struct LibraryFile {
     pub file_id: i64,
     pub file_name: String,
     pub is_dir: bool,

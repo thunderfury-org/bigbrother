@@ -22,7 +22,6 @@ use crate::{
         },
         share::{
             pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
-            quark::QuarkShareService,
         },
         title_extractor::TitleExtractorService,
     },
@@ -36,7 +35,6 @@ pub(super) struct CliContext {
     pan115: client::pan115::Client,
     pan123: client::pan123::Client,
     pan189: client::pan189::Client,
-    quark: client::quark::Client,
     tmdb: client::tmdb::Client,
 }
 
@@ -56,7 +54,6 @@ impl CliContext {
             password: config.get_pan189_config().password.clone(),
             cache_dir: format!("{}/pan189", config.get_cache_dir()),
         });
-        let quark = client::quark::Client::new(&config.get_quark_config().cookie);
         let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
 
         Ok(Self {
@@ -65,7 +62,6 @@ impl CliContext {
             pan115,
             pan123,
             pan189,
-            quark,
             tmdb,
         })
     }
@@ -92,10 +88,6 @@ impl CliContext {
         self.pan189.clone()
     }
 
-    pub(super) fn quark(&self) -> client::quark::Client {
-        self.quark.clone()
-    }
-
     pub(super) fn tmdb(&self) -> client::tmdb::Client {
         self.tmdb.clone()
     }
@@ -105,7 +97,6 @@ impl CliContext {
             Pan123ShareService::new(self.pan123()),
             Pan189ShareService::new(self.pan189()),
             Pan115ShareService::new(self.pan115()),
-            QuarkShareService::new(self.quark()),
         )
     }
 

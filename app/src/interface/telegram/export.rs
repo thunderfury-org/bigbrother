@@ -249,12 +249,12 @@ mod tests {
         let msg: ExportMessage = serde_json::from_value(json!({
             "id": 1,
             "text": [
-                {"type": "text_link", "text": "查看链接", "href": "https://pan.quark.cn/s/share-id?pwd=abc"},
+                {"type": "text_link", "text": "查看链接", "href": "https://115.com/s/share-id?rc=abc"},
                 " 123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv "
             ],
             "text_entities": [
-                {"type": "text_link", "text": "查看链接", "href": "https://pan.quark.cn/s/share-id?pwd=abc"},
-                {"type": "link", "text": "https://pan.quark.cn/s/share-id?pwd=abc"}
+                {"type": "text_link", "text": "查看链接", "href": "https://115.com/s/share-id?rc=abc"},
+                {"type": "link", "text": "https://115.com/s/share-id?rc=abc"}
             ],
             "inline_bot_buttons": [
                 [
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(
             extract_media_sources(&msg),
             vec![
-                MediaSource::ShareUrl("https://pan.quark.cn/s/share-id?pwd=abc".to_string()),
+                MediaSource::ShareUrl("https://115.com/s/share-id?rc=abc".to_string()),
                 MediaSource::Fslink(
                     "123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv".to_string()
                 ),

@@ -313,20 +313,20 @@ mod notification_tests {
     #[test]
     fn appends_source_message_link_suffix_for_channel_source() {
         let text = append_source_message_link_suffix(
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc",
+            "开始处理分享: https://115.com/s/share-id?rc=abc",
             Some("https://t.me/c/cookie_gy/123"),
         );
 
         assert_eq!(
             text,
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc\n\n源消息: https://t.me/c/cookie_gy/123"
+            "开始处理分享: https://115.com/s/share-id?rc=abc\n\n源消息: https://t.me/c/cookie_gy/123"
         );
     }
 
     #[test]
     fn does_not_append_source_message_link_suffix_for_dm_source() {
         let text = format_source_notification_text(
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc",
+            "开始处理分享: https://115.com/s/share-id?rc=abc",
             Some(&SourceContext::Telegram(TelegramSourceContext {
                 channel_post: false,
                 reply_to_message_id: Some(7),
@@ -336,16 +336,13 @@ mod notification_tests {
             })),
         );
 
-        assert_eq!(
-            text,
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc"
-        );
+        assert_eq!(text, "开始处理分享: https://115.com/s/share-id?rc=abc");
     }
 
     #[test]
     fn appends_source_message_link_suffix_for_channel_notification_formatting() {
         let text = format_source_notification_text(
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc",
+            "开始处理分享: https://115.com/s/share-id?rc=abc",
             Some(&SourceContext::Telegram(TelegramSourceContext {
                 channel_post: true,
                 reply_to_message_id: None,
@@ -357,7 +354,7 @@ mod notification_tests {
 
         assert_eq!(
             text,
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc\n\n源消息: https://t.me/c/1234567890/321"
+            "开始处理分享: https://115.com/s/share-id?rc=abc\n\n源消息: https://t.me/c/1234567890/321"
         );
     }
 }
@@ -532,14 +529,14 @@ mod tests {
                 "id": 42,
                 "type": "private"
             },
-            "text": "https://pan.quark.cn/s/share-id?pwd=abc\nhttps://pan.quark.cn/s/share-id?pwd=abc\nhttps://www.themoviedb.org/tv/314784"
+            "text": "https://115.com/s/share-id?rc=abc\nhttps://115.com/s/share-id?rc=abc\nhttps://www.themoviedb.org/tv/314784"
         }))
         .unwrap();
 
         assert_eq!(
             extract_media_sources(&msg),
             vec![MediaSource::ShareUrl(
-                "https://pan.quark.cn/s/share-id?pwd=abc".to_string()
+                "https://115.com/s/share-id?rc=abc".to_string()
             )]
         );
     }
@@ -548,7 +545,7 @@ mod tests {
     fn process_media_sources_deserializes_legacy_payload_shape() {
         let payload: ProcessMediaSources = serde_json::from_value(json!({
             "source": {
-                "ShareUrl": "https://pan.quark.cn/s/share-id?pwd=abc"
+                "ShareUrl": "https://115.com/s/share-id?rc=abc"
             },
             "description": "资源说明",
             "channel_post": true,
@@ -558,7 +555,7 @@ mod tests {
 
         assert!(matches!(
             payload.source,
-            MediaSource::ShareUrl(ref url) if url == "https://pan.quark.cn/s/share-id?pwd=abc"
+            MediaSource::ShareUrl(ref url) if url == "https://115.com/s/share-id?rc=abc"
         ));
         assert_eq!(payload.description.as_deref(), Some("资源说明"));
         assert!(payload.channel_post);
@@ -569,7 +566,7 @@ mod tests {
     fn process_media_sources_deserializes_new_telegram_source_context_shape() {
         let payload: ProcessMediaSources = serde_json::from_value(json!({
             "source": {
-                "ShareUrl": "https://pan.quark.cn/s/share-id?pwd=abc"
+                "ShareUrl": "https://115.com/s/share-id?rc=abc"
             },
             "description": "资源说明",
             "source_context": {
@@ -586,7 +583,7 @@ mod tests {
 
         assert!(matches!(
             payload.source,
-            MediaSource::ShareUrl(ref url) if url == "https://pan.quark.cn/s/share-id?pwd=abc"
+            MediaSource::ShareUrl(ref url) if url == "https://115.com/s/share-id?rc=abc"
         ));
         assert_eq!(payload.description.as_deref(), Some("资源说明"));
     }
