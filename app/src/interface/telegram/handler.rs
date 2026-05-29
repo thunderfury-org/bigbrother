@@ -332,12 +332,10 @@ mod tests {
             }
         }
 
-        let err = resolve_share_url_raw_files(
-            &FailingShareResolver,
-            "https://pan.quark.cn/s/share-id?pwd=bad",
-        )
-        .await
-        .unwrap_err();
+        let err =
+            resolve_share_url_raw_files(&FailingShareResolver, "https://115.com/s/share-id?rc=bad")
+                .await
+                .unwrap_err();
 
         assert!(matches!(err, AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("share password invalid"));

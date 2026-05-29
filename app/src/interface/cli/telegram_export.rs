@@ -335,11 +335,11 @@ mod tests {
                 "messages": [
                     {
                         "id": 1,
-                        "text": "desc one\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc one\nhttps://115.com/s/share-id?rc=abc"
                     },
                     {
                         "id": 2,
-                        "text": "desc two\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc two\nhttps://115.com/s/share-id?rc=abc"
                     }
                 ]
             }"#,
@@ -364,7 +364,7 @@ mod tests {
                 "messages": [
                     {
                         "id": 1,
-                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc\nhttps://115.com/s/share-id?rc=abc"
                     }
                 ]
             }"#,
@@ -375,7 +375,7 @@ mod tests {
         state_repo
             .upsert(&TelegramExportStateRecord {
                 source_type: "url".into(),
-                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                source_value: "https://115.com/s/share-id?rc=abc".into(),
                 description: Some("desc".into()),
                 status: STATUS_SUCCEEDED.into(),
                 error: None,
@@ -428,7 +428,7 @@ mod tests {
                 "messages": [
                     {
                         "id": 1,
-                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc\nhttps://115.com/s/share-id?rc=abc"
                     }
                 ]
             }"#,
@@ -439,7 +439,7 @@ mod tests {
         state_repo
             .upsert(&TelegramExportStateRecord {
                 source_type: "url".into(),
-                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                source_value: "https://115.com/s/share-id?rc=abc".into(),
                 description: Some("desc".into()),
                 status: STATUS_SUCCEEDED.into(),
                 error: None,
@@ -454,7 +454,7 @@ mod tests {
         let runner = TelegramExportIndexRunner::new(
             FakeResolver {
                 files_by_url: HashMap::from([(
-                    "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                    "https://115.com/s/share-id?rc=abc".into(),
                     vec![RawFile {
                         id: None,
                         name: "movie.mkv".into(),
@@ -482,7 +482,7 @@ mod tests {
                 "messages": [
                     {
                         "id": 1,
-                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc\nhttps://115.com/s/share-id?rc=abc"
                     }
                 ]
             }"#,
@@ -575,7 +575,7 @@ mod tests {
                 "messages": [
                     {
                         "id": 1,
-                        "text": "desc\nhttps://pan.quark.cn/s/share-id?pwd=abc"
+                        "text": "desc\nhttps://115.com/s/share-id?rc=abc"
                     }
                 ]
             }"#,
@@ -586,7 +586,7 @@ mod tests {
         state_repo
             .upsert(&TelegramExportStateRecord {
                 source_type: "url".into(),
-                source_value: "https://pan.quark.cn/s/share-id?pwd=abc".into(),
+                source_value: "https://115.com/s/share-id?rc=abc".into(),
                 description: Some("desc".into()),
                 status: STATUS_PERMANENT_FAILED.into(),
                 error: Some("external service error: share cancelled, 此分享不存在".into()),

@@ -5,7 +5,6 @@ use crate::{
         pan115::{self, Pan115ShareService, Pan115ShareSource},
         pan123::{self, Pan123ShareService, Pan123ShareSource},
         pan189::{self, Pan189ShareService, Pan189ShareSource},
-        quark::{self, QuarkShareService, QuarkShareSource},
     },
 };
 use tracing::info;
@@ -15,31 +14,28 @@ pub trait ShareResolver: Clone {
 }
 
 #[derive(Clone)]
-pub struct ShareResolverService<P123, P189, P115, Q> {
+pub struct ShareResolverService<P123, P189, P115> {
     pan123: Pan123ShareService<P123>,
     pan189: Pan189ShareService<P189>,
     pan115: Pan115ShareService<P115>,
-    quark: QuarkShareService<Q>,
 }
 
-impl<P123, P189, P115, Q> ShareResolverService<P123, P189, P115, Q> {
+impl<P123, P189, P115> ShareResolverService<P123, P189, P115> {
     pub fn new(
         pan123: Pan123ShareService<P123>,
         pan189: Pan189ShareService<P189>,
         pan115: Pan115ShareService<P115>,
-        quark: QuarkShareService<Q>,
     ) -> Self {
         Self {
             pan123,
             pan189,
             pan115,
-            quark,
         }
     }
 }
 
-impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, Q: QuarkShareSource>
-    ShareResolver for ShareResolverService<P123, P189, P115, Q>
+impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource> ShareResolver
+    for ShareResolverService<P123, P189, P115>
 {
     async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>> {
         let url = url::Url::parse(url).map_err(|err| {
@@ -64,12 +60,6 @@ impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, 
                 .raw_files_from_share(&share_code, &receive_code)
                 .await
                 .map(Some)
-        } else if let Some((share_id, password)) = quark::parse_share_parts(&url) {
-            info!("Resolving supported share url with provider quark");
-            self.quark
-                .raw_files_from_share(&share_id, &password)
-                .await
-                .map(Some)
         } else {
             Ok(None)
         }
@@ -78,19 +68,16 @@ impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource, 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::{ShareResolver, ShareResolverService};
 
     use crate::{
         error::AppResult,
         infrastructure::{
-            client::{pan115, pan123, pan189, quark},
+            client::{pan115, pan123, pan189},
             share::{
                 pan115::{Pan115ShareService, Pan115ShareSource},
                 pan123::{Pan123ShareService, Pan123ShareSource},
                 pan189::{Pan189ShareService, Pan189ShareSource},
-                quark::{QuarkShareService, QuarkShareSource},
             },
         },
     };
@@ -155,42 +142,12 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Default)]
-    struct FakeQuarkShareSource;
-
-    impl QuarkShareSource for FakeQuarkShareSource {
-        async fn get_share_info(&self, _share_id: &str, _password: &str) -> AppResult<String> {
-            Ok(String::new())
-        }
-
-        async fn list_share_files(
-            &self,
-            _share_id: &str,
-            _password: &str,
-            _stoken: &str,
-            _pdir_fid: &str,
-        ) -> AppResult<(Vec<quark::Folder>, Vec<quark::File>)> {
-            Ok((Vec::new(), Vec::new()))
-        }
-
-        async fn batch_get_file_md5s(
-            &self,
-            _share_id: &str,
-            _password: &str,
-            _stoken: &str,
-            _file_infos: &[(String, String)],
-        ) -> AppResult<HashMap<String, String>> {
-            Ok(HashMap::new())
-        }
-    }
-
     #[tokio::test]
     async fn returns_none_for_unsupported_url() {
         let resolver = ShareResolverService::new(
             Pan123ShareService::new(FakePan123ShareSource::default()),
             Pan189ShareService::new(FakePan189ShareSource),
             Pan115ShareService::new(FakePan115ShareSource),
-            QuarkShareService::new(FakeQuarkShareSource),
         );
 
         let result = resolver
@@ -221,7 +178,6 @@ mod tests {
             }),
             Pan189ShareService::new(FakePan189ShareSource),
             Pan115ShareService::new(FakePan115ShareSource),
-            QuarkShareService::new(FakeQuarkShareSource),
         );
 
         let result = resolver
@@ -241,7 +197,6 @@ mod tests {
             Pan123ShareService::new(FakePan123ShareSource::default()),
             Pan189ShareService::new(FakePan189ShareSource),
             Pan115ShareService::new(FakePan115ShareSource),
-            QuarkShareService::new(FakeQuarkShareSource),
         );
 
         let err = resolver.raw_files_from_url("not a url").await.unwrap_err();

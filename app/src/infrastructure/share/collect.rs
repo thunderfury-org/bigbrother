@@ -1,6 +1,6 @@
 use crate::{
     domain::share::RawFile,
-    infrastructure::client::{pan115, pan123, pan189, quark},
+    infrastructure::client::{pan115, pan123, pan189},
 };
 
 use super::traversal::{DirectoryEntries, child_share_path};
@@ -78,35 +78,6 @@ pub(crate) fn collect_pan115_directory_entries(
             child_dirs.push((cid.to_owned(), child_share_path(parent_path, &entry.name)));
         }
     }
-
-    DirectoryEntries::new(child_dirs, raw_files)
-}
-
-pub(crate) fn collect_quark_directory_entries(
-    folders: &[quark::Folder],
-    files: &[quark::File],
-    parent_path: &str,
-) -> DirectoryEntries<String> {
-    let child_dirs = folders
-        .iter()
-        .map(|folder| {
-            (
-                folder.fid.to_owned(),
-                child_share_path(parent_path, &folder.file_name),
-            )
-        })
-        .collect();
-
-    let raw_files = files
-        .iter()
-        .map(|file| RawFile {
-            id: None,
-            name: file.file_name.to_owned(),
-            hash: "".into(),
-            size: file.size,
-            path: parent_path.to_owned(),
-        })
-        .collect();
 
     DirectoryEntries::new(child_dirs, raw_files)
 }

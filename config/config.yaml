@@ -10,9 +10,6 @@ pan189:
   username: ""
   password: ""
 
-quark:
-  cookie: ""
-
 tmdb:
   api_key: ""
 

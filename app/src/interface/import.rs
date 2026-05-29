@@ -230,10 +230,6 @@ mod tests {
     #[test]
     fn source_for_share_url_uses_share_module_provider_detection() {
         assert_eq!(
-            source_for_share_url("https://pan.quark.cn/s/share-id?pwd=abc").kind,
-            ImportSourceKind::Quark
-        );
-        assert_eq!(
             source_for_share_url("https://cloud.189.cn/t/share189").kind,
             ImportSourceKind::Pan189
         );

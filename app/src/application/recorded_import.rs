@@ -179,8 +179,8 @@ mod tests {
 
     fn source() -> ImportSource {
         ImportSource {
-            kind: ImportSourceKind::Quark,
-            raw: "https://pan.quark.cn/s/abc".into(),
+            kind: ImportSourceKind::Pan189,
+            raw: "https://cloud.189.cn/t/abc".into(),
         }
     }
 
@@ -206,8 +206,8 @@ mod tests {
 
         let created = repo.created.lock().unwrap().clone();
         assert_eq!(created.len(), 1);
-        assert_eq!(created[0].source_kind, ImportSourceKind::Quark);
-        assert_eq!(created[0].source, "https://pan.quark.cn/s/abc");
+        assert_eq!(created[0].source_kind, ImportSourceKind::Pan189);
+        assert_eq!(created[0].source, "https://cloud.189.cn/t/abc");
 
         let finalized = repo.finalized.lock().unwrap().clone();
         assert_eq!(finalized.len(), 1);

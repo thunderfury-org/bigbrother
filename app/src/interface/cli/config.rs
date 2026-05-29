@@ -15,7 +15,6 @@ struct AppConfig {
     pub openai: OpenaiConfig,
     pub telegram: TelegramConfig,
     pub library: LibraryConfig,
-    pub quark: QuarkConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -106,12 +105,6 @@ impl OpenaiConfig {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, rename_all = "snake_case")]
-pub struct QuarkConfig {
-    pub cookie: String,
-}
-
 #[derive(Default)]
 pub(crate) struct Manager {
     data_dir: String,
@@ -169,10 +162,6 @@ impl Manager {
 
     pub fn get_library_config(&self) -> &LibraryConfig {
         &self.app_config.library
-    }
-
-    pub fn get_quark_config(&self) -> &QuarkConfig {
-        &self.app_config.quark
     }
 }
 

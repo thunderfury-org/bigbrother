@@ -24,7 +24,7 @@ pub mod file_index;
 pub(crate) mod handler;
 
 const NO_VALID_MEDIA_SOURCE_MESSAGE: &str =
-    "未发现有效分享链接，仅支持 Pan123、天翼、115、夸克分享链接，或 fslink、.json/.cas 文件";
+    "未发现有效分享链接，仅支持 Pan123、天翼、115 分享链接，或 fslink、.json/.cas 文件";
 
 #[derive(Debug, PartialEq, Eq)]
 enum SourceHandling {
@@ -358,19 +358,16 @@ mod tests {
     #[test]
     fn import_start_message_is_specific_for_single_share_url() {
         let message = import_start_message(&[MediaSource::ShareUrl(
-            "https://pan.quark.cn/s/share-id?pwd=abc".to_string(),
+            "https://115.com/s/share-id?rc=abc".to_string(),
         )]);
 
-        assert_eq!(
-            message,
-            "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc"
-        );
+        assert_eq!(message, "开始处理分享: https://115.com/s/share-id?rc=abc");
     }
 
     #[test]
     fn import_start_message_summarizes_multiple_media_sources() {
         let message = import_start_message(&[
-            MediaSource::ShareUrl("https://pan.quark.cn/s/share-id?pwd=abc".to_string()),
+            MediaSource::ShareUrl("https://115.com/s/share-id?rc=abc".to_string()),
             MediaSource::Fslink(
                 "123FSLinkV2$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#100#movie.mkv".into(),
             ),
@@ -387,7 +384,7 @@ mod tests {
         );
         assert_eq!(
             NO_VALID_MEDIA_SOURCE_MESSAGE,
-            "未发现有效分享链接，仅支持 Pan123、天翼、115、夸克分享链接，或 fslink、.json/.cas 文件"
+            "未发现有效分享链接，仅支持 Pan123、天翼、115 分享链接，或 fslink、.json/.cas 文件"
         );
     }
 
@@ -405,7 +402,7 @@ mod tests {
                 "id": 42,
                 "type": "private"
             },
-            "text": "https://pan.quark.cn/s/share-id?pwd=abc\nhttps://www.themoviedb.org/tv/314784"
+            "text": "https://115.com/s/share-id?rc=abc\nhttps://www.themoviedb.org/tv/314784"
         }))
         .unwrap();
 
@@ -415,13 +412,13 @@ mod tests {
         assert_eq!(
             sources,
             vec![MediaSource::ShareUrl(
-                "https://pan.quark.cn/s/share-id?pwd=abc".to_string()
+                "https://115.com/s/share-id?rc=abc".to_string()
             )]
         );
         assert_eq!(
             handling,
             SourceHandling::Process {
-                confirm: "开始处理分享: https://pan.quark.cn/s/share-id?pwd=abc".to_string()
+                confirm: "开始处理分享: https://115.com/s/share-id?rc=abc".to_string()
             }
         );
     }
