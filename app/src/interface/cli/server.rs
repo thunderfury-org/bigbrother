@@ -141,7 +141,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let event_delivery_media_handler = ProcessMediaSourcesHandler {
         file_index_service: ctx.file_index_service().await?,
         share_resolver: ctx.share_resolver(),
-        import_service: ctx.import_service(),
+        import_service: ctx.import_service().await?,
         recorded_import: RecordedImportService::new(ctx.import_record_repository().await?),
         metadata_lookup: MetadataLookup::default(),
         notify_service,

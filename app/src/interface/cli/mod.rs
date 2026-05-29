@@ -44,6 +44,8 @@ pub enum ShareCommands {
     List(ShareListArgs),
     /// 导入分享链接中的媒体文件
     Import(ImportShareUrlArgs),
+    /// 解析分享链接中的文件名并查询 TMDB 信息
+    Parse(ParseArgs),
 }
 
 #[derive(Subcommand)]
@@ -74,6 +76,15 @@ pub struct ImportShareUrlArgs {
 pub struct ShareListArgs {
     #[command(flatten)]
     pub data_dir: DataDirArgs,
+    pub url: String,
+}
+
+#[derive(Args)]
+pub struct ParseArgs {
+    #[command(flatten)]
+    pub data_dir: DataDirArgs,
+    #[arg(short = 'd', long)]
+    pub description: Option<String>,
     pub url: String,
 }
 
@@ -112,6 +123,14 @@ pub async fn run(cli: Cli) -> AppResult<()> {
                     args.data_dir.data_dir.as_str(),
                     &args.url,
                     args.verbose,
+                    args.description,
+                )
+                .await
+            }
+            ShareCommands::Parse(args) => {
+                handler::run_share_parse(
+                    args.data_dir.data_dir.as_str(),
+                    &args.url,
                     args.description,
                 )
                 .await
@@ -267,6 +286,32 @@ mod tests {
                     assert_eq!(args.url, "https://pan.quark.cn/s/test?pwd=pass");
                 }
                 _ => panic!("expected share list command"),
+            },
+            _ => panic!("expected share command"),
+        }
+    }
+
+    #[test]
+    fn parses_share_parse_command() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "share",
+            "parse",
+            "--description",
+            "test desc",
+            "--data-dir",
+            "./data",
+            "https://pan.quark.cn/s/test?pwd=pass",
+        ]);
+
+        match cli.command {
+            Commands::Share(args) => match args.command {
+                ShareCommands::Parse(args) => {
+                    assert_eq!(args.data_dir.data_dir, "./data");
+                    assert_eq!(args.description.as_deref(), Some("test desc"));
+                    assert_eq!(args.url, "https://pan.quark.cn/s/test?pwd=pass");
+                }
+                _ => panic!("expected share parse command"),
             },
             _ => panic!("expected share command"),
         }

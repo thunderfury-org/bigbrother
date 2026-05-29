@@ -10,12 +10,15 @@ use std::{
 };
 
 use super::*;
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
+use crate::domain::media::Title;
 use crate::domain::share::{FileHash, RawFile};
 use crate::error::{AppError, AppResult};
 
 pub(crate) struct TestImportService<L, M, F> {
-    pub transfer: TransferWorkflow<L, M, F>,
+    pub transfer: TransferWorkflow<L, M, F, FakeTitleExtractor>,
     pub metadata_lookup: MetadataLookup,
 }
 
@@ -27,7 +30,12 @@ where
 {
     pub fn new(library_gateway: L, metadata_catalog: M, local_store: F) -> Self {
         Self {
-            transfer: TransferWorkflow::new(library_gateway, metadata_catalog, local_store),
+            transfer: TransferWorkflow::new(
+                library_gateway,
+                metadata_catalog,
+                local_store,
+                FakeTitleExtractor,
+            ),
             metadata_lookup: MetadataLookup::default(),
         }
     }
@@ -36,7 +44,9 @@ where
         &mut self,
         raw_files: Vec<RawFile>,
     ) -> AppResult<Vec<ImportedMedia>> {
-        let media_files = self.metadata_lookup.build_media_files(raw_files);
+        let media_files = self
+            .metadata_lookup
+            .build_media_files(raw_files, Vec::new());
         self.transfer.transfer_media_files(&media_files).await
     }
 }
@@ -62,6 +72,15 @@ struct FakeLibraryState {
 
 #[derive(Clone, Default)]
 struct FakeMetadataCatalog;
+
+#[derive(Clone)]
+pub(crate) struct FakeTitleExtractor;
+
+impl TitleExtractor for FakeTitleExtractor {
+    async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
+        Ok(None)
+    }
+}
 
 #[derive(Clone)]
 struct FakeLocalStore {

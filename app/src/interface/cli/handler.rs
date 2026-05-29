@@ -1,5 +1,5 @@
 use crate::{
-    application::import::MetadataLookup,
+    application::import::{MetadataLookup, ParsedMediaInfo},
     application::recorded_import::RecordedImportService,
     error::{self, AppResult},
     infrastructure::share::resolver::ShareResolver,
@@ -24,7 +24,7 @@ pub(crate) async fn run_import_share_url(
 
     let ctx = CliContext::new(data_dir)?;
     let share_resolver = ctx.share_resolver();
-    let mut import_service = ctx.import_service();
+    let mut import_service = ctx.import_service().await?;
     let mut metadata_lookup = MetadataLookup::default();
     let file_index_service = ctx.file_index_service().await?;
     let recorded = RecordedImportService::new(ctx.import_record_repository().await?);
@@ -35,14 +35,15 @@ pub(crate) async fn run_import_share_url(
     // Index: reuse raw files
     if !raw_files.is_empty()
         && let Err(err) = file_index_service
-            .record_raw_files(raw_files.clone(), description)
+            .record_raw_files(raw_files.clone(), description.clone())
             .await
     {
         eprintln!("Warning: failed to index share url: {err}");
     }
 
     // Import: reuse raw files
-    let media_files = metadata_lookup.build_media_files(raw_files);
+    let descriptions: Vec<String> = description.into_iter().collect();
+    let media_files = metadata_lookup.build_media_files(raw_files, descriptions);
     let imported = recorded
         .execute(source_for_share_url(url), || async {
             import_service.transfer_media_files(&media_files).await
@@ -71,6 +72,33 @@ pub(crate) async fn run_import_share_url(
         println!(
             "详细信息: 本次没有生成任何导入结果，常见原因包括分享中没有可识别媒体、TMDB 未匹配到条目，或电影资源在入库前就被判定为已存在且无需覆盖。"
         );
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn run_share_parse(
+    data_dir: &str,
+    url: &str,
+    description: Option<String>,
+) -> AppResult<()> {
+    let ctx = CliContext::new(data_dir)?;
+    let share_resolver = ctx.share_resolver();
+    let mut parse_service = ctx.parse_service().await?;
+
+    let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
+    let descriptions: Vec<String> = description.into_iter().collect();
+    let results = parse_service
+        .parse_media_files(raw_files, descriptions)
+        .await?;
+
+    if results.is_empty() {
+        println!("未找到可解析的媒体文件");
+        return Ok(());
+    }
+
+    for line in format_parse_results(&results) {
+        println!("{line}");
     }
 
     Ok(())
@@ -183,6 +211,166 @@ fn format_share_list_output(raw_files: &[crate::domain::share::RawFile]) -> Vec<
     ));
 
     lines
+}
+
+fn format_parse_results(results: &[ParsedMediaInfo]) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    for (index, info) in results.iter().enumerate() {
+        match info {
+            ParsedMediaInfo::Movie {
+                file_name,
+                path,
+                titles,
+                year,
+                resolution,
+                quality,
+                video_codec,
+                audio_codec,
+                hdr,
+                tmdb_id,
+                tmdb_title,
+                tmdb_year,
+                subtitle_files,
+            } => {
+                lines.push(format!("{}. {}", index + 1, file_name));
+                lines.push(format!("   路径: {}", display_share_path(path)));
+                if !titles.is_empty() {
+                    lines.push(format!("   标题: {}", titles.join(" / ")));
+                }
+                if !year.is_empty() {
+                    lines.push(format!("   年份: {year}"));
+                }
+                let tech = format_tech_info(resolution, quality, video_codec, audio_codec, hdr);
+                if !tech.is_empty() {
+                    lines.push(format!("   {tech}"));
+                }
+                lines.push(format_tmdb(tmdb_id, tmdb_title, tmdb_year));
+                if !subtitle_files.is_empty() {
+                    lines.push(format!("   字幕: {}", subtitle_files.join(", ")));
+                }
+            }
+            ParsedMediaInfo::Tv {
+                file_name,
+                path,
+                titles,
+                year,
+                season_number,
+                episode_number,
+                second_episode_number,
+                resolution,
+                quality,
+                video_codec,
+                audio_codec,
+                hdr,
+                tmdb_id,
+                tmdb_title,
+                tmdb_year,
+                subtitle_files,
+            } => {
+                lines.push(format!("{}. {}", index + 1, file_name));
+                lines.push(format!("   路径: {}", display_share_path(path)));
+                if !titles.is_empty() {
+                    lines.push(format!("   标题: {}", titles.join(" / ")));
+                }
+                if !year.is_empty() {
+                    lines.push(format!("   年份: {year}"));
+                }
+                if let Some(ep) =
+                    format_episode(season_number, episode_number, second_episode_number)
+                {
+                    lines.push(format!("   集数: {ep}"));
+                }
+                let tech = format_tech_info(resolution, quality, video_codec, audio_codec, hdr);
+                if !tech.is_empty() {
+                    lines.push(format!("   {tech}"));
+                }
+                lines.push(format_tmdb(tmdb_id, tmdb_title, tmdb_year));
+                if !subtitle_files.is_empty() {
+                    lines.push(format!("   字幕: {}", subtitle_files.join(", ")));
+                }
+            }
+            ParsedMediaInfo::Unmatched {
+                file_name,
+                path,
+                titles,
+                year,
+            } => {
+                lines.push(format!("{}. {}", index + 1, file_name));
+                lines.push(format!("   路径: {}", display_share_path(path)));
+                if !titles.is_empty() {
+                    lines.push(format!("   标题: {}", titles.join(" / ")));
+                }
+                if !year.is_empty() {
+                    lines.push(format!("   年份: {year}"));
+                }
+                lines.push("   TMDB: 未匹配".to_owned());
+            }
+        }
+
+        if index + 1 < results.len() {
+            lines.push(String::new());
+        }
+    }
+
+    lines
+}
+
+fn format_tech_info(
+    resolution: &str,
+    quality: &str,
+    video_codec: &str,
+    audio_codec: &str,
+    hdr: &str,
+) -> String {
+    let mut parts = Vec::new();
+    if !resolution.is_empty() {
+        parts.push(format!("分辨率: {resolution}"));
+    }
+    if !quality.is_empty() {
+        parts.push(format!("质量: {quality}"));
+    }
+    if !video_codec.is_empty() {
+        let codec = if !audio_codec.is_empty() {
+            format!("{video_codec} / {audio_codec}")
+        } else {
+            video_codec.to_string()
+        };
+        parts.push(format!("编码: {codec}"));
+    } else if !audio_codec.is_empty() {
+        parts.push(format!("编码: {audio_codec}"));
+    }
+    if !hdr.is_empty() {
+        parts.push(format!("HDR: {hdr}"));
+    }
+    parts.join(" | ")
+}
+
+fn format_episode(
+    season: &Option<u32>,
+    episode: &Option<u32>,
+    second_episode: &Option<u32>,
+) -> Option<String> {
+    match (season, episode) {
+        (Some(s), Some(e)) => {
+            let ep = if let Some(e2) = second_episode {
+                format!("S{s:02}E{e:02}-E{e2:02}")
+            } else {
+                format!("S{s:02}E{e:02}")
+            };
+            Some(ep)
+        }
+        (None, Some(e)) => Some(format!("E{e:02}")),
+        _ => None,
+    }
+}
+
+fn format_tmdb(id: &Option<u32>, title: &Option<String>, year: &Option<String>) -> String {
+    match (id, title, year) {
+        (Some(id), Some(title), Some(year)) => format!("   TMDB: {title} ({year}) [ID: {id}]"),
+        (Some(id), Some(title), None) => format!("   TMDB: {title} [ID: {id}]"),
+        _ => "   TMDB: 未匹配".to_owned(),
+    }
 }
 
 fn display_share_path(path: &str) -> &str {

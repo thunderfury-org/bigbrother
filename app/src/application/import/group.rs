@@ -1,4 +1,6 @@
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
 use crate::domain::import::{
     inner::{Media, MediaFile},
     policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot},
@@ -8,11 +10,12 @@ use std::collections::HashMap;
 use super::TransferWorkflow;
 use crate::error::AppResult;
 
-impl<L, M, F> TransferWorkflow<L, M, F>
+impl<L, M, F, T> TransferWorkflow<L, M, F, T>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
+    T: TitleExtractor,
 {
     /// 按 tmdb 信息分组媒体文件，分类为 TV 和 Movie，同时返回未匹配的文件
     pub(super) async fn group_media_files<'a>(
@@ -48,7 +51,10 @@ where
         file: &'a MediaFile,
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<Option<()>> {
-        let tv_info = self.tmdb_lookup.get_tv_info(&file.metadata).await?;
+        let tv_info = self
+            .tmdb_lookup
+            .get_tv_info(&file.metadata, &file.descriptions)
+            .await?;
         match tv_info {
             Some(tv_info) => {
                 let Some((season_number, episode_number)) = resolve_tv_episode_slot(file, &tv_info)
@@ -68,7 +74,10 @@ where
         file: &'a MediaFile,
         grouped_files: &mut HashMap<u32, Media<'a>>,
     ) -> AppResult<Option<()>> {
-        let movie_info = self.tmdb_lookup.get_movie_info(&file.metadata).await?;
+        let movie_info = self
+            .tmdb_lookup
+            .get_movie_info(&file.metadata, &file.descriptions)
+            .await?;
         match movie_info {
             Some(movie_info) => {
                 insert_movie_media(grouped_files, movie_info, file);

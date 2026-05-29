@@ -1,3 +1,4 @@
+pub mod openai;
 pub mod pan115;
 pub mod pan123;
 pub mod pan189;

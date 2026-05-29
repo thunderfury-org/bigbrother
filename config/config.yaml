@@ -16,6 +16,12 @@ quark:
 tmdb:
   api_key: ""
 
+# OpenAI-compatible API for LLM title extraction（可选；配置后用于正则解析失败时的标题提取）
+openai:
+  api_key: ""
+  base_url: "" # 例如 https://api.openai.com/v1
+  model: ""    # 例如 gpt-4o-mini
+
 telegram:
   bot_token: ""
   user_id:

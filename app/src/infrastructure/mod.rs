@@ -10,3 +10,4 @@ pub mod repo;
 pub mod services;
 pub mod share;
 pub mod telegram;
+pub mod title_extractor;

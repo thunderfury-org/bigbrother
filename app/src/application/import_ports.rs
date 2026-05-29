@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     application::import::{LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
+    domain::media::Title,
     error::AppResult,
 };
 
@@ -34,6 +35,10 @@ pub trait MetadataCatalog: Clone {
     async fn get_movie_detail(&self, id: u32) -> AppResult<Option<MovieDetail>>;
     async fn search_tv(&self, title: &str, year: &str) -> AppResult<Vec<SearchTvResult>>;
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>>;
+}
+
+pub trait TitleExtractor: Clone {
+    async fn extract_title(&self, description: &str) -> AppResult<Option<Title>>;
 }
 
 pub trait ImportLocalStore: Clone {

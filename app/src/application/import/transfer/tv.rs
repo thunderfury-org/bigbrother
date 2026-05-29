@@ -6,14 +6,17 @@ use crate::domain::import::{
 };
 
 use super::{ImportedMedia, TransferWorkflow, TvDetail};
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MetadataCatalog};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
 use crate::{error::AppResult, log_time};
 
-impl<L, M, F> TransferWorkflow<L, M, F>
+impl<L, M, F, T> TransferWorkflow<L, M, F, T>
 where
     L: LibraryGateway,
     M: MetadataCatalog,
     F: ImportLocalStore,
+    T: TitleExtractor,
 {
     pub(super) async fn transfer_tv(
         &mut self,

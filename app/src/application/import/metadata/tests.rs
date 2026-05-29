@@ -15,10 +15,13 @@ fn raw_file(name: &str, path: &str) -> RawFile {
 fn build_media_files_filters_unknown_files() {
     let mut lookup = MetadataLookup::default();
 
-    let media_files = lookup.build_media_files(vec![
-        raw_file("Movie.2020.1080p.mkv", ""),
-        raw_file("notes.txt", ""),
-    ]);
+    let media_files = lookup.build_media_files(
+        vec![
+            raw_file("Movie.2020.1080p.mkv", ""),
+            raw_file("notes.txt", ""),
+        ],
+        Vec::new(),
+    );
 
     assert_eq!(media_files.len(), 1);
     assert_eq!(media_files[0].video.name, "Movie.2020.1080p.mkv");
@@ -28,10 +31,13 @@ fn build_media_files_filters_unknown_files() {
 fn build_media_files_groups_subtitles_after_metadata_lookup() {
     let mut lookup = MetadataLookup::default();
 
-    let media_files = lookup.build_media_files(vec![
-        raw_file("Show.S01E01.mkv", "/Show"),
-        raw_file("Show.S01E01.zh.srt", "/Show"),
-    ]);
+    let media_files = lookup.build_media_files(
+        vec![
+            raw_file("Show.S01E01.mkv", "/Show"),
+            raw_file("Show.S01E01.zh.srt", "/Show"),
+        ],
+        Vec::new(),
+    );
 
     assert_eq!(media_files.len(), 1);
     assert_eq!(media_files[0].subtitles.len(), 1);

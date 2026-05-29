@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use super::super::import_tests::FakeTitleExtractor;
 use super::*;
+use crate::application::import_ports::TitleExtractor;
 use crate::domain::import::{SearchMovieResult, SearchTvResult, Season};
 use crate::domain::media::{Metadata, Title};
 
@@ -78,13 +80,13 @@ impl MetadataCatalog for FakeMetadataCatalog {
 #[tokio::test]
 async fn get_movie_info_skips_invalid_tmdb_id_without_panicking() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone());
+    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "not-a-number".into(),
         ..Default::default()
     };
 
-    let movie = lookup.get_movie_info(&meta).await.unwrap();
+    let movie = lookup.get_movie_info(&meta, &[]).await.unwrap();
 
     assert!(movie.is_none());
     assert!(catalog.movie_detail_calls.lock().unwrap().is_empty());
@@ -93,13 +95,13 @@ async fn get_movie_info_skips_invalid_tmdb_id_without_panicking() {
 #[tokio::test]
 async fn get_tv_info_skips_invalid_tmdb_id_without_panicking() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone());
+    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "bad-tv-id".into(),
         ..Default::default()
     };
 
-    let tv = lookup.get_tv_info(&meta).await.unwrap();
+    let tv = lookup.get_tv_info(&meta, &[]).await.unwrap();
 
     assert!(tv.is_none());
     assert!(catalog.tv_detail_calls.lock().unwrap().is_empty());
@@ -108,7 +110,7 @@ async fn get_tv_info_skips_invalid_tmdb_id_without_panicking() {
 #[tokio::test]
 async fn get_movie_info_falls_back_to_title_search_after_invalid_tmdb_id() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone());
+    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "oops".into(),
         titles: vec![Title {
@@ -119,7 +121,7 @@ async fn get_movie_info_falls_back_to_title_search_after_invalid_tmdb_id() {
         ..Default::default()
     };
 
-    let movie = lookup.get_movie_info(&meta).await.unwrap();
+    let movie = lookup.get_movie_info(&meta, &[]).await.unwrap();
 
     assert_eq!(movie.map(|item| item.id), Some(7));
     assert_eq!(
@@ -173,7 +175,7 @@ async fn get_movie_info_matches_normalized_title_and_year_from_multiple_candidat
         ),
     ]);
 
-    let mut lookup = TmdbLookup::new(catalog.clone());
+    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         titles: vec![Title {
             title: "The Lord of the Rings： The Two Towers".into(),
@@ -183,7 +185,7 @@ async fn get_movie_info_matches_normalized_title_and_year_from_multiple_candidat
         ..Default::default()
     };
 
-    let movie = lookup.get_movie_info(&meta).await.unwrap();
+    let movie = lookup.get_movie_info(&meta, &[]).await.unwrap();
 
     assert_eq!(movie.map(|item| item.id), Some(12));
 }
@@ -220,7 +222,7 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
         },
     );
 
-    let mut lookup = TmdbLookup::new(catalog.clone());
+    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         titles: vec![
             Title {
@@ -236,8 +238,8 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
         ..Default::default()
     };
 
-    let first = lookup.get_tv_info(&meta).await.unwrap();
-    let second = lookup.get_tv_info(&meta).await.unwrap();
+    let first = lookup.get_tv_info(&meta, &[]).await.unwrap();
+    let second = lookup.get_tv_info(&meta, &[]).await.unwrap();
 
     assert_eq!(first.as_ref().map(|item| item.id), Some(278573));
     assert_eq!(second.as_ref().map(|item| item.id), Some(278573));
@@ -248,4 +250,95 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
             ("21世纪大君夫人".to_string(), "2026".to_string()),
         ]
     );
+}
+
+#[derive(Clone)]
+struct StubTitleExtractor {
+    title: Option<Title>,
+}
+
+impl TitleExtractor for StubTitleExtractor {
+    async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
+        Ok(self.title.clone())
+    }
+}
+
+#[tokio::test]
+async fn get_movie_info_falls_back_to_llm_title_when_regex_titles_fail() {
+    let catalog = FakeMetadataCatalog::default();
+    catalog.movie_details.lock().unwrap().insert(
+        55005,
+        MovieDetail {
+            id: 55005,
+            title: "民调局异闻录".into(),
+            adult: false,
+            genres: Vec::new(),
+            original_language: "zh".into(),
+            original_title: "民调局异闻录".into(),
+            origin_country: vec!["CN".into()],
+            release_date: "2024-01-01".into(),
+        },
+    );
+    catalog
+        .movie_search_results
+        .lock()
+        .unwrap()
+        .push(SearchMovieResult {
+            id: 55005,
+            title: "民调局异闻录".into(),
+            original_title: "民调局异闻录".into(),
+        });
+
+    let title_extractor = StubTitleExtractor {
+        title: Some(Title {
+            title: "民调局异闻录".into(),
+            language: "zh".into(),
+        }),
+    };
+    let mut lookup = TmdbLookup::new(catalog.clone(), title_extractor);
+    let meta = Metadata {
+        titles: vec![],
+        year: "2024".into(),
+        ..Default::default()
+    };
+
+    let movie = lookup
+        .get_movie_info(&meta, &["民调局异闻录第三季".into()])
+        .await
+        .unwrap();
+
+    assert!(movie.is_some());
+    assert_eq!(movie.unwrap().id, 55005);
+    // Verify LLM title was searched via TMDB
+    let search_calls = catalog.movie_search_calls.lock().unwrap();
+    assert!(
+        search_calls
+            .iter()
+            .any(|(title, _)| title == "民调局异闻录")
+    );
+}
+
+#[tokio::test]
+async fn get_movie_info_skips_empty_descriptions_in_llm_fallback() {
+    let catalog = FakeMetadataCatalog::default();
+    let title_extractor = StubTitleExtractor {
+        title: Some(Title {
+            title: "Should Not Reach".into(),
+            language: "en".into(),
+        }),
+    };
+    let mut lookup = TmdbLookup::new(catalog.clone(), title_extractor);
+    let meta = Metadata {
+        titles: vec![],
+        ..Default::default()
+    };
+
+    let movie = lookup
+        .get_movie_info(&meta, &["".into(), "   ".into()])
+        .await
+        .unwrap();
+
+    assert!(movie.is_none());
+    // No TMDB search calls because all descriptions were empty
+    assert!(catalog.movie_search_calls.lock().unwrap().is_empty());
 }

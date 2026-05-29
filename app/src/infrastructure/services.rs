@@ -1,7 +1,10 @@
 use crate::{
     application::{
-        delete_media::DeleteMediaService, file_index::FileIndexService, import::TransferWorkflow,
-        manage_keywords::ManageKeywordsService, resolve_download_url::ResolveDownloadUrlService,
+        delete_media::DeleteMediaService,
+        file_index::FileIndexService,
+        import::{ParseService, TransferWorkflow},
+        manage_keywords::ManageKeywordsService,
+        resolve_download_url::ResolveDownloadUrlService,
         sync_strm::SyncStrmService,
     },
     infrastructure::{
@@ -16,17 +19,23 @@ use crate::{
         },
         repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
         share::resolver::ShareResolverService,
+        title_extractor::TitleExtractorService,
     },
 };
 
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareResolverRuntimeService =
     ShareResolverService<pan123::Client, pan189::Client, pan115::Client, quark::Client>;
-pub type ImportService =
-    TransferWorkflow<PanLibraryGateway, TmdbMetadataGateway, FilesystemImportLocalStore>;
+pub type ImportService = TransferWorkflow<
+    PanLibraryGateway,
+    TmdbMetadataGateway,
+    FilesystemImportLocalStore,
+    TitleExtractorService,
+>;
 pub type NotifyService = EventBusPublisher;
 pub type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 pub type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;
 pub type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
+pub type ParseRuntimeService = ParseService<TmdbMetadataGateway, TitleExtractorService>;
