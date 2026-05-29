@@ -1,1 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --font-display: 'Bebas Neue', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-bb-void: #1a1a2e;
+  --color-bb-night: #1e1e34;
+  --color-bb-deep: #262640;
+  --color-bb-card: #2e2e4a;
+  --color-bb-surface: #363655;
+  --color-bb-muted: #40406a;
+  --color-bb-gold: #c4943a;
+  --color-bb-gold-light: #daa84e;
+  --color-bb-gold-dim: #8a6a28;
+  --color-bb-cream: #f5f0e8;
+  --color-bb-text: #d8d0c0;
+  --color-bb-text-muted: #9a94aa;
+  --color-bb-red: #e05050;
+  --color-bb-green: #58b858;
+  --color-bb-amber: #d4a020;
+  --color-bb-blue: #5599dd;
+}
