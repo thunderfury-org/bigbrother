@@ -17,6 +17,7 @@ const REFERER_KEY: &str = "Referer";
 const REFERER_VALUE: &str = "https://www.123pan.com/";
 
 const TOKEN_CACHE_FILE: &str = "token.json";
+const OPEN_API_TOKEN_CACHE_FILE: &str = "open_api_token.json";
 
 #[derive(Debug, Deserialize)]
 struct CommonResponse<T> {
@@ -126,49 +127,94 @@ struct DownloadInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AccessToken {
+struct CachedToken {
     #[serde(rename = "token")]
-    token: String,
+    access_token: String,
+    #[serde(default)]
+    refresh_token: String,
     #[serde(rename = "expire", with = "time::serde::rfc3339")]
     expired_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize)]
+struct RefreshTokenResp {
+    #[serde(rename = "access_token")]
+    access_token: String,
+    #[serde(rename = "refresh_token")]
+    refresh_token: String,
+    #[serde(rename = "expires_in")]
+    expires_in: i64,
+    #[serde(default)]
+    code: i32,
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    error_description: String,
+    #[serde(default)]
+    error: String,
+    #[serde(default)]
+    text: String,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Client {
     passport: String,
     password: String,
+    api_address: String,
+    initial_refresh_token: String,
     host: String,
     cache_dir: String,
-    token: Arc<RwLock<Option<AccessToken>>>,
+    token: Arc<RwLock<Option<CachedToken>>>,
+    open_api_token: Arc<RwLock<Option<CachedToken>>>,
 }
 
 impl Client {
-    pub fn new(passport: &str, password: &str, cache_dir: &str) -> Self {
+    pub fn new(
+        passport: &str,
+        password: &str,
+        api_address: &str,
+        refresh_token: &str,
+        cache_dir: &str,
+    ) -> Self {
         Self {
             passport: passport.to_owned(),
             password: password.to_owned(),
+            api_address: api_address.to_owned(),
+            initial_refresh_token: refresh_token.to_owned(),
             host: API_BASE.to_owned(),
             cache_dir: cache_dir.to_owned(),
             token: Arc::new(RwLock::new(None)),
+            open_api_token: Arc::new(RwLock::new(None)),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn with_host(passport: &str, password: &str, cache_dir: &str, host: &str) -> Self {
+    pub(crate) fn with_host(
+        passport: &str,
+        password: &str,
+        api_address: &str,
+        refresh_token: &str,
+        cache_dir: &str,
+        host: &str,
+    ) -> Self {
         Self {
             passport: passport.to_owned(),
             password: password.to_owned(),
+            api_address: api_address.to_owned(),
+            initial_refresh_token: refresh_token.to_owned(),
             host: host.to_owned(),
             cache_dir: cache_dir.to_owned(),
             token: Arc::new(RwLock::new(None)),
+            open_api_token: Arc::new(RwLock::new(None)),
         }
     }
 
     #[cfg(test)]
     pub(crate) async fn set_token_for_test(&self, token: &str, expired_at: time::OffsetDateTime) {
         let mut guard = self.token.write().await;
-        *guard = Some(AccessToken {
-            token: token.to_owned(),
+        *guard = Some(CachedToken {
+            access_token: token.to_owned(),
+            refresh_token: String::new(),
             expired_at,
         });
     }
@@ -356,7 +402,7 @@ impl Client {
         sha1: &str,
         size: u64,
     ) -> RequestResult<Option<i64>> {
-        self.post::<_, FastUploadWithSha1Response>(
+        self.post_open_api::<_, FastUploadWithSha1Response>(
             format!("{}{}", OPEN_API_BASE, "/upload/v2/file/sha1_reuse"),
             None,
             Some(&json!(
@@ -579,6 +625,92 @@ impl Client {
         self.process_response(response)
     }
 
+    async fn post_open_api<P: Serialize, T: DeserializeOwned>(
+        &self,
+        url: String,
+        query: Option<Vec<(&str, &str)>>,
+        payload: Option<&P>,
+    ) -> RequestResult<T> {
+        let token = format!("Bearer {}", self.get_open_api_token().await?);
+        let headers = Some(vec![
+            (APP_VERSION_KEY, APP_VERSION_VALUE),
+            (PLATFORM_KEY, PLATFORM_VALUE),
+            (REFERER_KEY, REFERER_VALUE),
+            (http::AUTH_KEY, token.as_str()),
+        ]);
+        let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
+        self.process_response(response)
+    }
+
+    async fn get_token(&self) -> RequestResult<String> {
+        {
+            let token_guard = self.token.read().await;
+            if let Some(t) = token_guard.as_ref()
+                && !self.is_expired(t)
+            {
+                return Ok(t.access_token.to_owned());
+            }
+        }
+
+        let mut token_guard = self.token.write().await;
+        match token_guard.as_ref() {
+            Some(t) => {
+                if !self.is_expired(t) {
+                    return Ok(t.access_token.to_owned());
+                }
+            }
+            None => {
+                let token = self.read_token_from_cache_file(TOKEN_CACHE_FILE)?;
+                if let Some(t) = token
+                    && !self.is_expired(&t)
+                {
+                    *token_guard = Some(t.clone());
+                    return Ok(t.access_token.to_owned());
+                }
+            }
+        }
+
+        let cached = self.get_access_token().await?;
+        self.write_token_to_cache_file(TOKEN_CACHE_FILE, &cached)?;
+        *token_guard = Some(cached.clone());
+        Ok(cached.access_token.to_owned())
+    }
+
+    async fn get_open_api_token(&self) -> RequestResult<String> {
+        {
+            let token_guard = self.open_api_token.read().await;
+            if let Some(t) = token_guard.as_ref()
+                && !self.is_expired(t)
+            {
+                return Ok(t.access_token.to_owned());
+            }
+        }
+
+        let mut token_guard = self.open_api_token.write().await;
+        match token_guard.as_ref() {
+            Some(t) => {
+                if !self.is_expired(t) {
+                    return Ok(t.access_token.to_owned());
+                }
+            }
+            None => {
+                let token = self.read_token_from_cache_file(OPEN_API_TOKEN_CACHE_FILE)?;
+                if let Some(t) = token
+                    && !self.is_expired(&t)
+                    && !t.refresh_token.is_empty()
+                {
+                    *token_guard = Some(t.clone());
+                    return Ok(t.access_token.to_owned());
+                }
+            }
+        }
+
+        let cached = self.get_open_api_access_token().await?;
+        self.write_token_to_cache_file(OPEN_API_TOKEN_CACHE_FILE, &cached)?;
+        *token_guard = Some(cached.clone());
+        Ok(cached.access_token.to_owned())
+    }
+
     fn process_response<T: DeserializeOwned>(&self, resp: CommonResponse<T>) -> RequestResult<T> {
         match resp.code {
             0 => match resp.data {
@@ -605,65 +737,12 @@ impl Client {
         format!("{}{}", self.host, path)
     }
 
-    async fn get_token(&self) -> RequestResult<String> {
-        // --- 第一次检查（无锁）---
-        {
-            let token_guard = self.token.read().await;
-            if let Some(t) = token_guard.as_ref()
-                && !self.is_expired(t)
-            {
-                // 缓存有效，快速返回（并发读）
-                return Ok(t.token.to_owned());
-            }
-            // 读锁在此作用域结束时自动释放
-            // 没有缓存或者缓存过期，需要刷新
-        }
-
-        // --- 第二次检查和操作（持有写锁）---
-        // 只有在第一次检查失败时，才竞争写锁
-        let mut token_guard = self.token.write().await;
-        match token_guard.as_ref() {
-            Some(t) => {
-                if !self.is_expired(t) {
-                    // 在我们等待写锁时，另一个任务可能已经完成了刷新
-                    return Ok(t.token.to_owned());
-                }
-
-                // 缓存过期，需要刷新
-            }
-            None => {
-                // 没有缓存，尝试从缓存文件读取
-                let token = self.read_token_from_cache_file()?;
-                if let Some(t) = token
-                    && !self.is_expired(&t)
-                {
-                    // 缓存文件中的token有效，快速返回（并发读）
-                    *token_guard = Some(t.clone());
-                    return Ok(t.token.to_owned());
-                }
-
-                // 缓存文件不存在或者过期，需要刷新
-            }
-        }
-
-        // 真正需要刷新：执行网络操作
-        let access_token = self.get_access_token().await?;
-
-        // 写入缓存文件
-        self.write_token_to_cache_file(&access_token)?;
-        // 更新缓存
-        *token_guard = Some(access_token.clone());
-
-        // 写锁在此作用域结束时自动释放
-        Ok(access_token.token.to_owned())
-    }
-
-    fn read_token_from_cache_file(&self) -> RequestResult<Option<AccessToken>> {
+    fn read_token_from_cache_file(&self, file_name: &str) -> RequestResult<Option<CachedToken>> {
         if self.cache_dir.is_empty() {
             return Err(RequestError::Other("cache dir is empty".to_string()));
         }
 
-        let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
+        let path = format!("{}/{}", self.cache_dir, file_name);
         if !Path::new(&path).exists() {
             return Ok(None);
         }
@@ -683,12 +762,12 @@ impl Client {
         }
     }
 
-    fn write_token_to_cache_file(&self, token: &AccessToken) -> RequestResult<()> {
+    fn write_token_to_cache_file(&self, file_name: &str, token: &CachedToken) -> RequestResult<()> {
         if self.cache_dir.is_empty() {
             return Err(RequestError::Other("cache dir is empty".to_string()));
         }
 
-        let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
+        let path = format!("{}/{}", self.cache_dir, file_name);
         if !Path::new(&self.cache_dir).exists() {
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
                 RequestError::Other(format!(
@@ -713,12 +792,12 @@ impl Client {
         }
     }
 
-    fn is_expired(&self, token: &AccessToken) -> bool {
+    fn is_expired(&self, token: &CachedToken) -> bool {
         token.expired_at - time::Duration::seconds(60) <= time::OffsetDateTime::now_utc()
     }
 
-    async fn get_access_token(&self) -> RequestResult<AccessToken> {
-        let response: CommonResponse<AccessToken> = http::post(
+    async fn get_access_token(&self) -> RequestResult<CachedToken> {
+        let response: CommonResponse<CachedToken> = http::post(
             self.build_api_url("/api/user/sign_in"),
             None,
             Some(vec![
@@ -747,6 +826,63 @@ impl Client {
                 response.code, response.message
             ))),
         }
+    }
+
+    async fn get_open_api_access_token(&self) -> RequestResult<CachedToken> {
+        let rt = self
+            .read_token_from_cache_file(OPEN_API_TOKEN_CACHE_FILE)?
+            .map(|t| t.refresh_token.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.initial_refresh_token.clone());
+
+        let resp: RefreshTokenResp = http::get(
+            &self.api_address,
+            Some(vec![
+                ("refresh_ui", rt.as_str()),
+                ("server_use", "true"),
+                ("driver_txt", "123cloud_oa"),
+            ]),
+            None,
+        )
+        .await?;
+
+        if resp.code != 0 {
+            let err = if !resp.error_description.is_empty() {
+                &resp.error_description
+            } else if !resp.text.is_empty() {
+                &resp.text
+            } else if !resp.message.is_empty() {
+                &resp.message
+            } else if !resp.error.is_empty() {
+                &resp.error
+            } else {
+                "unknown error"
+            };
+            return Err(RequestError::Other(format!(
+                "pan123 open api refresh token error, code: {}, message: {}",
+                resp.code, err
+            )));
+        }
+
+        if resp.access_token.is_empty() || resp.refresh_token.is_empty() {
+            return Err(RequestError::Other(
+                "pan123 open api refresh token error, empty access_token or refresh_token"
+                    .to_string(),
+            ));
+        }
+
+        if resp.expires_in <= 0 {
+            return Err(RequestError::Other(format!(
+                "pan123 open api refresh token error, invalid expires_in: {}",
+                resp.expires_in
+            )));
+        }
+
+        Ok(CachedToken {
+            access_token: resp.access_token,
+            refresh_token: resp.refresh_token,
+            expired_at: time::OffsetDateTime::now_utc() + time::Duration::seconds(resp.expires_in),
+        })
     }
 }
 
@@ -790,7 +926,14 @@ mod tests {
     }
 
     async fn client(server: &MockServer) -> Client {
-        let client = Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
+        let client = Client::with_host(
+            "user",
+            "pass",
+            &format!("{}/refresh", server.uri()),
+            "refresh-token",
+            &unique_cache_dir(),
+            server.uri().as_str(),
+        );
         client
             .set_token_for_test(
                 "test-token",
@@ -820,7 +963,13 @@ mod tests {
 
     #[test]
     fn process_response_maps_common_error_codes() {
-        let client = Client::new("user", "pass", "/tmp/pan123-tests");
+        let client = Client::new(
+            "user",
+            "pass",
+            "http://api.test/refresh",
+            "refresh-token",
+            "/tmp/pan123-tests",
+        );
 
         assert!(matches!(
             client.process_response::<serde_json::Value>(CommonResponse {
@@ -875,16 +1024,29 @@ mod tests {
     #[test]
     fn write_then_read_token_cache_file_round_trips() {
         let cache_dir = unique_cache_dir();
-        let client = Client::new("user", "pass", &cache_dir);
-        let token = AccessToken {
-            token: "cached-token".to_string(),
+        let client = Client::new(
+            "user",
+            "pass",
+            "http://api.test/refresh",
+            "refresh-token",
+            &cache_dir,
+        );
+        let token = CachedToken {
+            access_token: "cached-token".to_string(),
+            refresh_token: "cached-refresh".to_string(),
             expired_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
         };
 
-        client.write_token_to_cache_file(&token).unwrap();
-        let loaded = client.read_token_from_cache_file().unwrap().unwrap();
+        client
+            .write_token_to_cache_file(TOKEN_CACHE_FILE, &token)
+            .unwrap();
+        let loaded = client
+            .read_token_from_cache_file(TOKEN_CACHE_FILE)
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(loaded.token, "cached-token");
+        assert_eq!(loaded.access_token, "cached-token");
+        assert_eq!(loaded.refresh_token, "cached-refresh");
 
         let _ = fs::remove_dir_all(cache_dir);
     }

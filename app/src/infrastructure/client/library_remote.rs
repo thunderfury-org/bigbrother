@@ -110,8 +110,14 @@ mod tests {
     }
 
     async fn remote(server: &MockServer) -> Pan123LibraryRemote {
-        let client =
-            pan123::Client::with_host("user", "pass", &unique_cache_dir(), server.uri().as_str());
+        let client = pan123::Client::with_host(
+            "user",
+            "pass",
+            &format!("{}/refresh", server.uri()),
+            "refresh-token",
+            &unique_cache_dir(),
+            server.uri().as_str(),
+        );
         client
             .set_token_for_test(
                 "test-token",

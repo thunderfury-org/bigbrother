@@ -57,11 +57,24 @@ impl Default for Pan115Config {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 pub struct Pan123Config {
     pub passport: String,
     pub password: String,
+    pub api_address: String,
+    pub refresh_token: String,
+}
+
+impl Default for Pan123Config {
+    fn default() -> Self {
+        Self {
+            passport: String::new(),
+            password: String::new(),
+            api_address: "https://api.oplist.org/123cloud/renewapi".to_string(),
+            refresh_token: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

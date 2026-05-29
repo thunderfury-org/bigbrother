@@ -47,6 +47,8 @@ impl CliContext {
         let pan123 = client::pan123::Client::new(
             &config.get_pan123_config().passport,
             &config.get_pan123_config().password,
+            &config.get_pan123_config().api_address,
+            &config.get_pan123_config().refresh_token,
             &format!("{}/pan123", config.get_cache_dir()),
         );
         let pan189 = client::pan189::Client::new(client::pan189::AuthConfig {
