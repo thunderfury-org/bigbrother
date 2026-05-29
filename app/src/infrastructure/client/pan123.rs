@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use super::{RequestError, RequestResult, http};
 
 const API_BASE: &str = "https://www.123pan.com/b";
+const OPEN_API_BASE: &str = "https://open-api.123pan.com";
 
 const APP_VERSION_KEY: &str = "App-Version";
 const APP_VERSION_VALUE: &str = "3";
@@ -348,7 +349,6 @@ impl Client {
         })
     }
 
-    /// 需要 openapi 才能使用
     pub async fn fast_upload_with_sha1(
         &self,
         parent_file_id: i64,
@@ -357,8 +357,7 @@ impl Client {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.post::<_, FastUploadWithSha1Response>(
-            // 这里需要改成 openapi 的地址
-            self.build_api_url("/upload/v2/file/sha1_reuse"),
+            format!("{}{}", OPEN_API_BASE, "/upload/v2/file/sha1_reuse"),
             None,
             Some(&json!(
                 {
