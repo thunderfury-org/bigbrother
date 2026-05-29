@@ -49,104 +49,466 @@
 </script>
 
 <section>
-  <header class="mb-4 flex items-baseline justify-between">
-    <h1 class="text-lg font-semibold text-slate-900">文件索引</h1>
+  <!-- Page header -->
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">文件索引</h1>
+      <p class="page-subtitle">FILE INDEX</p>
+    </div>
     {#if hasSearched && !loading && !errorMessage && lastQuery}
-      <span class="text-xs text-slate-500">共 {items.length} 条</span>
+      <span class="page-count">{items.length} 条结果</span>
     {/if}
   </header>
 
+  <!-- Search bar -->
   <form
-    class="mb-4 flex flex-wrap items-end gap-3 rounded border border-slate-200 bg-white p-3"
-    onsubmit={(e) => {
-      e.preventDefault();
-      run();
-    }}
+    class="search-bar"
+    onsubmit={(e) => { e.preventDefault(); run(); }}
   >
-    <label class="flex flex-1 min-w-[240px] flex-col text-xs text-slate-600">
-      关键字
+    <div class="search-field">
+      <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+      </svg>
       <input
         type="text"
         bind:value={keyword}
-        placeholder="文件名、路径或描述片段"
-        class="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
+        placeholder="输入文件名、路径或描述片段…"
+        class="search-input"
       />
-    </label>
-    <label class="flex flex-col text-xs text-slate-600">
-      条数
-      <select bind:value={limit} class="mt-1 rounded border border-slate-300 px-2 py-1 text-sm">
+    </div>
+    <label class="search-limit">
+      <span class="filter-label">条数</span>
+      <select bind:value={limit} class="filter-select">
         <option value={20}>20</option>
         <option value={50}>50</option>
         <option value={100}>100</option>
         <option value={200}>200</option>
       </select>
     </label>
-    <button
-      type="submit"
-      class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-    >搜索</button>
-    <button
-      type="button"
-      onclick={reset}
-      class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-    >重置</button>
+    <button type="submit" class="btn-gold">搜索</button>
+    <button type="button" onclick={reset} class="btn-ghost">重置</button>
   </form>
 
+  <!-- Error -->
   {#if errorMessage}
-    <div class="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-      {errorMessage}
+    <div class="error-banner">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+      </svg>
+      <span>{errorMessage}</span>
     </div>
   {/if}
 
-  <div class="overflow-x-auto rounded border border-slate-200 bg-white">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-3 py-2">大小</th>
-          <th class="px-3 py-2">哈希</th>
-          <th class="px-3 py-2">位置</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {#each items as item}
-          <tr>
-            <td class="whitespace-nowrap px-3 py-2 text-slate-700">{formatSize(item.size)}</td>
-            <td class="px-3 py-2 font-mono text-xs text-slate-700" title="{item.hash_type}:{item.hash_value}">
-              <span class="mr-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase text-slate-600">
-                {item.hash_type}
-              </span>
-              <span class="break-all">{item.hash_value}</span>
-            </td>
-            <td class="px-3 py-2">
-              <details open>
-                <summary class="cursor-pointer text-xs text-slate-600">{item.locations.length} 个位置</summary>
-                <ul class="mt-2 space-y-2">
-                  {#each item.locations as loc}
-                    <li class="rounded bg-slate-50 px-2 py-1.5">
-                      <div class="text-sm text-slate-900">{loc.file_name}</div>
-                      <div class="font-mono text-xs break-all text-slate-500">{loc.file_path || '/'}</div>
-                      {#if loc.descriptions.length}
-                        <div class="mt-1 flex flex-wrap gap-1">
-                          {#each loc.descriptions as desc}
-                            <span class="max-w-xs truncate rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800" title={desc}>{desc}</span>
-                          {/each}
-                        </div>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-              </details>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    {#if loading}
-      <div class="px-3 py-6 text-center text-sm text-slate-500">加载中…</div>
-    {:else if !hasSearched || !lastQuery}
-      <div class="px-3 py-6 text-center text-sm text-slate-500">请输入关键字开始搜索</div>
-    {:else if items.length === 0}
-      <div class="px-3 py-6 text-center text-sm text-slate-500">没有匹配的文件</div>
-    {/if}
-  </div>
+  <!-- Results -->
+  {#if loading}
+    <div class="loading-state">
+      <div class="loading-bar"></div>
+      <p>正在搜索…</p>
+    </div>
+  {:else if !hasSearched || !lastQuery}
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <p class="empty-text">输入关键字开始搜索</p>
+    </div>
+  {:else if items.length === 0}
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
+          <path d="M3 3h18v18H3zM8 12h8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <p class="empty-text">没有匹配的文件</p>
+    </div>
+  {:else}
+    <div class="file-list">
+      {#each items as item, i}
+        <article class="file-card" style="animation-delay: {Math.min(i * 40, 400)}ms">
+          <div class="file-card-header">
+            <span class="hash-badge">
+              <span class="hash-type">{item.hash_type}</span>
+              <span class="hash-value" title={item.hash_value}>{item.hash_value.slice(0, 16)}…</span>
+            </span>
+            <span class="file-size">{formatSize(item.size)}</span>
+          </div>
+
+          <div class="file-card-body">
+            {#each item.locations as loc}
+              <div class="location">
+                <div class="location-name">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>
+                  </svg>
+                  <span>{loc.file_name}</span>
+                </div>
+                {#if loc.file_path}
+                  <span class="location-path">{loc.file_path}</span>
+                {/if}
+                {#if loc.descriptions.length}
+                  <div class="location-tags">
+                    {#each loc.descriptions as desc}
+                      <span class="tag" title={desc}>{desc}</span>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+
+          <!-- Full hash on hover -->
+          <div class="file-card-footer">
+            <span class="full-hash" title="{item.hash_type}:{item.hash_value}">
+              {item.hash_value}
+            </span>
+          </div>
+        </article>
+      {/each}
+    </div>
+  {/if}
 </section>
+
+<style>
+  /* ── Page header ── */
+  .page-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .page-title {
+    font-family: var(--font-display);
+    font-size: 32px;
+    letter-spacing: 0.08em;
+    color: var(--color-bb-cream);
+    line-height: 1;
+  }
+  .page-subtitle {
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.25em;
+    color: var(--color-bb-gold-dim);
+    margin-top: 4px;
+  }
+  .page-count {
+    font-size: 13px;
+    color: var(--color-bb-text-muted);
+  }
+
+  /* ── Search bar ── */
+  .search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--color-bb-deep);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 12%, transparent);
+    border-radius: 6px;
+    margin-bottom: 24px;
+  }
+  .search-field {
+    flex: 1;
+    min-width: 240px;
+    position: relative;
+  }
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-bb-text-muted);
+    pointer-events: none;
+  }
+  .search-input {
+    width: 100%;
+    padding: 9px 12px 9px 38px;
+    background: var(--color-bb-card);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 15%, transparent);
+    border-radius: 4px;
+    color: var(--color-bb-cream);
+    font-size: 14px;
+    font-family: var(--font-body);
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  .search-input::placeholder {
+    color: var(--color-bb-text-muted);
+    opacity: 0.6;
+  }
+  .search-input:focus {
+    border-color: var(--color-bb-gold);
+  }
+  .search-limit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* ── Shared filter styles ── */
+  .filter-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-bb-text-muted);
+  }
+  .filter-select {
+    padding: 7px 12px;
+    background: var(--color-bb-card);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 15%, transparent);
+    border-radius: 4px;
+    color: var(--color-bb-text);
+    font-size: 13px;
+    font-family: var(--font-body);
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  .filter-select:focus {
+    border-color: var(--color-bb-gold);
+  }
+
+  /* ── Buttons ── */
+  .btn-gold {
+    padding: 9px 24px;
+    background: linear-gradient(135deg, var(--color-bb-gold-dim), var(--color-bb-gold));
+    color: var(--color-bb-void);
+    font-family: var(--font-display);
+    font-size: 16px;
+    letter-spacing: 0.1em;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+  }
+  .btn-gold:hover {
+    background: linear-gradient(135deg, var(--color-bb-gold), var(--color-bb-gold-light));
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--color-bb-gold) 25%, transparent);
+  }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 16px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 20%, transparent);
+    border-radius: 4px;
+    color: var(--color-bb-text-muted);
+    font-size: 13px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--color-bb-gold-light);
+    border-color: color-mix(in srgb, var(--color-bb-gold) 40%, transparent);
+    background: color-mix(in srgb, var(--color-bb-gold) 6%, transparent);
+  }
+
+  /* ── States ── */
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 0;
+  }
+  .loading-state p {
+    font-size: 13px;
+    color: var(--color-bb-text-muted);
+  }
+  .loading-bar {
+    width: 120px;
+    height: 2px;
+    background: var(--color-bb-muted);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+  }
+  .loading-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--color-bb-gold), transparent);
+    animation: loading-sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes loading-sweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 64px 0;
+  }
+  .empty-icon {
+    color: var(--color-bb-muted);
+    opacity: 0.5;
+  }
+  .empty-text {
+    font-size: 14px;
+    color: var(--color-bb-text-muted);
+  }
+
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: color-mix(in srgb, var(--color-bb-red) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-bb-red) 25%, transparent);
+    border-radius: 6px;
+    font-size: 13px;
+    color: #f08080;
+  }
+
+  /* ── File list ── */
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .file-card {
+    background: var(--color-bb-card);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 8%, transparent);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.25s ease;
+    animation: file-enter 0.4s ease both;
+  }
+  .file-card:hover {
+    border-color: color-mix(in srgb, var(--color-bb-gold) 25%, transparent);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+  @keyframes file-enter {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .file-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-bb-gold) 6%, transparent);
+    background: color-mix(in srgb, var(--color-bb-gold) 3%, transparent);
+  }
+
+  .hash-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hash-type {
+    display: inline-block;
+    padding: 2px 6px;
+    background: color-mix(in srgb, var(--color-bb-gold) 12%, transparent);
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-bb-gold);
+  }
+  .hash-value {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-bb-text-muted);
+  }
+
+  .file-size {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-bb-cream);
+  }
+
+  .file-card-body {
+    padding: 14px 18px;
+  }
+
+  .location {
+    padding: 10px 14px;
+    background: var(--color-bb-deep);
+    border-radius: 4px;
+  }
+  .location + .location {
+    margin-top: 8px;
+  }
+
+  .location-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-bb-cream);
+  }
+  .location-name svg {
+    flex-shrink: 0;
+    color: var(--color-bb-gold-dim);
+  }
+
+  .location-path {
+    display: block;
+    margin-top: 4px;
+    padding-left: 20px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-bb-text-muted);
+    word-break: break-all;
+  }
+
+  .location-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    padding-left: 20px;
+  }
+  .tag {
+    display: inline-block;
+    max-width: 200px;
+    padding: 2px 8px;
+    background: color-mix(in srgb, var(--color-bb-blue) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-bb-blue) 20%, transparent);
+    border-radius: 20px;
+    font-size: 11px;
+    color: color-mix(in srgb, var(--color-bb-blue) 80%, white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-card-footer {
+    padding: 8px 18px;
+    border-top: 1px solid color-mix(in srgb, var(--color-bb-gold) 5%, transparent);
+  }
+  .full-hash {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-bb-text-muted);
+    opacity: 0.5;
+    word-break: break-all;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .search-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+</style>
