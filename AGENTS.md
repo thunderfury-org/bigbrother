@@ -42,6 +42,67 @@ A requirement is `ready-for-agent` only when all of the following are true:
 
 If any of the above is missing and blocks confident implementation, the requirement is not ready and should be treated as `needs-info` rather than `ready-for-agent`.
 
+### Thinking Before Coding
+
+These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them instead of picking silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what is confusing. Ask.
+
+### Simplicity and Precision
+
+Write the minimum code that solves the problem. Nothing speculative.
+
+- Do not add features beyond what was asked.
+- Do not create abstractions for single-use code.
+- Do not add flexibility or configurability that was not requested.
+- Do not add error handling for impossible scenarios.
+- If code could be significantly shorter, rewrite it.
+
+### Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Do not "improve" adjacent code, comments, or formatting.
+- Do not refactor things that are not broken.
+- Match existing style, even if you would do it differently.
+- If you notice unrelated dead code, mention it — do not delete it.
+
+When your changes create orphans:
+
+- Remove imports, variables, or functions that your changes made unused.
+- Do not remove pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the user's request.
+
+### Goal-Driven Execution
+
+Define success criteria before implementing. Loop until verified.
+
+Transform tasks into verifiable goals, for example:
+
+- "Add validation" → write tests for invalid inputs, then make them pass
+- "Fix the bug" → write a test that reproduces it, then make it pass
+- "Refactor X" → ensure tests pass before and after
+
+For multi-step tasks, state a brief plan with verification steps:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria allow independent execution; weak criteria such as "make it work" require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
 ### Module Dependency Constraints
 
 These are architecture rules that agents must follow. They are enforced primarily by review and module boundaries, not by a dedicated automatic architecture checker.
