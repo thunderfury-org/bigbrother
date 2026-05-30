@@ -63,9 +63,23 @@ Write the minimum code that solves the problem. Nothing speculative.
 - Do not add error handling for impossible scenarios.
 - If code could be significantly shorter, rewrite it.
 
-When editing existing code, touch only what is necessary. Do not improve adjacent code, comments, or formatting that is unrelated to the task. Match existing style even if you would do it differently. If your changes create unused imports, variables, or functions, remove them; do not remove pre-existing dead code unless asked.
+### Surgical Changes
 
-Every changed line should trace directly to the user's request.
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Do not "improve" adjacent code, comments, or formatting.
+- Do not refactor things that are not broken.
+- Match existing style, even if you would do it differently.
+- If you notice unrelated dead code, mention it — do not delete it.
+
+When your changes create orphans:
+
+- Remove imports, variables, or functions that your changes made unused.
+- Do not remove pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the user's request.
 
 ### Goal-Driven Execution
 
