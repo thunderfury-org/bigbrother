@@ -171,6 +171,7 @@ mod tests {
                         size: 99,
                         etag: "ABCDEF0123456789ABCDEF0123456789".into(),
                         parent_file_id: None,
+                        trashed: 0,
                     }],
                 )]),
             }),

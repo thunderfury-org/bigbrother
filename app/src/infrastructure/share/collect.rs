@@ -97,6 +97,7 @@ mod tests {
                 size: 0,
                 etag: String::new(),
                 parent_file_id: None,
+                trashed: 0,
             },
             pan123::File {
                 file_id: 2,
@@ -105,6 +106,7 @@ mod tests {
                 size: 100,
                 etag: "hash".into(),
                 parent_file_id: None,
+                trashed: 0,
             },
         ];
 
