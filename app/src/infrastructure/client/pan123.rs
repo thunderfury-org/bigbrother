@@ -36,6 +36,9 @@ pub struct File {
     pub etag: String,
     #[serde(default, alias = "parentFileId")]
     pub parent_file_id: Option<i64>,
+    /// 0: normal, 1: in trash
+    #[serde(default)]
+    pub trashed: i32,
 }
 
 impl File {
@@ -207,7 +210,7 @@ impl Client {
             ]),
         )
         .await
-        .map(|r| r.file_list)
+        .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
     }
 
     pub async fn list_dir_ids(&self, file_id: i64) -> RequestResult<HashMap<String, i64>> {
@@ -231,7 +234,7 @@ impl Client {
             ]),
         )
         .await
-        .map(|r| r.file_list)
+        .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
     }
 
     pub async fn search_dirs_with_paths(
@@ -392,7 +395,8 @@ impl Client {
         ]);
         let response: CommonResponse<OpenApiFileListResponse> =
             http::get(self.build_web_api_url("/api/share/get"), query, None).await?;
-        self.process_response(response).map(|r| r.file_list)
+        self.process_response(response)
+            .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
     }
 
     pub async fn get_file_id_by_path(&self, path: &str) -> RequestResult<Option<i64>> {
