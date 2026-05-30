@@ -25,6 +25,10 @@ impl FileIndexRepository for SeaOrmFileIndexRepository {
     async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>> {
         entity::file_index::search_files(&self.db, keyword, limit).await
     }
+
+    async fn get_records_by_ids(&self, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>> {
+        entity::file_index::get_records_by_ids(&self.db, ids).await
+    }
 }
 
 #[cfg(test)]
@@ -171,5 +175,54 @@ mod tests {
 
         let results = repo.search_files("movie", 2).await.unwrap();
         assert_eq!(results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_records_by_ids_returns_matching_fingerprints() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "movie.mkv".into(),
+                file_path: "/Movies".into(),
+                description: Some("desc1".into()),
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "sha1".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "episode.mkv".into(),
+                file_path: "/Shows".into(),
+                description: Some("desc2".into()),
+            },
+        ])
+        .await
+        .unwrap();
+
+        let all = repo.search_files("mkv", 20).await.unwrap();
+        assert_eq!(all.len(), 2);
+
+        let first_id = all[0].id;
+        let results = repo.get_records_by_ids(&[first_id]).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, first_id);
+        assert_eq!(results[0].hash_type, all[0].hash_type);
+        assert!(!results[0].locations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_records_by_ids_returns_empty_for_missing_ids() {
+        let repo = repo().await;
+        let results = repo.get_records_by_ids(&[9999]).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_records_by_ids_returns_empty_for_empty_input() {
+        let repo = repo().await;
+        let results = repo.get_records_by_ids(&[]).await.unwrap();
+        assert!(results.is_empty());
     }
 }

@@ -5,7 +5,7 @@ use axum::{
     extract::{OriginalUri, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use rust_embed::Embed;
@@ -18,11 +18,17 @@ use crate::{
             FileIndexRepository, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
             ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
         },
+        recorded_import::RecordedImportService,
     },
-    domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
+    domain::import_record::{
+        ImportSource, ImportSourceKind, ImportStatus, RecordSummary, SummaryItem,
+    },
     error::AppError,
-    infrastructure::repo::{
-        file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+    infrastructure::{
+        repo::{
+            file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+        },
+        services::ImportService,
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
 };
@@ -46,16 +52,36 @@ fn embedded_lookup(path: &str) -> Option<AssetFile> {
 pub(crate) struct ConsoleContext {
     repo: Arc<SeaOrmImportRecordRepository>,
     file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
+    import_service: Option<Arc<ImportService>>,
+    recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
 }
 
 impl ConsoleContext {
     pub(crate) fn new(
         repo: SeaOrmImportRecordRepository,
         file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        import_service: ImportService,
+    ) -> Self {
+        let repo = Arc::new(repo);
+        let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
+        Self {
+            repo,
+            file_index_service: Arc::new(file_index_service),
+            import_service: Some(Arc::new(import_service)),
+            recorded_import: Some(recorded_import),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_without_import(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
     ) -> Self {
         Self {
             repo: Arc::new(repo),
             file_index_service: Arc::new(file_index_service),
+            import_service: None,
+            recorded_import: None,
         }
     }
 }
@@ -65,6 +91,7 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
+        .route("/api/files/import", post(import_files))
         .fallback(get(static_handler))
         .with_state(ctx)
 }
@@ -150,6 +177,7 @@ struct FileSearchPageJson {
 
 #[derive(Debug, Serialize)]
 struct FileSearchItemJson {
+    id: i64,
     size: u64,
     hash_type: String,
     hash_value: String,
@@ -168,6 +196,7 @@ fn file_search_to_json(records: Vec<FileSearchRecord>) -> FileSearchPageJson {
         items: records
             .into_iter()
             .map(|record| FileSearchItemJson {
+                id: record.id,
                 size: record.size,
                 hash_type: record.hash_type,
                 hash_value: record.hash_value,
@@ -326,6 +355,140 @@ fn detail_to_json(view: &ImportRecordView) -> DetailJson {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct ImportFilesRequest {
+    ids: Vec<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImportFilesResponse {
+    results: Vec<ImportFileResult>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImportFileResult {
+    id: i64,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    year: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+async fn import_files(
+    State(ctx): State<ConsoleContext>,
+    axum::Json(body): axum::Json<ImportFilesRequest>,
+) -> Response {
+    let Some(import_service) = ctx.import_service.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "import service not available",
+        )
+            .into_response();
+    };
+    let Some(recorded_import) = ctx.recorded_import.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "import service not available",
+        )
+            .into_response();
+    };
+
+    if body.ids.is_empty() {
+        return bad_request("ids must not be empty".into());
+    }
+
+    let ready_files = match ctx
+        .file_index_service
+        .get_import_ready_files(&body.ids)
+        .await
+    {
+        Ok(files) => files,
+        Err(err) => return app_error_to_response(err),
+    };
+
+    if ready_files.is_empty() {
+        return bad_request("no valid files found for the given ids".into());
+    }
+
+    let mut results = Vec::new();
+    for (raw_file, descriptions) in ready_files {
+        let file_id = body.ids.iter().find(|_| true).copied().unwrap_or(0);
+        let source = ImportSource {
+            kind: ImportSourceKind::FileIndex,
+            raw: format!("file_index:{}", raw_file.name),
+        };
+
+        let mut import_service = import_service.as_ref().clone();
+        let raw_files = vec![raw_file];
+        let recorded = recorded_import.as_ref();
+
+        let outcome = recorded
+            .execute(source, || async {
+                let mut metadata_lookup = crate::application::import::MetadataLookup::default();
+                let media_files =
+                    metadata_lookup.build_media_files(raw_files.clone(), descriptions);
+                import_service.transfer_media_files(&media_files).await
+            })
+            .await;
+
+        match outcome {
+            Ok(imported) => {
+                for item in &imported {
+                    let (title, year, size) = match item {
+                        crate::application::import::ImportedMedia::Movie {
+                            title,
+                            year,
+                            size,
+                            ..
+                        } => (title.clone(), year.clone(), Some(*size)),
+                        crate::application::import::ImportedMedia::Tv { name, year, .. } => {
+                            (name.clone(), year.clone(), None)
+                        }
+                        crate::application::import::ImportedMedia::Skipped { .. } => {
+                            ("skipped".into(), String::new(), None)
+                        }
+                    };
+                    results.push(ImportFileResult {
+                        id: file_id,
+                        status: "succeeded".into(),
+                        title: Some(title),
+                        year: Some(year),
+                        size,
+                        error: None,
+                    });
+                }
+                if imported.is_empty() {
+                    results.push(ImportFileResult {
+                        id: file_id,
+                        status: "skipped".into(),
+                        title: None,
+                        year: None,
+                        size: None,
+                        error: Some("no media matched".into()),
+                    });
+                }
+            }
+            Err(err) => {
+                results.push(ImportFileResult {
+                    id: file_id,
+                    status: "failed".into(),
+                    title: None,
+                    year: None,
+                    size: None,
+                    error: Some(err.to_string()),
+                });
+            }
+        }
+    }
+
+    json_response(StatusCode::OK, &ImportFilesResponse { results })
+}
+
 fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
     let bytes = match serde_json::to_vec(body) {
         Ok(value) => value,
@@ -439,13 +602,16 @@ mod tests {
 
     async fn router_with(repo: SeaOrmImportRecordRepository) -> Router {
         let file_service = FileIndexService::new(fresh_file_repo().await);
-        new_router(ConsoleContext::new(repo, file_service))
+        new_router(ConsoleContext::new_without_import(repo, file_service))
     }
 
     async fn router_with_files(file_repo: SeaOrmFileIndexRepository) -> Router {
         let import_repo = fresh_repo().await;
         let file_service = FileIndexService::new(file_repo);
-        new_router(ConsoleContext::new(import_repo, file_service))
+        new_router(ConsoleContext::new_without_import(
+            import_repo,
+            file_service,
+        ))
     }
 
     fn file_input(file_name: &str, hash: &str) -> FileIndexRecordInput {
@@ -664,5 +830,41 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = json_body(response).await;
         assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn import_files_returns_503_without_import_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/files/import")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"ids":[1]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn import_files_returns_400_for_empty_ids() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/files/import")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"ids":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

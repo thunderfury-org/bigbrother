@@ -96,6 +96,48 @@ where
     Ok(results)
 }
 
+pub async fn get_records_by_ids<C>(db: &C, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>>
+where
+    C: ConnectionTrait,
+{
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let indices = file_index::Entity::find()
+        .filter(file_index::Column::Id.is_in(ids.to_vec()))
+        .all(db)
+        .await?;
+
+    let mut results = Vec::with_capacity(indices.len());
+    for index in indices {
+        let locations = file_location::Entity::find()
+            .filter(file_location::Column::FileIndexId.eq(index.id))
+            .all(db)
+            .await?;
+
+        let mut location_records = Vec::new();
+        for location in locations {
+            let descriptions = descriptions_for_location(db, location.id).await?;
+            location_records.push(FileLocationRecord {
+                file_name: location.file_name,
+                file_path: location.file_path,
+                descriptions,
+            });
+        }
+
+        results.push(FileSearchRecord {
+            id: index.id,
+            size: index.size.try_into().unwrap_or_default(),
+            hash_type: index.hash_type,
+            hash_value: index.hash_value,
+            locations: location_records,
+        });
+    }
+
+    Ok(results)
+}
+
 async fn add_location_match<C>(
     db: &C,
     by_fingerprint: &mut BTreeMap<i64, FileSearchRecord>,
@@ -115,6 +157,7 @@ where
     let entry = by_fingerprint
         .entry(index.id)
         .or_insert_with(|| FileSearchRecord {
+            id: index.id,
             size: index.size.try_into().unwrap_or_default(),
             hash_type: index.hash_type.clone(),
             hash_value: index.hash_value.clone(),

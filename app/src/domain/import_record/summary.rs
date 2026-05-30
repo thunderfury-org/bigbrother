@@ -12,6 +12,7 @@ pub(crate) enum ImportSourceKind {
     Pan189,
     Pan115,
     Telegram,
+    FileIndex,
     #[serde(other)]
     Other,
 }
@@ -23,6 +24,7 @@ impl ImportSourceKind {
             Self::Pan189 => "pan189",
             Self::Pan115 => "pan115",
             Self::Telegram => "telegram",
+            Self::FileIndex => "file_index",
             Self::Other => "other",
         }
     }
@@ -33,6 +35,7 @@ impl ImportSourceKind {
             "pan189" => Self::Pan189,
             "pan115" => Self::Pan115,
             "telegram" => Self::Telegram,
+            "file_index" => Self::FileIndex,
             _ => Self::Other,
         }
     }
@@ -336,6 +339,7 @@ mod tests {
             ImportSourceKind::Pan189,
             ImportSourceKind::Pan115,
             ImportSourceKind::Telegram,
+            ImportSourceKind::FileIndex,
             ImportSourceKind::Other,
         ] {
             assert_eq!(ImportSourceKind::from_str(kind.as_str()), kind);

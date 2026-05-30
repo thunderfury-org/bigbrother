@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ApiError, searchFiles, type FileSearchItem } from '../lib/api';
+  import { ApiError, searchFiles, importFiles, type FileSearchItem, type ImportFileResult } from '../lib/api';
 
   let keyword = $state('');
   let limit = $state(50);
@@ -9,12 +9,18 @@
   let errorMessage = $state('');
   let hasSearched = $state(false);
 
+  let selectedIds: Set<number> = $state(new Set());
+  let importing = $state(false);
+  let importResults: ImportFileResult[] | null = $state(null);
+
   async function run() {
     const q = keyword.trim();
     lastQuery = q;
     hasSearched = true;
     loading = true;
     errorMessage = '';
+    selectedIds = new Set();
+    importResults = null;
     try {
       const page = await searchFiles(q, limit);
       items = page.items;
@@ -33,6 +39,41 @@
     items = [];
     hasSearched = false;
     errorMessage = '';
+    selectedIds = new Set();
+    importResults = null;
+  }
+
+  function toggleSelect(id: number) {
+    if (selectedIds.has(id)) {
+      selectedIds.delete(id);
+    } else {
+      selectedIds.add(id);
+    }
+    selectedIds = new Set(selectedIds);
+  }
+
+  function selectAll() {
+    selectedIds = new Set(items.map(item => item.id));
+  }
+
+  function deselectAll() {
+    selectedIds = new Set();
+  }
+
+  async function runImport() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    importing = true;
+    importResults = null;
+    errorMessage = '';
+    try {
+      const resp = await importFiles(ids);
+      importResults = resp.results;
+    } catch (err) {
+      errorMessage = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
+    } finally {
+      importing = false;
+    }
   }
 
   function formatSize(bytes: number): string {
@@ -45,6 +86,15 @@
       unitIndex += 1;
     }
     return `${unitIndex === 0 ? value.toFixed(0) : value.toFixed(2)} ${units[unitIndex]}`;
+  }
+
+  function statusLabel(status: string): string {
+    switch (status) {
+      case 'succeeded': return '成功';
+      case 'failed': return '失败';
+      case 'skipped': return '跳过';
+      default: return status;
+    }
   }
 </script>
 
@@ -89,6 +139,54 @@
     <button type="button" onclick={reset} class="btn-ghost">重置</button>
   </form>
 
+  <!-- Import bar -->
+  {#if items.length > 0}
+    <div class="import-bar">
+      <div class="import-bar-left">
+        <button type="button" onclick={selectAll} class="btn-ghost btn-sm">全选</button>
+        <button type="button" onclick={deselectAll} class="btn-ghost btn-sm">取消</button>
+        <span class="import-count">{selectedIds.size} 已选</span>
+      </div>
+      <button
+        type="button"
+        onclick={runImport}
+        disabled={selectedIds.size === 0 || importing}
+        class="btn-gold btn-sm"
+      >
+        {importing ? '导入中…' : `导入选中 (${selectedIds.size})`}
+      </button>
+    </div>
+  {/if}
+
+  <!-- Results panel -->
+  {#if importResults}
+    <div class="results-panel">
+      <div class="results-header">
+        <h3>导入结果</h3>
+        <button type="button" onclick={() => { importResults = null; }} class="btn-ghost btn-sm">关闭</button>
+      </div>
+      <div class="results-list">
+        {#each importResults as result}
+          <div class="result-item result-{result.status}">
+            <span class="result-status">{statusLabel(result.status)}</span>
+            {#if result.title}
+              <span class="result-title">{result.title}</span>
+            {/if}
+            {#if result.year}
+              <span class="result-year">{result.year}</span>
+            {/if}
+            {#if result.size}
+              <span class="result-size">{formatSize(result.size)}</span>
+            {/if}
+            {#if result.error}
+              <span class="result-error">{result.error}</span>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   <!-- Error -->
   {#if errorMessage}
     <div class="error-banner">
@@ -127,8 +225,15 @@
   {:else}
     <div class="file-list">
       {#each items as item, i}
-        <article class="file-card" style="animation-delay: {Math.min(i * 40, 400)}ms">
+        <article class="file-card" class:selected={selectedIds.has(item.id)} style="animation-delay: {Math.min(i * 40, 400)}ms">
           <div class="file-card-header">
+            <label class="file-checkbox">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(item.id)}
+                onchange={() => toggleSelect(item.id)}
+              />
+            </label>
             <span class="hash-badge">
               <span class="hash-type">{item.hash_type}</span>
               <span class="hash-value" title={item.hash_value}>{item.hash_value.slice(0, 16)}…</span>
@@ -510,5 +615,137 @@
       flex-direction: column;
       align-items: stretch;
     }
+  }
+
+  /* ── Import bar ── */
+  .import-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: var(--color-bb-deep);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 12%, transparent);
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+  .import-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .import-count {
+    font-size: 13px;
+    color: var(--color-bb-text-muted);
+  }
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .btn-sm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Results panel ── */
+  .results-panel {
+    background: var(--color-bb-deep);
+    border: 1px solid color-mix(in srgb, var(--color-bb-gold) 20%, transparent);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-bb-gold) 10%, transparent);
+    background: color-mix(in srgb, var(--color-bb-gold) 5%, transparent);
+  }
+  .results-header h3 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    color: var(--color-bb-cream);
+    letter-spacing: 0.05em;
+    margin: 0;
+  }
+  .results-list {
+    padding: 8px;
+  }
+  .result-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .result-item + .result-item {
+    margin-top: 4px;
+  }
+  .result-succeeded {
+    background: color-mix(in srgb, #22c55e 8%, transparent);
+  }
+  .result-failed {
+    background: color-mix(in srgb, #ef4444 8%, transparent);
+  }
+  .result-skipped {
+    background: color-mix(in srgb, #f59e0b 8%, transparent);
+  }
+  .result-status {
+    display: inline-block;
+    min-width: 40px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+  }
+  .result-succeeded .result-status {
+    background: color-mix(in srgb, #22c55e 20%, transparent);
+    color: #4ade80;
+  }
+  .result-failed .result-status {
+    background: color-mix(in srgb, #ef4444 20%, transparent);
+    color: #f87171;
+  }
+  .result-skipped .result-status {
+    background: color-mix(in srgb, #f59e0b 20%, transparent);
+    color: #fbbf24;
+  }
+  .result-title {
+    color: var(--color-bb-cream);
+    font-weight: 500;
+  }
+  .result-year {
+    color: var(--color-bb-text-muted);
+  }
+  .result-size {
+    color: var(--color-bb-text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .result-error {
+    color: #f87171;
+    font-size: 12px;
+    margin-left: auto;
+  }
+
+  /* ── Checkbox ── */
+  .file-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .file-checkbox input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-bb-gold);
+    cursor: pointer;
+  }
+  .file-card.selected {
+    border-color: color-mix(in srgb, var(--color-bb-gold) 40%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-bb-gold) 20%, transparent);
   }
 </style>
