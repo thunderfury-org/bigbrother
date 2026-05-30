@@ -23,7 +23,7 @@ struct CommonResponse<T> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct File {
-    #[serde(rename = "FileId", alias = "fileId")]
+    #[serde(rename = "FileId", alias = "fileId", alias = "fileID")]
     pub file_id: i64,
     #[serde(rename = "FileName", alias = "filename")]
     pub file_name: String,
@@ -79,11 +79,11 @@ struct TrashResponse {}
 
 #[derive(Debug, Deserialize)]
 struct FileDetail {
-    #[serde(rename = "FileId", alias = "fileId")]
+    #[serde(rename = "FileId", alias = "fileId", alias = "fileID")]
     file_id: i64,
     #[serde(rename = "FileName", alias = "filename")]
     file_name: String,
-    #[serde(default, alias = "parentFileID")]
+    #[serde(default, alias = "parentFileID", alias = "parentFileId")]
     parent_file_id: Option<i64>,
 }
 
@@ -314,7 +314,7 @@ impl Client {
             Some(&json!(
                 {
                     "name": folder_name,
-                    "parentFileID": parent_file_id,
+                    "parentID": parent_file_id,
                 }
             )),
         )
