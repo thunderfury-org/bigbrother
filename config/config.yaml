@@ -2,9 +2,7 @@ pan115:
   request_interval_ms: 1500
 
 pan123:
-  passport: ""
-  password: ""
-  # 第三方续期 API 地址（OpenList 提供，用于 OpenAPI fast upload）
+  # 第三方续期 API 地址（OpenList 提供，用于 OpenAPI token 续期）
   api_address: "https://api.oplist.org/123cloud/renewapi"
   refresh_token: ""
 

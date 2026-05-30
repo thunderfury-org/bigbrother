@@ -45,8 +45,6 @@ impl CliContext {
             config.get_pan115_config().get_request_interval_ms(),
         ));
         let pan123 = client::pan123::Client::new(
-            &config.get_pan123_config().passport,
-            &config.get_pan123_config().password,
             &config.get_pan123_config().api_address,
             &config.get_pan123_config().refresh_token,
             &format!("{}/pan123", config.get_cache_dir()),

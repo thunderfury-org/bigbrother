@@ -82,7 +82,7 @@ mod tests {
     use crate::application::ports::{DownloadUrlSource, LibraryRemote};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{body_json, header, method, path, query_param},
+        matchers::{header, method, path, query_param},
     };
 
     fn unique_cache_dir() -> String {
@@ -98,21 +98,17 @@ mod tests {
 
     fn file_json(file_id: i64, file_name: &str, file_type: i32) -> serde_json::Value {
         serde_json::json!({
-            "FileId": file_id,
-            "FileName": file_name,
-            "Type": file_type,
-            "Size": 1234,
-            "CreateAt": "2024-01-01T00:00:00Z",
-            "UpdateAt": "2024-01-01T00:00:00Z",
-            "Etag": format!("etag-{file_id}"),
-            "AbsPath": format!("/{file_id}"),
+            "fileId": file_id,
+            "filename": file_name,
+            "type": file_type,
+            "size": 1234,
+            "etag": format!("etag-{file_id}"),
+            "parentFileId": 0,
         })
     }
 
     async fn remote(server: &MockServer) -> Pan123LibraryRemote {
-        let client = pan123::Client::with_host(
-            "user",
-            "pass",
+        let client = pan123::Client::with_open_api_base(
             &format!("{}/refresh", server.uri()),
             "refresh-token",
             &unique_cache_dir(),
@@ -165,17 +161,15 @@ mod tests {
         let remote = remote(&server).await;
 
         Mock::given(method("GET"))
-            .and(path("/api/file/list/new"))
+            .and(path("/api/v2/file/list"))
             .and(query_param("parentFileId", "42"))
-            .and(header("authorization", "Bearer test-token"))
+            .and(header("Platform", "open_platform"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "Next": "0",
-                    "Len": 2,
-                    "IsFirst": true,
-                    "InfoList": [
+                    "lastFileId": -1,
+                    "fileList": [
                         file_json(10, "Season 1", 1),
                         file_json(11, "episode.mkv", 0)
                     ]
@@ -194,20 +188,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_download_url_maps_not_found_error() {
+    async fn get_download_url_maps_empty_url_error() {
         let server = MockServer::start().await;
         let remote = remote(&server).await;
 
-        Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .and(body_json(serde_json::json!({
-                "fileIdList": [{"FileId": 99}]
-            })))
+        Mock::given(method("GET"))
+            .and(path("/api/v1/file/download_info"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": []
+                    "downloadUrl": ""
                 }
             })))
             .mount(&server)
@@ -218,7 +209,7 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            matches!(error, DownloadUrlError::NotFound(message) if message.contains("file 99 not found"))
+            matches!(error, DownloadUrlError::Error(message) if message.contains("empty download url"))
         );
     }
 }

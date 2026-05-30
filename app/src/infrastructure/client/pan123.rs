@@ -6,18 +6,13 @@ use tokio::sync::RwLock;
 
 use super::{RequestError, RequestResult, http};
 
-const API_BASE: &str = "https://www.123pan.com/b";
 const OPEN_API_BASE: &str = "https://open-api.123pan.com";
+const WEB_API_BASE: &str = "https://www.123pan.com/b";
 
-const APP_VERSION_KEY: &str = "App-Version";
-const APP_VERSION_VALUE: &str = "3";
 const PLATFORM_KEY: &str = "Platform";
-const PLATFORM_VALUE: &str = "web";
-const REFERER_KEY: &str = "Referer";
-const REFERER_VALUE: &str = "https://www.123pan.com/";
+const PLATFORM_VALUE: &str = "open_platform";
 
-const TOKEN_CACHE_FILE: &str = "token.json";
-const OPEN_API_TOKEN_CACHE_FILE: &str = "open_api_token.json";
+const TOKEN_CACHE_FILE: &str = "open_api_token.json";
 
 #[derive(Debug, Deserialize)]
 struct CommonResponse<T> {
@@ -28,23 +23,19 @@ struct CommonResponse<T> {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct File {
-    #[serde(rename = "FileId")]
+    #[serde(rename = "FileId", alias = "fileId", alias = "fileID")]
     pub file_id: i64,
-    #[serde(rename = "FileName")]
+    #[serde(rename = "FileName", alias = "filename")]
     pub file_name: String,
     /// 0: file, 1: folder
-    #[serde(rename = "Type")]
+    #[serde(rename = "Type", alias = "type")]
     pub file_type: i32,
-    #[serde(rename = "Size")]
+    #[serde(rename = "Size", alias = "size")]
     pub size: u64,
-    #[serde(rename = "CreateAt", with = "time::serde::rfc3339")]
-    pub _created_at: time::OffsetDateTime,
-    #[serde(rename = "UpdateAt", with = "time::serde::rfc3339")]
-    pub _updated_at: time::OffsetDateTime,
-    #[serde(rename = "Etag")]
+    #[serde(rename = "Etag", alias = "etag")]
     pub etag: String,
-    #[serde(default, rename = "AbsPath")]
-    pub abs_path: String,
+    #[serde(default, alias = "parentFileId")]
+    pub parent_file_id: Option<i64>,
 }
 
 impl File {
@@ -62,68 +53,50 @@ pub struct SearchPathFile {
 }
 
 #[derive(Debug, Deserialize)]
-struct FileListResponse {
-    #[serde(rename = "Next")]
-    pub _next: String,
-    #[serde(rename = "Len")]
-    pub _len: i32,
-    #[serde(rename = "IsFirst")]
-    pub _is_first: bool,
-    #[serde(rename = "InfoList")]
-    pub info_list: Vec<File>,
+struct OpenApiFileListResponse {
+    #[serde(default, rename = "lastFileId")]
+    _last_file_id: i64,
+    #[serde(default, rename = "InfoList", alias = "fileList")]
+    file_list: Vec<File>,
 }
 
 #[derive(Debug, Deserialize)]
 struct FastUploadResponse {
-    #[serde(rename = "Reuse")]
+    #[serde(alias = "Reuse", alias = "reuse")]
     reuse: bool,
-    #[serde(rename = "Info")]
-    info: Option<File>,
+    #[serde(alias = "fileID", alias = "FileId")]
+    file_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
-struct FastUploadWithSha1Response {
-    #[serde(rename = "reuse")]
-    reuse: bool,
-    #[serde(rename = "fileID")]
-    file_id: Option<i64>,
+struct MkdirResponse {
+    #[serde(rename = "dirID")]
+    dir_id: i64,
 }
 
 #[derive(Debug, Deserialize)]
 struct TrashResponse {}
 
 #[derive(Debug, Deserialize)]
-pub struct FileDetail {
-    #[serde(rename = "FileId")]
-    pub file_id: i64,
-    #[serde(rename = "FileName")]
-    pub file_name: String,
-    #[serde(rename = "Size")]
-    pub size: u64,
-    #[serde(rename = "Etag")]
-    pub etag: String,
-    #[serde(rename = "S3KeyFlag")]
-    pub s3_key_flag: String,
+struct FileDetail {
+    #[serde(rename = "FileId", alias = "fileId", alias = "fileID")]
+    file_id: i64,
+    #[serde(rename = "FileName", alias = "filename")]
+    file_name: String,
+    #[serde(default, alias = "parentFileID", alias = "parentFileId")]
+    parent_file_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 struct MultiGetResponse {
-    #[serde(rename = "infoList")]
+    #[serde(rename = "infoList", alias = "fileList")]
     file_list: Vec<FileDetail>,
 }
 
 #[derive(Debug, Deserialize)]
-struct DownloadDispatch {
-    #[serde(rename = "prefix")]
-    prefix: String,
-}
-
-#[derive(Debug, Deserialize)]
 struct DownloadInfo {
-    #[serde(rename = "downloadPath")]
-    download_path: String,
-    #[serde(rename = "dispatchList")]
-    dispatch_list: Vec<DownloadDispatch>,
+    #[serde(rename = "downloadUrl")]
+    download_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,54 +131,37 @@ struct RefreshTokenResp {
 
 #[derive(Debug, Default, Clone)]
 pub struct Client {
-    passport: String,
-    password: String,
     api_address: String,
     initial_refresh_token: String,
-    host: String,
     cache_dir: String,
+    open_api_base: String,
     token: Arc<RwLock<Option<CachedToken>>>,
-    open_api_token: Arc<RwLock<Option<CachedToken>>>,
 }
 
 impl Client {
-    pub fn new(
-        passport: &str,
-        password: &str,
-        api_address: &str,
-        refresh_token: &str,
-        cache_dir: &str,
-    ) -> Self {
+    pub fn new(api_address: &str, refresh_token: &str, cache_dir: &str) -> Self {
         Self {
-            passport: passport.to_owned(),
-            password: password.to_owned(),
             api_address: api_address.to_owned(),
             initial_refresh_token: refresh_token.to_owned(),
-            host: API_BASE.to_owned(),
             cache_dir: cache_dir.to_owned(),
+            open_api_base: OPEN_API_BASE.to_owned(),
             token: Arc::new(RwLock::new(None)),
-            open_api_token: Arc::new(RwLock::new(None)),
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn with_host(
-        passport: &str,
-        password: &str,
+    pub(crate) fn with_open_api_base(
         api_address: &str,
         refresh_token: &str,
         cache_dir: &str,
-        host: &str,
+        open_api_base: &str,
     ) -> Self {
         Self {
-            passport: passport.to_owned(),
-            password: password.to_owned(),
             api_address: api_address.to_owned(),
             initial_refresh_token: refresh_token.to_owned(),
-            host: host.to_owned(),
             cache_dir: cache_dir.to_owned(),
+            open_api_base: open_api_base.to_owned(),
             token: Arc::new(RwLock::new(None)),
-            open_api_token: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -220,41 +176,18 @@ impl Client {
     }
 
     pub async fn get_download_url(&self, file_id: i64) -> RequestResult<String> {
-        let files = self.mutli_get(&[file_id]).await?;
-        match files.get(&file_id) {
-            Some(f) => {
-                let download_info = self
-                    .post::<_, DownloadInfo>(
-                        self.build_api_url("/api/v2/file/download_info"),
-                        None,
-                        Some(&json!(
-                            {
-                                "driveId": 0,
-                                "fileId": file_id,
-                                "etag": f.etag,
-                                "size": f.size,
-                                "s3keyFlag": f.s3_key_flag,
-                                "fileName": f.file_name,
-                                "type": 0,
-                            }
-                        )),
-                    )
-                    .await?;
-                if download_info.dispatch_list.is_empty() {
-                    Err(RequestError::Other(
-                        "get download url failed, no dispatch available".to_string(),
-                    ))
-                } else {
-                    Ok(format!(
-                        "{}{}",
-                        download_info.dispatch_list[0].prefix, download_info.download_path
-                    ))
-                }
-            }
-            None => Err(RequestError::NotFound(format!(
-                "file {} not found",
-                file_id
-            ))),
+        let download_info = self
+            .get::<DownloadInfo>(
+                self.build_api_url("/api/v1/file/download_info"),
+                Some(vec![("fileId", file_id.to_string().as_str())]),
+            )
+            .await?;
+        if download_info.download_url.is_empty() {
+            Err(RequestError::Other(
+                "get download url failed, empty download url".to_string(),
+            ))
+        } else {
+            Ok(download_info.download_url)
         }
     }
 
@@ -265,28 +198,16 @@ impl Client {
 
     pub async fn list(&self, file_id: i64) -> RequestResult<Vec<File>> {
         let parent_file_id = file_id.to_string();
-        self.get::<FileListResponse>(
-            self.build_api_url("/api/file/list/new"),
+        self.get::<OpenApiFileListResponse>(
+            self.build_api_url("/api/v2/file/list"),
             Some(vec![
-                ("driveId", "0"),
-                ("limit", "100"),
-                ("next", "0"),
-                ("orderBy", "file_name"),
-                ("orderDirection", "asc"),
                 ("parentFileId", parent_file_id.as_str()),
-                ("trashed", "false"),
-                ("SearchData", ""),
-                ("Page", "1"),
-                ("OnlyLookAbnormalFile", "0"),
-                ("event", "homeListFile"),
-                ("operateType", "1"),
-                ("inDirectSpace", "false"),
-                ("fileCategory", "0"),
-                ("isSearchOrder", "false"),
+                ("limit", "100"),
+                ("lastFileId", "0"),
             ]),
         )
         .await
-        .map(|r| r.info_list)
+        .map(|r| r.file_list)
     }
 
     pub async fn list_dir_ids(&self, file_id: i64) -> RequestResult<HashMap<String, i64>> {
@@ -300,24 +221,17 @@ impl Client {
     }
 
     pub async fn search(&self, file_name: &str) -> RequestResult<Vec<File>> {
-        self.get::<FileListResponse>(
-            self.build_api_url("/api/file/list/new"),
+        self.get::<OpenApiFileListResponse>(
+            self.build_api_url("/api/v2/file/list"),
             Some(vec![
-                ("driveId", "0"),
-                ("limit", "10"),
-                ("next", "0"),
-                ("orderDirection", "desc"),
                 ("parentFileId", "0"),
-                ("trashed", "false"),
-                ("SearchData", file_name),
-                ("Page", "1"),
-                ("OnlyLookAbnormalFile", "0"),
-                ("event", "homeListFile"),
-                ("operateType", "2"),
+                ("limit", "10"),
+                ("lastFileId", "0"),
+                ("searchData", file_name),
             ]),
         )
         .await
-        .map(|r| r.info_list)
+        .map(|r| r.file_list)
     }
 
     pub async fn search_dirs_with_paths(
@@ -330,25 +244,10 @@ impl Client {
             .into_iter()
             .filter(|file| file.is_dir())
             .collect::<Vec<_>>();
-        let file_ids = search_results
-            .iter()
-            .flat_map(|file| file.abs_path.split('/'))
-            .filter_map(|segment| segment.parse::<i64>().ok())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let file_details = if file_ids.is_empty() {
-            HashMap::new()
-        } else {
-            self.mutli_get(file_ids.as_slice()).await?
-        };
-        let mut files = Vec::with_capacity(search_results.len());
 
+        let mut files = Vec::with_capacity(search_results.len());
         for file in search_results {
-            let Some(path) = resolve_path_from_details(file.abs_path.as_str(), &file_details)
-            else {
-                continue;
-            };
+            let path = self.resolve_path(file.file_id).await?;
             files.push(SearchPathFile {
                 file_id: file.file_id,
                 file_name: file.file_name,
@@ -368,31 +267,20 @@ impl Client {
         size: u64,
     ) -> RequestResult<Option<i64>> {
         self.post::<_, FastUploadResponse>(
-            self.build_api_url("/api/file/upload_request"),
+            self.build_api_url("/upload/v2/file/create"),
             None,
             Some(&json!(
                 {
-                    "driveId": 0,
-                    "parentFileId": parent_file_id,
-                    "fileName": file_name,
+                    "parentFileID": parent_file_id,
+                    "filename": file_name,
                     "etag": etag,
                     "size": size,
-                    "type": 0,
                     "duplicate": 2,
                 }
             )),
         )
         .await
-        .map(|r| {
-            if r.reuse {
-                match r.info {
-                    Some(info) => Some(info.file_id),
-                    None => None,
-                }
-            } else {
-                None
-            }
-        })
+        .map(|r| if r.reuse { r.file_id } else { None })
     }
 
     pub async fn fast_upload_with_sha1(
@@ -402,8 +290,8 @@ impl Client {
         sha1: &str,
         size: u64,
     ) -> RequestResult<Option<i64>> {
-        self.post_open_api::<_, FastUploadWithSha1Response>(
-            format!("{}{}", OPEN_API_BASE, "/upload/v2/file/sha1_reuse"),
+        self.post::<_, FastUploadResponse>(
+            self.build_api_url("/upload/v2/file/sha1_reuse"),
             None,
             Some(&json!(
                 {
@@ -420,48 +308,26 @@ impl Client {
     }
 
     pub async fn mkdir(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
-        self.post::<_, FastUploadResponse>(
-            self.build_api_url("/api/file/upload_request"),
+        self.post::<_, MkdirResponse>(
+            self.build_api_url("/upload/v1/file/mkdir"),
             None,
             Some(&json!(
                 {
-                    "driveId": 0,
-                    "parentFileId": parent_file_id,
-                    "fileName": folder_name,
-                    "etag": "",
-                    "size": 0,
-                    "type": 1,
-                    "duplicate": 2,
-                    "NotReuse": false,
+                    "name": folder_name,
+                    "parentID": parent_file_id,
                 }
             )),
         )
         .await
-        .map(|r| match r.info {
-            Some(info) => info.file_id,
-            None => 0,
-        })
+        .map(|r| r.dir_id)
     }
 
     pub async fn trash_files(&self, file_ids: &[i64]) -> RequestResult<()> {
         for chunk in file_ids.chunks(100) {
-            let files = chunk
-                .iter()
-                .map(|id| json!({"FileId": id}))
-                .collect::<Vec<_>>();
             self.post::<_, TrashResponse>(
-                self.build_api_url("/api/file/trash"),
+                self.build_api_url("/api/v1/file/trash"),
                 None,
-                Some(&json!(
-                    {
-                        "driveId": 0,
-                        "event": "intoRecycle",
-                        "fileTrashInfoList": files,
-                        "operatePlace": 1,
-                        "operation": true,
-                        "safeBox": false,
-                    }
-                )),
+                Some(&json!({ "fileIDs": chunk })),
             )
             .await
             .map(|_| ())?;
@@ -524,9 +390,9 @@ impl Client {
             ("parentFileId", file_id_str.as_str()),
             ("event", "homeListFile"),
         ]);
-        let response: CommonResponse<FileListResponse> =
-            http::get(self.build_api_url("/api/share/get"), query, None).await?;
-        self.process_response(response).map(|r| r.info_list)
+        let response: CommonResponse<OpenApiFileListResponse> =
+            http::get(self.build_web_api_url("/api/share/get"), query, None).await?;
+        self.process_response(response).map(|r| r.file_list)
     }
 
     pub async fn get_file_id_by_path(&self, path: &str) -> RequestResult<Option<i64>> {
@@ -534,40 +400,50 @@ impl Client {
             return Ok(None);
         }
 
-        let parts = path
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>();
+        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         let last_part = parts.last().unwrap();
         let search_results = self.search(last_part).await?;
 
-        for search_result in &search_results {
+        'outer: for search_result in &search_results {
             if search_result.file_name != *last_part {
                 continue;
             }
 
-            let file_ids = search_result
-                .abs_path
-                .split('/')
-                .filter_map(|s| s.parse::<i64>().ok())
-                .collect::<Vec<_>>();
-            if file_ids.len() != parts.len() {
-                continue;
-            }
+            let mut chain_names = vec![search_result.file_name.clone()];
+            let mut current_id = match search_result.parent_file_id {
+                Some(pid) => pid,
+                None => {
+                    if parts.len() == 1 {
+                        return Ok(Some(search_result.file_id));
+                    }
+                    continue;
+                }
+            };
 
-            let files = self.mutli_get(&file_ids).await?;
-            if files.len() != file_ids.len() {
-                continue;
-            }
-
-            let mut all_match = true;
-            for i in 0..file_ids.len() {
-                if files.get(&file_ids[i]).unwrap().file_name != parts[i] {
-                    all_match = false;
-                    break;
+            for _ in 1..parts.len() {
+                let details = self.mutli_get(&[current_id]).await?;
+                let detail = match details.get(&current_id) {
+                    Some(d) => d,
+                    None => continue 'outer,
+                };
+                chain_names.push(detail.file_name.clone());
+                match detail.parent_file_id {
+                    Some(pid) if pid > 0 => current_id = pid,
+                    _ => {
+                        if chain_names.len() == parts.len() {
+                            break;
+                        }
+                        continue 'outer;
+                    }
                 }
             }
-            if all_match {
+
+            if chain_names.len() != parts.len() {
+                continue;
+            }
+
+            chain_names.reverse();
+            if chain_names.iter().zip(parts.iter()).all(|(a, b)| a == b) {
                 return Ok(Some(search_result.file_id));
             }
         }
@@ -575,21 +451,34 @@ impl Client {
     }
 
     async fn mutli_get(&self, file_ids: &[i64]) -> RequestResult<HashMap<i64, FileDetail>> {
-        let files = file_ids
-            .iter()
-            .map(|id| json!({"FileId": id}))
-            .collect::<Vec<_>>();
         self.post::<_, MultiGetResponse>(
-            self.build_api_url("/api/file/info"),
+            self.build_api_url("/api/v1/file/infos"),
             None,
-            Some(&json!(
-                {
-                    "fileIdList": files,
-                }
-            )),
+            Some(&json!({ "fileIds": file_ids })),
         )
         .await
         .map(|r| r.file_list.into_iter().map(|f| (f.file_id, f)).collect())
+    }
+
+    async fn resolve_path(&self, file_id: i64) -> RequestResult<String> {
+        let mut parts = Vec::new();
+        let mut current_id = file_id;
+
+        loop {
+            let details = self.mutli_get(&[current_id]).await?;
+            let detail = match details.get(&current_id) {
+                Some(d) => d,
+                None => break,
+            };
+            parts.push(detail.file_name.clone());
+            match detail.parent_file_id {
+                Some(pid) if pid > 0 => current_id = pid,
+                _ => break,
+            }
+        }
+
+        parts.reverse();
+        Ok(format!("/{}", parts.join("/")))
     }
 
     async fn get<T: DeserializeOwned>(
@@ -599,9 +488,7 @@ impl Client {
     ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
         let headers = Some(vec![
-            (APP_VERSION_KEY, APP_VERSION_VALUE),
             (PLATFORM_KEY, PLATFORM_VALUE),
-            (REFERER_KEY, REFERER_VALUE),
             (http::AUTH_KEY, token.as_str()),
         ]);
         let response: CommonResponse<T> = http::get(url.as_str(), query, headers).await?;
@@ -616,26 +503,7 @@ impl Client {
     ) -> RequestResult<T> {
         let token = format!("Bearer {}", self.get_token().await?);
         let headers = Some(vec![
-            (APP_VERSION_KEY, APP_VERSION_VALUE),
             (PLATFORM_KEY, PLATFORM_VALUE),
-            (REFERER_KEY, REFERER_VALUE),
-            (http::AUTH_KEY, token.as_str()),
-        ]);
-        let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
-        self.process_response(response)
-    }
-
-    async fn post_open_api<P: Serialize, T: DeserializeOwned>(
-        &self,
-        url: String,
-        query: Option<Vec<(&str, &str)>>,
-        payload: Option<&P>,
-    ) -> RequestResult<T> {
-        let token = format!("Bearer {}", self.get_open_api_token().await?);
-        let headers = Some(vec![
-            (APP_VERSION_KEY, APP_VERSION_VALUE),
-            (PLATFORM_KEY, PLATFORM_VALUE),
-            (REFERER_KEY, REFERER_VALUE),
             (http::AUTH_KEY, token.as_str()),
         ]);
         let response: CommonResponse<T> = http::post(url.as_str(), query, headers, payload).await?;
@@ -663,6 +531,7 @@ impl Client {
                 let token = self.read_token_from_cache_file(TOKEN_CACHE_FILE)?;
                 if let Some(t) = token
                     && !self.is_expired(&t)
+                    && !t.refresh_token.is_empty()
                 {
                     *token_guard = Some(t.clone());
                     return Ok(t.access_token.to_owned());
@@ -672,41 +541,6 @@ impl Client {
 
         let cached = self.get_access_token().await?;
         self.write_token_to_cache_file(TOKEN_CACHE_FILE, &cached)?;
-        *token_guard = Some(cached.clone());
-        Ok(cached.access_token.to_owned())
-    }
-
-    async fn get_open_api_token(&self) -> RequestResult<String> {
-        {
-            let token_guard = self.open_api_token.read().await;
-            if let Some(t) = token_guard.as_ref()
-                && !self.is_expired(t)
-            {
-                return Ok(t.access_token.to_owned());
-            }
-        }
-
-        let mut token_guard = self.open_api_token.write().await;
-        match token_guard.as_ref() {
-            Some(t) => {
-                if !self.is_expired(t) {
-                    return Ok(t.access_token.to_owned());
-                }
-            }
-            None => {
-                let token = self.read_token_from_cache_file(OPEN_API_TOKEN_CACHE_FILE)?;
-                if let Some(t) = token
-                    && !self.is_expired(&t)
-                    && !t.refresh_token.is_empty()
-                {
-                    *token_guard = Some(t.clone());
-                    return Ok(t.access_token.to_owned());
-                }
-            }
-        }
-
-        let cached = self.get_open_api_access_token().await?;
-        self.write_token_to_cache_file(OPEN_API_TOKEN_CACHE_FILE, &cached)?;
         *token_guard = Some(cached.clone());
         Ok(cached.access_token.to_owned())
     }
@@ -734,7 +568,12 @@ impl Client {
 
     #[inline]
     fn build_api_url(&self, path: &str) -> String {
-        format!("{}{}", self.host, path)
+        format!("{}{}", self.open_api_base, path)
+    }
+
+    #[inline]
+    fn build_web_api_url(&self, path: &str) -> String {
+        format!("{}{}", WEB_API_BASE, path)
     }
 
     fn read_token_from_cache_file(&self, file_name: &str) -> RequestResult<Option<CachedToken>> {
@@ -797,40 +636,8 @@ impl Client {
     }
 
     async fn get_access_token(&self) -> RequestResult<CachedToken> {
-        let response: CommonResponse<CachedToken> = http::post(
-            self.build_api_url("/api/user/sign_in"),
-            None,
-            Some(vec![
-                (APP_VERSION_KEY, APP_VERSION_VALUE),
-                (PLATFORM_KEY, PLATFORM_VALUE),
-                (REFERER_KEY, REFERER_VALUE),
-            ]),
-            Some(&json!({
-                "passport": self.passport,
-                "password": self.password,
-                "remember": true,
-            })),
-        )
-        .await?;
-
-        match response.code {
-            200 => match response.data {
-                Some(d) => Ok(d),
-                None => Err(RequestError::Other(format!(
-                    "pan123 sign_in error, data is empty, code: {}, message: {}",
-                    response.code, response.message
-                ))),
-            },
-            _ => Err(RequestError::Other(format!(
-                "pan123 sign_in error, code: {}, message: {}",
-                response.code, response.message
-            ))),
-        }
-    }
-
-    async fn get_open_api_access_token(&self) -> RequestResult<CachedToken> {
         let rt = self
-            .read_token_from_cache_file(OPEN_API_TOKEN_CACHE_FILE)?
+            .read_token_from_cache_file(TOKEN_CACHE_FILE)?
             .map(|t| t.refresh_token.clone())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| self.initial_refresh_token.clone());
@@ -886,24 +693,6 @@ impl Client {
     }
 }
 
-fn resolve_path_from_details(abs_path: &str, files: &HashMap<i64, FileDetail>) -> Option<String> {
-    let file_ids = abs_path
-        .split('/')
-        .filter_map(|s| s.parse::<i64>().ok())
-        .collect::<Vec<_>>();
-    if file_ids.is_empty() {
-        return None;
-    }
-
-    let mut parts = Vec::with_capacity(file_ids.len());
-    for file_id in file_ids {
-        let file = files.get(&file_id)?;
-        parts.push(file.file_name.clone());
-    }
-
-    Some(format!("/{}", parts.join("/")))
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -911,7 +700,7 @@ mod tests {
     use super::*;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{body_json, header, method, path, query_param},
+        matchers::{header, method, path, query_param},
     };
 
     fn unique_cache_dir() -> String {
@@ -926,9 +715,7 @@ mod tests {
     }
 
     async fn client(server: &MockServer) -> Client {
-        let client = Client::with_host(
-            "user",
-            "pass",
+        let client = Client::with_open_api_base(
             &format!("{}/refresh", server.uri()),
             "refresh-token",
             &unique_cache_dir(),
@@ -947,25 +734,21 @@ mod tests {
         file_id: i64,
         file_name: &str,
         file_type: i32,
-        abs_path: &str,
+        parent_file_id: i64,
     ) -> serde_json::Value {
         serde_json::json!({
-            "FileId": file_id,
-            "FileName": file_name,
-            "Type": file_type,
-            "Size": 1234,
-            "CreateAt": "2024-01-01T00:00:00Z",
-            "UpdateAt": "2024-01-01T00:00:00Z",
-            "Etag": format!("etag-{file_id}"),
-            "AbsPath": abs_path,
+            "fileId": file_id,
+            "filename": file_name,
+            "type": file_type,
+            "size": 1234,
+            "etag": format!("etag-{file_id}"),
+            "parentFileId": parent_file_id,
         })
     }
 
     #[test]
     fn process_response_maps_common_error_codes() {
         let client = Client::new(
-            "user",
-            "pass",
             "http://api.test/refresh",
             "refresh-token",
             "/tmp/pan123-tests",
@@ -1024,13 +807,7 @@ mod tests {
     #[test]
     fn write_then_read_token_cache_file_round_trips() {
         let cache_dir = unique_cache_dir();
-        let client = Client::new(
-            "user",
-            "pass",
-            "http://api.test/refresh",
-            "refresh-token",
-            &cache_dir,
-        );
+        let client = Client::new("http://api.test/refresh", "refresh-token", &cache_dir);
         let token = CachedToken {
             access_token: "cached-token".to_string(),
             refresh_token: "cached-refresh".to_string(),
@@ -1057,20 +834,17 @@ mod tests {
         let client = client(&server).await;
 
         Mock::given(method("GET"))
-            .and(path("/api/file/list/new"))
+            .and(path("/api/v2/file/list"))
             .and(query_param("parentFileId", "42"))
-            .and(query_param("operateType", "1"))
-            .and(header("authorization", "Bearer test-token"))
+            .and(header("Platform", "open_platform"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "Next": "0",
-                    "Len": 2,
-                    "IsFirst": true,
-                    "InfoList": [
-                        file_json(10, "Season 1", 1, "/10"),
-                        file_json(11, "episode.mkv", 0, "/11")
+                    "lastFileId": -1,
+                    "fileList": [
+                        file_json(10, "Season 1", 1, 42),
+                        file_json(11, "episode.mkv", 0, 42)
                     ]
                 }
             })))
@@ -1084,49 +858,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_download_url_returns_prefixed_path() {
+    async fn get_download_url_returns_url() {
         let server = MockServer::start().await;
         let client = client(&server).await;
 
-        Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .and(header("authorization", "Bearer test-token"))
-            .and(body_json(serde_json::json!({
-                "fileIdList": [{"FileId": 99}]
-            })))
+        Mock::given(method("GET"))
+            .and(path("/api/v1/file/download_info"))
+            .and(query_param("fileId", "99"))
+            .and(header("Platform", "open_platform"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": [{
-                        "FileId": 99,
-                        "FileName": "movie.mkv",
-                        "Size": 2048,
-                        "Etag": "etag-99",
-                        "S3KeyFlag": "flag-99"
-                    }]
-                }
-            })))
-            .mount(&server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/v2/file/download_info"))
-            .and(header("authorization", "Bearer test-token"))
-            .and(body_json(serde_json::json!({
-                "driveId": 0,
-                "fileId": 99,
-                "etag": "etag-99",
-                "size": 2048,
-                "s3keyFlag": "flag-99",
-                "fileName": "movie.mkv",
-                "type": 0
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "code": 0,
-                "message": "ok",
-                "data": {
-                    "downloadPath": "/download/movie.mkv",
-                    "dispatchList": [{"prefix": "https://cdn.example.com"}]
+                    "downloadUrl": "https://cdn.example.com/download/movie.mkv"
                 }
             })))
             .mount(&server)
@@ -1138,60 +882,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_download_url_returns_not_found_when_multi_get_misses() {
+    async fn get_download_url_returns_error_when_url_is_empty() {
         let server = MockServer::start().await;
         let client = client(&server).await;
 
-        Mock::given(method("POST"))
-            .and(path("/api/file/info"))
+        Mock::given(method("GET"))
+            .and(path("/api/v1/file/download_info"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": []
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let error = client.get_download_url(99).await.unwrap_err();
-
-        match error {
-            RequestError::NotFound(message) => assert!(message.contains("file 99 not found")),
-            other => panic!("expected not found, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn get_download_url_returns_error_when_dispatch_is_empty() {
-        let server = MockServer::start().await;
-        let client = client(&server).await;
-
-        Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "code": 0,
-                "message": "ok",
-                "data": {
-                    "infoList": [{
-                        "FileId": 99,
-                        "FileName": "movie.mkv",
-                        "Size": 2048,
-                        "Etag": "etag-99",
-                        "S3KeyFlag": "flag-99"
-                    }]
-                }
-            })))
-            .mount(&server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/api/v2/file/download_info"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "code": 0,
-                "message": "ok",
-                "data": {
-                    "downloadPath": "/download/movie.mkv",
-                    "dispatchList": []
+                    "downloadUrl": ""
                 }
             })))
             .mount(&server)
@@ -1201,7 +902,7 @@ mod tests {
 
         match error {
             RequestError::Other(message) => {
-                assert!(message.contains("no dispatch available"));
+                assert!(message.contains("empty download url"));
             }
             other => panic!("expected request error, got {other:?}"),
         }
@@ -1213,40 +914,29 @@ mod tests {
         let client = client(&server).await;
 
         Mock::given(method("GET"))
-            .and(path("/api/file/list/new"))
-            .and(query_param("SearchData", "movie.mkv"))
-            .and(query_param("operateType", "2"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("searchData", "movie.mkv"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "Next": "0",
-                    "Len": 1,
-                    "IsFirst": true,
-                    "InfoList": [
-                        file_json(30, "movie.mkv", 0, "/10/20/30")
+                    "lastFileId": -1,
+                    "fileList": [
+                        file_json(30, "movie.mkv", 0, 20)
                     ]
                 }
             })))
             .mount(&server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .and(body_json(serde_json::json!({
-                "fileIdList": [
-                    {"FileId": 10},
-                    {"FileId": 20},
-                    {"FileId": 30}
-                ]
-            })))
+            .and(path("/api/v1/file/infos"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": [
-                        {"FileId": 10, "FileName": "Shows", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
-                        {"FileId": 20, "FileName": "Season 1", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
-                        {"FileId": 30, "FileName": "movie.mkv", "Size": 1234, "Etag": "e30", "S3KeyFlag": "s30"}
+                    "fileList": [
+                        {"fileId": 20, "filename": "Season 1", "size": 0, "etag": "e20", "parentFileID": 10},
+                        {"fileId": 10, "filename": "Shows", "size": 0, "etag": "e10", "parentFileID": 0}
                     ]
                 }
             })))
@@ -1267,40 +957,30 @@ mod tests {
         let client = client(&server).await;
 
         Mock::given(method("GET"))
-            .and(path("/api/file/list/new"))
-            .and(query_param("SearchData", "breaking"))
-            .and(query_param("operateType", "2"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("searchData", "breaking"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "Next": "0",
-                    "Len": 1,
-                    "IsFirst": true,
-                    "InfoList": [
-                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, "/10/20/30")
+                    "lastFileId": -1,
+                    "fileList": [
+                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, 20)
                     ]
                 }
             })))
             .mount(&server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .and(body_json(serde_json::json!({
-                "fileIdList": [
-                    {"FileId": 10},
-                    {"FileId": 20},
-                    {"FileId": 30}
-                ]
-            })))
+            .and(path("/api/v1/file/infos"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": [
-                        {"FileId": 10, "FileName": "remote", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
-                        {"FileId": 20, "FileName": "电视剧", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
-                        {"FileId": 30, "FileName": "Breaking Bad (2008) {tmdb-1396}", "Size": 0, "Etag": "e30", "S3KeyFlag": "s30"}
+                    "fileList": [
+                        {"fileId": 30, "filename": "Breaking Bad (2008) {tmdb-1396}", "size": 0, "etag": "e30", "parentFileID": 20},
+                        {"fileId": 20, "filename": "电视剧", "size": 0, "etag": "e20", "parentFileID": 10},
+                        {"fileId": 10, "filename": "remote", "size": 0, "etag": "e10", "parentFileID": 0}
                     ]
                 }
             })))
@@ -1321,50 +1001,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_dirs_with_paths_skips_non_dirs_before_resolving_paths() {
+    async fn search_dirs_with_paths_skips_non_dirs() {
         let server = MockServer::start().await;
         let client = client(&server).await;
 
         Mock::given(method("GET"))
-            .and(path("/api/file/list/new"))
-            .and(query_param("SearchData", "breaking"))
-            .and(query_param("operateType", "2"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("searchData", "breaking"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "Next": "0",
-                    "Len": 2,
-                    "IsFirst": true,
-                    "InfoList": [
-                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, "/10/20/30"),
-                        file_json(31, "Breaking Bad (2008) {tmdb-1396}.mkv", 0, "/10/20/31")
+                    "lastFileId": -1,
+                    "fileList": [
+                        file_json(30, "Breaking Bad (2008) {tmdb-1396}", 1, 20),
+                        file_json(31, "Breaking Bad (2008) {tmdb-1396}.mkv", 0, 20)
                     ]
                 }
             })))
             .mount(&server)
             .await;
         Mock::given(method("POST"))
-            .and(path("/api/file/info"))
-            .and(body_json(serde_json::json!({
-                "fileIdList": [
-                    {"FileId": 10},
-                    {"FileId": 20},
-                    {"FileId": 30}
-                ]
-            })))
+            .and(path("/api/v1/file/infos"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "code": 0,
                 "message": "ok",
                 "data": {
-                    "infoList": [
-                        {"FileId": 10, "FileName": "remote", "Size": 0, "Etag": "e10", "S3KeyFlag": "s10"},
-                        {"FileId": 20, "FileName": "电视剧", "Size": 0, "Etag": "e20", "S3KeyFlag": "s20"},
-                        {"FileId": 30, "FileName": "Breaking Bad (2008) {tmdb-1396}", "Size": 0, "Etag": "e30", "S3KeyFlag": "s30"}
+                    "fileList": [
+                        {"fileId": 30, "filename": "Breaking Bad (2008) {tmdb-1396}", "size": 0, "etag": "e30", "parentFileID": 20},
+                        {"fileId": 20, "filename": "电视剧", "size": 0, "etag": "e20", "parentFileID": 10},
+                        {"fileId": 10, "filename": "remote", "size": 0, "etag": "e10", "parentFileID": 0}
                     ]
                 }
             })))
-            .expect(1)
             .mount(&server)
             .await;
 
