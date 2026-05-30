@@ -44,7 +44,9 @@ If any of the above is missing and blocks confident implementation, the requirem
 
 ### Thinking Before Coding
 
-Do not assume. Do not hide confusion. Surface tradeoffs.
+These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 - State assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them instead of picking silently.
@@ -75,7 +77,17 @@ Transform tasks into verifiable goals, for example:
 - "Fix the bug" → write a test that reproduces it, then make it pass
 - "Refactor X" → ensure tests pass before and after
 
-For multi-step tasks, state a brief plan with verification steps. Strong success criteria allow independent execution; weak criteria such as "make it work" require constant clarification.
+For multi-step tasks, state a brief plan with verification steps:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria allow independent execution; weak criteria such as "make it work" require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ### Module Dependency Constraints
 
