@@ -95,20 +95,16 @@ mod tests {
                 file_name: "Season 01".into(),
                 file_type: 1,
                 size: 0,
-                _created_at: time::OffsetDateTime::UNIX_EPOCH,
-                _updated_at: time::OffsetDateTime::UNIX_EPOCH,
                 etag: String::new(),
-                abs_path: String::new(),
+                parent_file_id: None,
             },
             pan123::File {
                 file_id: 2,
                 file_name: "movie.mkv".into(),
                 file_type: 0,
                 size: 100,
-                _created_at: time::OffsetDateTime::UNIX_EPOCH,
-                _updated_at: time::OffsetDateTime::UNIX_EPOCH,
                 etag: "hash".into(),
-                abs_path: String::new(),
+                parent_file_id: None,
             },
         ];
 
