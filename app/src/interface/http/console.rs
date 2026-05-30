@@ -416,8 +416,7 @@ async fn import_files(
     }
 
     let mut results = Vec::new();
-    for (raw_file, descriptions) in ready_files {
-        let file_id = body.ids.iter().find(|_| true).copied().unwrap_or(0);
+    for (file_id, raw_file, descriptions) in ready_files {
         let source = ImportSource {
             kind: ImportSourceKind::FileIndex,
             raw: format!("file_index:{}", raw_file.name),
@@ -453,9 +452,13 @@ async fn import_files(
                             ("skipped".into(), String::new(), None)
                         }
                     };
+                    let status = match item {
+                        crate::application::import::ImportedMedia::Skipped { .. } => "skipped",
+                        _ => "succeeded",
+                    };
                     results.push(ImportFileResult {
                         id: file_id,
-                        status: "succeeded".into(),
+                        status: status.into(),
                         title: Some(title),
                         year: Some(year),
                         size,
@@ -851,7 +854,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn import_files_returns_400_for_empty_ids() {
+    async fn import_files_returns_503_for_empty_ids_without_import_service() {
         let router = router_with(fresh_repo().await).await;
 
         let response = router

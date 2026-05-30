@@ -59,14 +59,17 @@ where
     pub async fn get_import_ready_files(
         &self,
         ids: &[i64],
-    ) -> AppResult<Vec<(RawFile, Vec<String>)>> {
+    ) -> AppResult<Vec<(i64, RawFile, Vec<String>)>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
         let records = self.repo.get_records_by_ids(ids).await?;
         Ok(records
             .into_iter()
-            .filter_map(|record| fingerprint_to_raw_files(&record))
+            .filter_map(|record| {
+                let (raw, descs) = fingerprint_to_raw_files(&record)?;
+                Some((record.id, raw, descs))
+            })
             .collect())
     }
 }
@@ -381,7 +384,8 @@ mod tests {
         let results = service.get_import_ready_files(&[42]).await.unwrap();
         assert_eq!(results.len(), 1);
 
-        let (raw, descriptions) = &results[0];
+        let (id, raw, descriptions) = &results[0];
+        assert_eq!(*id, 42);
         assert_eq!(raw.name, "Movie.X.2024.1080p.BluRay.mkv");
         assert_eq!(raw.path, "/movies");
         assert_eq!(raw.size, 1000);
@@ -419,7 +423,8 @@ mod tests {
 
         let results = service.get_import_ready_files(&[1]).await.unwrap();
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0].0.hash, FileHash::Sha1(v) if v == "aabbccdd"));
-        assert!(results[0].1.is_empty());
+        assert_eq!(results[0].0, 1);
+        assert!(matches!(&results[0].1.hash, FileHash::Sha1(v) if v == "aabbccdd"));
+        assert!(results[0].2.is_empty());
     }
 }
