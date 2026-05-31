@@ -1,8 +1,12 @@
+use std::collections::HashSet;
+
 use sha2::{Digest, Sha256};
 use tracing::info;
 
 use crate::{
-    application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
+    application::ports::{
+        FileIndexRecordInput, FileIndexRepository, FileLocationRecord, FileSearchRecord,
+    },
     domain::media::{FileType, Metadata},
     domain::share::{FileHash, RawFile},
     error::AppResult,
@@ -99,9 +103,7 @@ fn fingerprint_to_raw_files(record: &FileSearchRecord) -> Option<(RawFile, Vec<S
     Some((raw, all_descriptions))
 }
 
-fn select_richest_location(
-    locations: &[crate::application::ports::FileLocationRecord],
-) -> Option<&crate::application::ports::FileLocationRecord> {
+fn select_richest_location(locations: &[FileLocationRecord]) -> Option<&FileLocationRecord> {
     locations.iter().max_by_key(|loc| {
         let meta = Metadata::parse(&loc.file_name);
         metadata_richness(&meta)
@@ -109,46 +111,24 @@ fn select_richest_location(
 }
 
 fn metadata_richness(meta: &Metadata) -> usize {
-    let mut count = 0;
-    if !meta.titles.is_empty() {
-        count += 1;
-    }
-    if !meta.year.is_empty() {
-        count += 1;
-    }
-    if !meta.resolution.is_empty() {
-        count += 1;
-    }
-    if !meta.quality.is_empty() {
-        count += 1;
-    }
-    if !meta.video_codec.is_empty() {
-        count += 1;
-    }
-    if !meta.audio_codec.is_empty() {
-        count += 1;
-    }
-    if meta.season_number.is_some() {
-        count += 1;
-    }
-    if meta.episode_number.is_some() {
-        count += 1;
-    }
-    count
+    usize::from(!meta.titles.is_empty())
+        + usize::from(!meta.year.is_empty())
+        + usize::from(!meta.resolution.is_empty())
+        + usize::from(!meta.quality.is_empty())
+        + usize::from(!meta.video_codec.is_empty())
+        + usize::from(!meta.audio_codec.is_empty())
+        + usize::from(meta.season_number.is_some())
+        + usize::from(meta.episode_number.is_some())
 }
 
-fn collect_unique_descriptions(
-    locations: &[crate::application::ports::FileLocationRecord],
-) -> Vec<String> {
-    let mut seen = Vec::new();
-    for loc in locations {
-        for desc in &loc.descriptions {
-            if !seen.iter().any(|existing: &String| existing == desc) {
-                seen.push(desc.clone());
-            }
-        }
-    }
-    seen
+fn collect_unique_descriptions(locations: &[FileLocationRecord]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    locations
+        .iter()
+        .flat_map(|loc| &loc.descriptions)
+        .filter(|desc| seen.insert((*desc).clone()))
+        .cloned()
+        .collect()
 }
 
 pub fn location_hash(file_path: &str, file_name: &str) -> String {

@@ -209,11 +209,11 @@ fn file_search_to_json(records: Vec<FileSearchRecord>) -> FileSearchPageJson {
     }
 }
 
-fn file_location_to_json(location: FileLocationRecord) -> FileLocationJson {
+fn file_location_to_json(loc: FileLocationRecord) -> FileLocationJson {
     FileLocationJson {
-        file_name: location.file_name,
-        file_path: location.file_path,
-        descriptions: location.descriptions,
+        file_name: loc.file_name,
+        file_path: loc.file_path,
+        descriptions: loc.descriptions,
     }
 }
 
@@ -330,17 +330,10 @@ fn detail_to_json(view: &ImportRecordView) -> DetailJson {
         .summary_json
         .as_deref()
         .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
-    let error = match (view.error_kind.as_ref(), view.error_message.as_ref()) {
-        (Some(kind), Some(message)) => Some(ImportRecordErrorJson {
-            kind: kind.clone(),
-            message: message.clone(),
-        }),
-        (Some(kind), None) => Some(ImportRecordErrorJson {
-            kind: kind.clone(),
-            message: String::new(),
-        }),
-        _ => None,
-    };
+    let error = view.error_kind.as_ref().map(|kind| ImportRecordErrorJson {
+        kind: kind.clone(),
+        message: view.error_message.clone().unwrap_or_default(),
+    });
     DetailJson {
         id: view.id,
         source_kind: view.source_kind.as_str().to_owned(),
@@ -368,14 +361,11 @@ async fn import_files(
     State(ctx): State<ConsoleContext>,
     axum::Json(body): axum::Json<ImportFilesRequest>,
 ) -> Response {
-    let Some(import_service) = ctx.import_service.as_ref() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "import service not available",
-        )
-            .into_response();
-    };
-    let Some(recorded_import) = ctx.recorded_import.as_ref() else {
+    let Some((import_service, recorded_import)) = ctx
+        .import_service
+        .as_ref()
+        .zip(ctx.recorded_import.as_ref())
+    else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             "import service not available",

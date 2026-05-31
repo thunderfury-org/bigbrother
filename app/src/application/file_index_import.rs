@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use crate::{
     application::{
         file_index::FileIndexService,
-        import::MetadataLookup,
+        import::{ImportedMedia, MetadataLookup},
         import_ports::MediaImporter,
         ports::{FileIndexRepository, ImportRecordRepository},
         recorded_import::RecordedImportService,
@@ -10,7 +12,7 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Default, serde::Serialize)]
 pub struct ImportFileResult {
     pub id: i64,
     pub status: String,
@@ -22,6 +24,57 @@ pub struct ImportFileResult {
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+impl ImportFileResult {
+    fn skipped(id: i64, reason: &str) -> Self {
+        Self {
+            id,
+            status: "skipped".into(),
+            error: Some(reason.into()),
+            ..Default::default()
+        }
+    }
+
+    fn failed(id: i64, message: String) -> Self {
+        Self {
+            id,
+            status: "failed".into(),
+            error: Some(message),
+            ..Default::default()
+        }
+    }
+
+    fn from_imported(id: i64, item: &ImportedMedia) -> Self {
+        match item {
+            ImportedMedia::Movie {
+                title, year, size, ..
+            } => Self {
+                id,
+                status: "succeeded".into(),
+                title: Some(title.clone()),
+                year: Some(year.clone()),
+                size: Some(*size),
+                error: None,
+            },
+            ImportedMedia::Tv { name, year, .. } => Self {
+                id,
+                status: "succeeded".into(),
+                title: Some(name.clone()),
+                year: Some(year.clone()),
+                size: None,
+                error: None,
+            },
+            ImportedMedia::Skipped { .. } => Self {
+                id,
+                status: "skipped".into(),
+                title: Some("skipped".into()),
+                year: Some(String::new()),
+                size: None,
+                error: None,
+            },
+        }
+    }
 }
 
 pub struct FileIndexImportService<R> {
@@ -45,8 +98,7 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
     {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
 
-        let found_ids: std::collections::HashSet<i64> =
-            ready_files.iter().map(|(id, _, _)| *id).collect();
+        let found_ids: HashSet<i64> = ready_files.iter().map(|(id, _, _)| *id).collect();
         let missing_ids: Vec<i64> = ids
             .iter()
             .copied()
@@ -62,14 +114,10 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
         let mut results = Vec::new();
 
         for missing_id in missing_ids {
-            results.push(ImportFileResult {
-                id: missing_id,
-                status: "skipped".into(),
-                title: None,
-                year: None,
-                size: None,
-                error: Some("not found or unsupported hash type".into()),
-            });
+            results.push(ImportFileResult::skipped(
+                missing_id,
+                "not found or unsupported hash type",
+            ));
         }
 
         for (file_id, raw_file, descriptions) in ready_files {
@@ -92,54 +140,15 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
             match outcome {
                 Ok(imported) => {
                     for item in &imported {
-                        let (title, year, size) = match item {
-                            crate::application::import::ImportedMedia::Movie {
-                                title,
-                                year,
-                                size,
-                                ..
-                            } => (title.clone(), year.clone(), Some(*size)),
-                            crate::application::import::ImportedMedia::Tv {
-                                name, year, ..
-                            } => (name.clone(), year.clone(), None),
-                            crate::application::import::ImportedMedia::Skipped { .. } => {
-                                ("skipped".into(), String::new(), None)
-                            }
-                        };
-                        let status = match item {
-                            crate::application::import::ImportedMedia::Skipped { .. } => "skipped",
-                            _ => "succeeded",
-                        };
-                        results.push(ImportFileResult {
-                            id: file_id,
-                            status: status.into(),
-                            title: Some(title),
-                            year: Some(year),
-                            size,
-                            error: None,
-                        });
+                        results.push(ImportFileResult::from_imported(file_id, item));
                     }
                     if imported.is_empty() {
-                        results.push(ImportFileResult {
-                            id: file_id,
-                            status: "skipped".into(),
-                            title: None,
-                            year: None,
-                            size: None,
-                            error: Some("no media matched".into()),
-                        });
+                        results.push(ImportFileResult::skipped(file_id, "no media matched"));
                     }
                 }
                 Err(err) => {
                     tracing::warn!(file_id, error = %err, "import from file index failed");
-                    results.push(ImportFileResult {
-                        id: file_id,
-                        status: "failed".into(),
-                        title: None,
-                        year: None,
-                        size: None,
-                        error: Some(err.to_string()),
-                    });
+                    results.push(ImportFileResult::failed(file_id, err.to_string()));
                 }
             }
         }
