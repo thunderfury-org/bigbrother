@@ -1,6 +1,7 @@
 pub mod delete_media;
 pub mod emby_proxy;
 pub mod file_index;
+pub mod file_index_import;
 pub mod import;
 pub mod import_ports;
 pub mod manage_keywords;

@@ -14,15 +14,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::{
         file_index::FileIndexService,
+        file_index_import::{FileIndexImportService, ImportFileResult},
         ports::{
             FileIndexRepository, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
             ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
         },
         recorded_import::RecordedImportService,
     },
-    domain::import_record::{
-        ImportSource, ImportSourceKind, ImportStatus, RecordSummary, SummaryItem,
-    },
+    domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
     error::AppError,
     infrastructure::{
         repo::{
@@ -365,20 +364,6 @@ struct ImportFilesResponse {
     results: Vec<ImportFileResult>,
 }
 
-#[derive(Debug, Serialize)]
-struct ImportFileResult {
-    id: i64,
-    status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    year: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    size: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
 async fn import_files(
     State(ctx): State<ConsoleContext>,
     axum::Json(body): axum::Json<ImportFilesRequest>,
@@ -402,92 +387,16 @@ async fn import_files(
         return bad_request("ids must not be empty".into());
     }
 
-    let ready_files = match ctx
-        .file_index_service
-        .get_import_ready_files(&body.ids)
+    let service = FileIndexImportService::new(ctx.file_index_service.as_ref().clone());
+    let mut importer = import_service.as_ref().clone();
+
+    let results = match service
+        .import_from_fingerprints(&body.ids, &mut importer, recorded_import)
         .await
     {
-        Ok(files) => files,
+        Ok(results) => results,
         Err(err) => return app_error_to_response(err),
     };
-
-    if ready_files.is_empty() {
-        return bad_request("no valid files found for the given ids".into());
-    }
-
-    let mut results = Vec::new();
-    for (file_id, raw_file, descriptions) in ready_files {
-        let source = ImportSource {
-            kind: ImportSourceKind::FileIndex,
-            raw: format!("file_index:{}", raw_file.name),
-        };
-
-        let mut import_service = import_service.as_ref().clone();
-        let raw_files = vec![raw_file];
-        let recorded = recorded_import.as_ref();
-
-        let outcome = recorded
-            .execute(source, || async {
-                let mut metadata_lookup = crate::application::import::MetadataLookup::default();
-                let media_files =
-                    metadata_lookup.build_media_files(raw_files.clone(), descriptions);
-                import_service.transfer_media_files(&media_files).await
-            })
-            .await;
-
-        match outcome {
-            Ok(imported) => {
-                for item in &imported {
-                    let (title, year, size) = match item {
-                        crate::application::import::ImportedMedia::Movie {
-                            title,
-                            year,
-                            size,
-                            ..
-                        } => (title.clone(), year.clone(), Some(*size)),
-                        crate::application::import::ImportedMedia::Tv { name, year, .. } => {
-                            (name.clone(), year.clone(), None)
-                        }
-                        crate::application::import::ImportedMedia::Skipped { .. } => {
-                            ("skipped".into(), String::new(), None)
-                        }
-                    };
-                    let status = match item {
-                        crate::application::import::ImportedMedia::Skipped { .. } => "skipped",
-                        _ => "succeeded",
-                    };
-                    results.push(ImportFileResult {
-                        id: file_id,
-                        status: status.into(),
-                        title: Some(title),
-                        year: Some(year),
-                        size,
-                        error: None,
-                    });
-                }
-                if imported.is_empty() {
-                    results.push(ImportFileResult {
-                        id: file_id,
-                        status: "skipped".into(),
-                        title: None,
-                        year: None,
-                        size: None,
-                        error: Some("no media matched".into()),
-                    });
-                }
-            }
-            Err(err) => {
-                results.push(ImportFileResult {
-                    id: file_id,
-                    status: "failed".into(),
-                    title: None,
-                    year: None,
-                    size: None,
-                    error: Some(err.to_string()),
-                });
-            }
-        }
-    }
 
     json_response(StatusCode::OK, &ImportFilesResponse { results })
 }
