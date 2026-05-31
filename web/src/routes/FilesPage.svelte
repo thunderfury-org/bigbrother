@@ -73,6 +73,7 @@
       errorMessage = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
     } finally {
       importing = false;
+      selectedIds = new Set();
     }
   }
 

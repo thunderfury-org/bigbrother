@@ -78,7 +78,15 @@ fn fingerprint_to_raw_files(record: &FileSearchRecord) -> Option<(RawFile, Vec<S
     let best = select_richest_location(&record.locations)?;
     let hash = match record.hash_type.as_str() {
         "sha1" => FileHash::Sha1(record.hash_value.clone()),
-        _ => FileHash::Md5(record.hash_value.clone()),
+        "md5" => FileHash::Md5(record.hash_value.clone()),
+        other => {
+            tracing::warn!(
+                hash_type = other,
+                id = record.id,
+                "unsupported hash type, skipping"
+            );
+            return None;
+        }
     };
     let all_descriptions = collect_unique_descriptions(&record.locations);
     let raw = RawFile {

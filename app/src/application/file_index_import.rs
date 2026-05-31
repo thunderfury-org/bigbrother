@@ -44,6 +44,15 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
         RecordRepo: ImportRecordRepository,
     {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
+
+        let found_ids: std::collections::HashSet<i64> =
+            ready_files.iter().map(|(id, _, _)| *id).collect();
+        let missing_ids: Vec<i64> = ids
+            .iter()
+            .copied()
+            .filter(|id| !found_ids.contains(id))
+            .collect();
+
         if ready_files.is_empty() {
             return Err(AppError::InvalidParameter(
                 "no valid files found for the given ids".into(),
@@ -51,10 +60,22 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
         }
 
         let mut results = Vec::new();
+
+        for missing_id in missing_ids {
+            results.push(ImportFileResult {
+                id: missing_id,
+                status: "skipped".into(),
+                title: None,
+                year: None,
+                size: None,
+                error: Some("not found or unsupported hash type".into()),
+            });
+        }
+
         for (file_id, raw_file, descriptions) in ready_files {
             let source = ImportSource {
                 kind: ImportSourceKind::FileIndex,
-                raw: format!("file_index:{}", raw_file.name),
+                raw: format!("file_index:{}:{}", file_id, raw_file.name),
             };
 
             let raw_files = vec![raw_file];
