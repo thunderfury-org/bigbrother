@@ -294,6 +294,10 @@ mod tests {
         ) -> AppResult<Vec<FileSearchRecord>> {
             Ok(Vec::new())
         }
+
+        async fn get_records_by_ids(&self, _ids: &[i64]) -> AppResult<Vec<FileSearchRecord>> {
+            Ok(Vec::new())
+        }
     }
 
     #[derive(Clone, Default)]

@@ -1,5 +1,7 @@
 use super::{metadata, tmdb_info};
-use crate::application::import_ports::{MetadataCatalog, TitleExtractor};
+use crate::application::import_ports::{
+    ImportLocalStore, LibraryGateway, MediaImporter, MetadataCatalog, TitleExtractor,
+};
 
 #[derive(Clone)]
 pub(crate) struct TransferWorkflow<L, M, F, T> {
@@ -29,5 +31,20 @@ impl<L, M, F, T> TransferWorkflow<L, M, F, T> {
 
     pub(super) fn library_gateway(&self) -> &L {
         &self.library_gateway
+    }
+}
+
+impl<L, M, F, T> MediaImporter for TransferWorkflow<L, M, F, T>
+where
+    L: LibraryGateway + Send + Sync + 'static,
+    M: MetadataCatalog + Send + Sync + 'static,
+    F: ImportLocalStore + Send + Sync + 'static,
+    T: TitleExtractor + Send + Sync + 'static,
+{
+    async fn transfer_media_files(
+        &mut self,
+        media_files: &[crate::domain::import::inner::MediaFile],
+    ) -> crate::error::AppResult<Vec<super::ImportedMedia>> {
+        self.transfer_media_files(media_files).await
     }
 }

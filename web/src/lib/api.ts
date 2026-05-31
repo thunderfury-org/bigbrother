@@ -80,6 +80,7 @@ export interface FileSearchPage {
 }
 
 export interface FileSearchItem {
+  id: number;
   size: number;
   hash_type: string;
   hash_value: string;
@@ -97,4 +98,30 @@ export async function searchFiles(keyword: string, limit: number): Promise<FileS
   if (keyword) params.set('q', keyword);
   params.set('limit', String(limit));
   return fetchJson<FileSearchPage>(`/api/files?${params.toString()}`);
+}
+
+export interface ImportFileResult {
+  id: number;
+  status: string;
+  title?: string;
+  year?: string;
+  size?: number;
+  error?: string;
+}
+
+export interface ImportFilesResponse {
+  results: ImportFileResult[];
+}
+
+export async function importFiles(ids: number[]): Promise<ImportFilesResponse> {
+  const res = await fetch('/api/files/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  return (await res.json()) as ImportFilesResponse;
 }

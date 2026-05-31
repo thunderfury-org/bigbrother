@@ -102,6 +102,7 @@ pub struct FileLocationRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileSearchRecord {
+    pub id: i64,
     pub size: u64,
     pub hash_type: String,
     pub hash_value: String,
@@ -111,6 +112,7 @@ pub struct FileSearchRecord {
 pub trait FileIndexRepository: Clone {
     async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()>;
     async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>;
+    async fn get_records_by_ids(&self, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

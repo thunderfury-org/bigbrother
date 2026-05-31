@@ -155,6 +155,7 @@
       case 'pan115': return '115网盘';
       case 'quark': return '夸克网盘';
       case 'telegram': return 'Telegram';
+      case 'file_index': return '文件索引';
       default: return kind;
     }
   }
@@ -166,6 +167,7 @@
       case 'pan115': return '💾';
       case 'quark': return '🌀';
       case 'telegram': return '✈';
+      case 'file_index': return '🔍';
       default: return '📁';
     }
   }
@@ -210,6 +212,7 @@
         <option value="pan115">115网盘</option>
         <option value="quark">夸克网盘</option>
         <option value="telegram">Telegram</option>
+        <option value="file_index">文件索引</option>
         <option value="other">其他</option>
       </select>
     </label>

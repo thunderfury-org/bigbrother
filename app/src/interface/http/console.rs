@@ -5,7 +5,7 @@ use axum::{
     extract::{OriginalUri, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use rust_embed::Embed;
@@ -14,15 +14,20 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::{
         file_index::FileIndexService,
+        file_index_import::{FileIndexImportService, ImportFileResult},
         ports::{
             FileIndexRepository, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
             ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
         },
+        recorded_import::RecordedImportService,
     },
     domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
     error::AppError,
-    infrastructure::repo::{
-        file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+    infrastructure::{
+        repo::{
+            file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+        },
+        services::ImportService,
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
 };
@@ -46,16 +51,36 @@ fn embedded_lookup(path: &str) -> Option<AssetFile> {
 pub(crate) struct ConsoleContext {
     repo: Arc<SeaOrmImportRecordRepository>,
     file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
+    import_service: Option<Arc<ImportService>>,
+    recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
 }
 
 impl ConsoleContext {
     pub(crate) fn new(
         repo: SeaOrmImportRecordRepository,
         file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        import_service: ImportService,
+    ) -> Self {
+        let repo = Arc::new(repo);
+        let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
+        Self {
+            repo,
+            file_index_service: Arc::new(file_index_service),
+            import_service: Some(Arc::new(import_service)),
+            recorded_import: Some(recorded_import),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_without_import(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
     ) -> Self {
         Self {
             repo: Arc::new(repo),
             file_index_service: Arc::new(file_index_service),
+            import_service: None,
+            recorded_import: None,
         }
     }
 }
@@ -65,6 +90,7 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
+        .route("/api/files/import", post(import_files))
         .fallback(get(static_handler))
         .with_state(ctx)
 }
@@ -150,6 +176,7 @@ struct FileSearchPageJson {
 
 #[derive(Debug, Serialize)]
 struct FileSearchItemJson {
+    id: i64,
     size: u64,
     hash_type: String,
     hash_value: String,
@@ -168,6 +195,7 @@ fn file_search_to_json(records: Vec<FileSearchRecord>) -> FileSearchPageJson {
         items: records
             .into_iter()
             .map(|record| FileSearchItemJson {
+                id: record.id,
                 size: record.size,
                 hash_type: record.hash_type,
                 hash_value: record.hash_value,
@@ -181,11 +209,11 @@ fn file_search_to_json(records: Vec<FileSearchRecord>) -> FileSearchPageJson {
     }
 }
 
-fn file_location_to_json(location: FileLocationRecord) -> FileLocationJson {
+fn file_location_to_json(loc: FileLocationRecord) -> FileLocationJson {
     FileLocationJson {
-        file_name: location.file_name,
-        file_path: location.file_path,
-        descriptions: location.descriptions,
+        file_name: loc.file_name,
+        file_path: loc.file_path,
+        descriptions: loc.descriptions,
     }
 }
 
@@ -302,17 +330,10 @@ fn detail_to_json(view: &ImportRecordView) -> DetailJson {
         .summary_json
         .as_deref()
         .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
-    let error = match (view.error_kind.as_ref(), view.error_message.as_ref()) {
-        (Some(kind), Some(message)) => Some(ImportRecordErrorJson {
-            kind: kind.clone(),
-            message: message.clone(),
-        }),
-        (Some(kind), None) => Some(ImportRecordErrorJson {
-            kind: kind.clone(),
-            message: String::new(),
-        }),
-        _ => None,
-    };
+    let error = view.error_kind.as_ref().map(|kind| ImportRecordErrorJson {
+        kind: kind.clone(),
+        message: view.error_message.clone().unwrap_or_default(),
+    });
     DetailJson {
         id: view.id,
         source_kind: view.source_kind.as_str().to_owned(),
@@ -324,6 +345,50 @@ fn detail_to_json(view: &ImportRecordView) -> DetailJson {
         updated_at: view.updated_at,
         finished_at: view.finished_at,
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportFilesRequest {
+    ids: Vec<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImportFilesResponse {
+    results: Vec<ImportFileResult>,
+}
+
+async fn import_files(
+    State(ctx): State<ConsoleContext>,
+    axum::Json(body): axum::Json<ImportFilesRequest>,
+) -> Response {
+    let Some((import_service, recorded_import)) = ctx
+        .import_service
+        .as_ref()
+        .zip(ctx.recorded_import.as_ref())
+    else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "import service not available",
+        )
+            .into_response();
+    };
+
+    if body.ids.is_empty() {
+        return bad_request("ids must not be empty".into());
+    }
+
+    let service = FileIndexImportService::new(ctx.file_index_service.as_ref().clone());
+    let mut importer = import_service.as_ref().clone();
+
+    let results = match service
+        .import_from_fingerprints(&body.ids, &mut importer, recorded_import)
+        .await
+    {
+        Ok(results) => results,
+        Err(err) => return app_error_to_response(err),
+    };
+
+    json_response(StatusCode::OK, &ImportFilesResponse { results })
 }
 
 fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
@@ -439,13 +504,16 @@ mod tests {
 
     async fn router_with(repo: SeaOrmImportRecordRepository) -> Router {
         let file_service = FileIndexService::new(fresh_file_repo().await);
-        new_router(ConsoleContext::new(repo, file_service))
+        new_router(ConsoleContext::new_without_import(repo, file_service))
     }
 
     async fn router_with_files(file_repo: SeaOrmFileIndexRepository) -> Router {
         let import_repo = fresh_repo().await;
         let file_service = FileIndexService::new(file_repo);
-        new_router(ConsoleContext::new(import_repo, file_service))
+        new_router(ConsoleContext::new_without_import(
+            import_repo,
+            file_service,
+        ))
     }
 
     fn file_input(file_name: &str, hash: &str) -> FileIndexRecordInput {
@@ -664,5 +732,41 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = json_body(response).await;
         assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn import_files_returns_503_without_import_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/files/import")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"ids":[1]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn import_files_returns_503_for_empty_ids_without_import_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/files/import")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"ids":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

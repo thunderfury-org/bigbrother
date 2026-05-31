@@ -1,10 +1,14 @@
+use std::collections::HashSet;
+
 use sha2::{Digest, Sha256};
 use tracing::info;
 
 use crate::{
-    application::ports::{FileIndexRecordInput, FileIndexRepository, FileSearchRecord},
-    domain::media::FileType,
-    domain::share::RawFile,
+    application::ports::{
+        FileIndexRecordInput, FileIndexRepository, FileLocationRecord, FileSearchRecord,
+    },
+    domain::media::{FileType, Metadata},
+    domain::share::{FileHash, RawFile},
     error::AppResult,
 };
 
@@ -55,6 +59,76 @@ where
         }
         self.repo.search_files(keyword, limit).await
     }
+
+    pub async fn get_import_ready_files(
+        &self,
+        ids: &[i64],
+    ) -> AppResult<Vec<(i64, RawFile, Vec<String>)>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let records = self.repo.get_records_by_ids(ids).await?;
+        Ok(records
+            .into_iter()
+            .filter_map(|record| {
+                let (raw, descs) = fingerprint_to_raw_files(&record)?;
+                Some((record.id, raw, descs))
+            })
+            .collect())
+    }
+}
+
+fn fingerprint_to_raw_files(record: &FileSearchRecord) -> Option<(RawFile, Vec<String>)> {
+    let best = select_richest_location(&record.locations)?;
+    let hash = match record.hash_type.as_str() {
+        "sha1" => FileHash::Sha1(record.hash_value.clone()),
+        "md5" => FileHash::Md5(record.hash_value.clone()),
+        other => {
+            tracing::warn!(
+                hash_type = other,
+                id = record.id,
+                "unsupported hash type, skipping"
+            );
+            return None;
+        }
+    };
+    let all_descriptions = collect_unique_descriptions(&record.locations);
+    let raw = RawFile {
+        id: None,
+        name: best.file_name.clone(),
+        hash,
+        size: record.size,
+        path: best.file_path.clone(),
+    };
+    Some((raw, all_descriptions))
+}
+
+fn select_richest_location(locations: &[FileLocationRecord]) -> Option<&FileLocationRecord> {
+    locations.iter().max_by_key(|loc| {
+        let meta = Metadata::parse(&loc.file_name);
+        metadata_richness(&meta)
+    })
+}
+
+fn metadata_richness(meta: &Metadata) -> usize {
+    usize::from(!meta.titles.is_empty())
+        + usize::from(!meta.year.is_empty())
+        + usize::from(!meta.resolution.is_empty())
+        + usize::from(!meta.quality.is_empty())
+        + usize::from(!meta.video_codec.is_empty())
+        + usize::from(!meta.audio_codec.is_empty())
+        + usize::from(meta.season_number.is_some())
+        + usize::from(meta.episode_number.is_some())
+}
+
+fn collect_unique_descriptions(locations: &[FileLocationRecord]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    locations
+        .iter()
+        .flat_map(|loc| &loc.descriptions)
+        .filter(|desc| seen.insert((*desc).clone()))
+        .cloned()
+        .collect()
 }
 
 pub fn location_hash(file_path: &str, file_name: &str) -> String {
@@ -125,6 +199,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct FakeRepo {
         recorded: Arc<Mutex<Vec<FileIndexRecordInput>>>,
+        records_by_id: Arc<Mutex<Vec<FileSearchRecord>>>,
     }
 
     impl FileIndexRepository for FakeRepo {
@@ -139,6 +214,7 @@ mod tests {
             _limit: u64,
         ) -> AppResult<Vec<FileSearchRecord>> {
             Ok(vec![FileSearchRecord {
+                id: 1,
                 size: 1,
                 hash_type: "md5".into(),
                 hash_value: "abc".into(),
@@ -148,6 +224,15 @@ mod tests {
                     descriptions: vec!["desc".into()],
                 }],
             }])
+        }
+
+        async fn get_records_by_ids(&self, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>> {
+            let records = self.records_by_id.lock().unwrap();
+            Ok(records
+                .iter()
+                .filter(|r| ids.contains(&r.id))
+                .cloned()
+                .collect())
         }
     }
 
@@ -257,5 +342,77 @@ mod tests {
     fn hashes_description_after_trim() {
         assert_eq!(description_hash(" hello "), description_hash("hello"));
         assert_ne!(description_hash("hello"), description_hash("Hello"));
+    }
+
+    #[tokio::test]
+    async fn get_import_ready_files_selects_richest_location() {
+        let repo = FakeRepo {
+            records_by_id: Arc::new(Mutex::new(vec![FileSearchRecord {
+                id: 42,
+                size: 1000,
+                hash_type: "md5".into(),
+                hash_value: "abcdef".into(),
+                locations: vec![
+                    FileLocationRecord {
+                        file_name: "abc123.mkv".into(),
+                        file_path: "/raw".into(),
+                        descriptions: vec!["some desc".into()],
+                    },
+                    FileLocationRecord {
+                        file_name: "Movie.X.2024.1080p.BluRay.mkv".into(),
+                        file_path: "/movies".into(),
+                        descriptions: vec!["another desc".into()],
+                    },
+                ],
+            }])),
+            ..Default::default()
+        };
+        let service = FileIndexService::new(repo);
+
+        let results = service.get_import_ready_files(&[42]).await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        let (id, raw, descriptions) = &results[0];
+        assert_eq!(*id, 42);
+        assert_eq!(raw.name, "Movie.X.2024.1080p.BluRay.mkv");
+        assert_eq!(raw.path, "/movies");
+        assert_eq!(raw.size, 1000);
+        assert!(raw.id.is_none());
+        assert!(matches!(&raw.hash, FileHash::Md5(v) if v == "abcdef"));
+        assert_eq!(descriptions.len(), 2);
+        assert!(descriptions.contains(&"some desc".into()));
+        assert!(descriptions.contains(&"another desc".into()));
+    }
+
+    #[tokio::test]
+    async fn get_import_ready_files_returns_empty_for_empty_ids() {
+        let service = FileIndexService::new(FakeRepo::default());
+        let results = service.get_import_ready_files(&[]).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_import_ready_files_handles_sha1_hash() {
+        let repo = FakeRepo {
+            records_by_id: Arc::new(Mutex::new(vec![FileSearchRecord {
+                id: 1,
+                size: 2000,
+                hash_type: "sha1".into(),
+                hash_value: "aabbccdd".into(),
+                locations: vec![FileLocationRecord {
+                    file_name: "video.mkv".into(),
+                    file_path: "/path".into(),
+                    descriptions: vec![],
+                }],
+            }])),
+            ..Default::default()
+        };
+        let service = FileIndexService::new(repo);
+
+        let results = service.get_import_ready_files(&[1]).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 1);
+        assert!(matches!(&results[0].1.hash, FileHash::Sha1(v) if v == "aabbccdd"));
+        assert!(results[0].2.is_empty());
     }
 }
