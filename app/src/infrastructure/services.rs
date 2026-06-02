@@ -17,7 +17,10 @@ use crate::{
             gateway::{Pan123MediaSearchGateway, PanLibraryGateway, TmdbMetadataGateway},
             local_store::FilesystemImportLocalStore,
         },
-        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        repo::{
+            file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository,
+            subscription::SeaOrmSubscriptionRepository,
+        },
         share::resolver::ShareResolverService,
         title_extractor::TitleExtractorService,
     },
@@ -35,3 +38,4 @@ pub type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
 pub type ParseRuntimeService = ParseService<TmdbMetadataGateway, TitleExtractorService>;
+pub type SubscriptionRepo = SeaOrmSubscriptionRepository;

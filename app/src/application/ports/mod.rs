@@ -3,7 +3,10 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    domain::import_record::{ImportSourceKind, ImportStatus},
+    domain::{
+        import_record::{ImportSourceKind, ImportStatus},
+        subscription::SubscriptionMediaType,
+    },
     error::AppResult,
 };
 
@@ -195,4 +198,35 @@ pub trait ImportRecordRepository: Clone {
         filter: &ImportRecordFilter,
         paging: ImportRecordPaging,
     ) -> AppResult<ImportRecordPage>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscriptionRecord {
+    pub id: i64,
+    pub tmdb_id: u32,
+    pub media_type: SubscriptionMediaType,
+    pub title_zh: Option<String>,
+    pub title_en: Option<String>,
+    pub create_time: DateTime<Utc>,
+    pub update_time: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscriptionCreateInput {
+    pub tmdb_id: u32,
+    pub media_type: SubscriptionMediaType,
+    pub title_zh: Option<String>,
+    pub title_en: Option<String>,
+}
+
+pub trait SubscriptionRepository: Clone {
+    async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>>;
+    async fn get_by_id(&self, id: i64) -> AppResult<Option<SubscriptionRecord>>;
+    async fn find_by_tmdb_id(
+        &self,
+        tmdb_id: u32,
+        media_type: &SubscriptionMediaType,
+    ) -> AppResult<Option<SubscriptionRecord>>;
+    async fn create(&self, input: &SubscriptionCreateInput) -> AppResult<i64>;
+    async fn delete(&self, id: i64) -> AppResult<()>;
 }

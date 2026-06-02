@@ -9,4 +9,5 @@ pub mod notify;
 pub mod ports;
 pub mod recorded_import;
 pub mod resolve_download_url;
+pub mod subscription;
 pub mod sync_strm;

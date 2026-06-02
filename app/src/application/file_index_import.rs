@@ -30,7 +30,7 @@ pub struct ImportFileResult {
 }
 
 impl ImportFileResult {
-    fn skipped(id: i64, reason: &str) -> Self {
+    pub(crate) fn skipped(id: i64, reason: &str) -> Self {
         Self {
             id,
             status: "skipped".into(),
@@ -39,7 +39,7 @@ impl ImportFileResult {
         }
     }
 
-    fn failed(id: i64, message: String) -> Self {
+    pub(crate) fn failed(id: i64, message: String) -> Self {
         Self {
             id,
             status: "failed".into(),
@@ -48,7 +48,7 @@ impl ImportFileResult {
         }
     }
 
-    fn from_imported(id: i64, item: &ImportedMedia) -> Self {
+    pub(crate) fn from_imported(id: i64, item: &ImportedMedia) -> Self {
         match item {
             ImportedMedia::Movie {
                 title, year, size, ..
