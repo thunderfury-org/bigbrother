@@ -7,17 +7,13 @@ use tracing::info;
 
 use super::{ImportedMedia, TransferWorkflow};
 use crate::application::import::MovieDetail;
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::{error::AppResult, log_time};
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T>
+impl<L, F> TransferWorkflow<L, F>
 where
     L: LibraryGateway,
-    M: MetadataCatalog,
     F: ImportLocalStore,
-    T: TitleExtractor,
 {
     pub(super) async fn transfer_movie(
         &mut self,

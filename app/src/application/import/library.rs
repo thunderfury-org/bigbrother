@@ -2,20 +2,16 @@ use std::collections::HashMap;
 
 use tracing::info;
 
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::error::AppResult;
 
-use super::TransferWorkflow;
+use super::{TransferWorkflow, metadata::MetadataLookup};
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T>
+impl<L, F> TransferWorkflow<L, F>
 where
     L: LibraryGateway,
-    M: MetadataCatalog,
     F: ImportLocalStore,
-    T: TitleExtractor,
 {
     pub(super) async fn list_episode_files_in_library(
         &mut self,
@@ -59,7 +55,7 @@ where
             });
         }
 
-        Ok(self.build_media_files(raw_files, Vec::new()))
+        Ok(MetadataLookup::default().build_media_files(raw_files, Vec::new()))
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {

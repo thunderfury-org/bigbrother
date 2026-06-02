@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::{
     application::import::{
         ImportedMedia, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
+        identify::UnmatchedFile,
     },
-    domain::{import::inner::MediaFile, media::Title},
+    domain::{import::inner::Media, media::Title},
     error::AppResult,
 };
 
@@ -104,8 +105,9 @@ pub trait ImportLocalStore: Clone {
 }
 
 pub trait MediaImporter: Send + 'static {
-    fn transfer_media_files(
+    fn import_groups(
         &mut self,
-        media_files: &[MediaFile],
+        groups: Vec<Media>,
+        unmatched: Vec<UnmatchedFile>,
     ) -> impl std::future::Future<Output = AppResult<Vec<ImportedMedia>>> + Send;
 }

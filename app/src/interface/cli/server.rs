@@ -142,6 +142,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         file_index_service: ctx.file_index_service().await?,
         share_resolver: ctx.share_resolver(),
         import_service: ctx.import_service().await?,
+        identify_service: ctx.identify_service().await?,
         recorded_import: RecordedImportService::new(ctx.import_record_repository().await?),
         metadata_lookup: MetadataLookup::default(),
         notify_service,
@@ -172,12 +173,14 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         let repo = ctx.import_record_repository().await?;
         let file_index_service = ctx.file_index_service().await?;
         let import_service = ctx.import_service().await?;
+        let identify_service = ctx.identify_service().await?;
         (
             Some(config.get_console_config().get_addr()),
             Some(console::new_router(ConsoleContext::new(
                 repo,
                 file_index_service,
                 import_service,
+                identify_service,
             ))),
         )
     } else {

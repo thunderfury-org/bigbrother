@@ -1,27 +1,19 @@
-use super::{metadata, tmdb_info};
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MediaImporter, MetadataCatalog, TitleExtractor,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MediaImporter};
+
+use super::ImportedMedia;
+use super::identify::UnmatchedFile;
 
 #[derive(Clone)]
-pub(crate) struct TransferWorkflow<L, M, F, T> {
+pub(crate) struct TransferWorkflow<L, F> {
     pub(super) library_gateway: L,
     pub(super) local: F,
-    pub(super) tmdb_lookup: tmdb_info::TmdbLookup<M, T>,
-    pub(super) metadata_lookup: metadata::MetadataLookup,
 }
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T> {
-    pub(crate) fn new(library_gateway: L, metadata_catalog: M, local: F, title_extractor: T) -> Self
-    where
-        M: MetadataCatalog,
-        T: TitleExtractor,
-    {
+impl<L, F> TransferWorkflow<L, F> {
+    pub(crate) fn new(library_gateway: L, local: F) -> Self {
         Self {
             library_gateway,
             local,
-            tmdb_lookup: tmdb_info::TmdbLookup::new(metadata_catalog, title_extractor),
-            metadata_lookup: metadata::MetadataLookup::default(),
         }
     }
 
@@ -34,17 +26,16 @@ impl<L, M, F, T> TransferWorkflow<L, M, F, T> {
     }
 }
 
-impl<L, M, F, T> MediaImporter for TransferWorkflow<L, M, F, T>
+impl<L, F> MediaImporter for TransferWorkflow<L, F>
 where
     L: LibraryGateway + Send + Sync + 'static,
-    M: MetadataCatalog + Send + Sync + 'static,
     F: ImportLocalStore + Send + Sync + 'static,
-    T: TitleExtractor + Send + Sync + 'static,
 {
-    async fn transfer_media_files(
+    async fn import_groups(
         &mut self,
-        media_files: &[crate::domain::import::inner::MediaFile],
-    ) -> crate::error::AppResult<Vec<super::ImportedMedia>> {
-        self.transfer_media_files(media_files).await
+        groups: Vec<crate::domain::import::inner::Media>,
+        unmatched: Vec<UnmatchedFile>,
+    ) -> crate::error::AppResult<Vec<ImportedMedia>> {
+        self.import_groups(groups, unmatched).await
     }
 }

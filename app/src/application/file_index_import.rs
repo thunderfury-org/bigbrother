@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use crate::{
     application::{
         file_index::FileIndexService,
-        import::{ImportedMedia, MetadataLookup},
+        import::{ImportedMedia, MetadataLookup, identify::IdentifyOutcome},
         import_ports::MediaImporter,
         ports::{FileIndexRepository, ImportRecordRepository},
         recorded_import::RecordedImportService,
     },
+    domain::import::inner::MediaFile,
     domain::import_record::{ImportSource, ImportSourceKind},
     error::{AppError, AppResult},
 };
@@ -77,6 +78,13 @@ impl ImportFileResult {
     }
 }
 
+pub(crate) trait Identifier: Send + 'static {
+    fn identify(
+        &mut self,
+        files: &[MediaFile],
+    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
+}
+
 pub struct FileIndexImportService<R> {
     file_index: FileIndexService<R>,
 }
@@ -86,14 +94,16 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
         Self { file_index }
     }
 
-    pub async fn import_from_fingerprints<I, RecordRepo>(
+    pub async fn import_from_fingerprints<I, D, RecordRepo>(
         &self,
         ids: &[i64],
+        identifier: &mut D,
         importer: &mut I,
         recorded: &RecordedImportService<RecordRepo>,
     ) -> AppResult<Vec<ImportFileResult>>
     where
         I: MediaImporter,
+        D: Identifier,
         RecordRepo: ImportRecordRepository,
     {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
@@ -133,7 +143,10 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
                     let mut metadata_lookup = MetadataLookup::default();
                     let media_files =
                         metadata_lookup.build_media_files(raw_files.clone(), descriptions);
-                    importer.transfer_media_files(&media_files).await
+                    let identified = identifier.identify(&media_files).await?;
+                    importer
+                        .import_groups(identified.groups, identified.unmatched)
+                        .await
                 })
                 .await;
 
@@ -157,6 +170,16 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
     }
 }
 
+impl<M, T> Identifier for crate::application::import::identify::MediaIdentifyService<M, T>
+where
+    M: crate::application::import_ports::MetadataCatalog + Send + Sync + 'static,
+    T: crate::application::import_ports::TitleExtractor + Send + Sync + 'static,
+{
+    async fn identify(&mut self, files: &[MediaFile]) -> AppResult<IdentifyOutcome> {
+        self.identify(files).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,10 +191,7 @@ mod tests {
             ImportRecordView,
         },
     };
-    use crate::domain::{
-        import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
-        share::{FileHash, RawFile},
-    };
+    use crate::domain::import_record::ImportSourceKind;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -231,14 +251,29 @@ mod tests {
         }
     }
 
+    struct FakeIdentifier;
+
+    impl Identifier for FakeIdentifier {
+        async fn identify(
+            &mut self,
+            _files: &[crate::domain::import::inner::MediaFile],
+        ) -> AppResult<IdentifyOutcome> {
+            Ok(IdentifyOutcome {
+                groups: vec![],
+                unmatched: vec![],
+            })
+        }
+    }
+
     struct FakeImporter {
         make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send>,
     }
 
     impl MediaImporter for FakeImporter {
-        async fn transfer_media_files(
+        async fn import_groups(
             &mut self,
-            _media_files: &[crate::domain::import::inner::MediaFile],
+            _groups: Vec<crate::domain::import::inner::Media>,
+            _unmatched: Vec<crate::application::import::identify::UnmatchedFile>,
         ) -> AppResult<Vec<ImportedMedia>> {
             (self.make_result)()
         }
@@ -290,7 +325,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let err = service
-            .import_from_fingerprints(&[], &mut importer, &recorded)
+            .import_from_fingerprints(&[], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidParameter(_)));
@@ -305,7 +340,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let err = service
-            .import_from_fingerprints(&[999], &mut importer, &recorded)
+            .import_from_fingerprints(&[999], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidParameter(_)));
@@ -318,7 +353,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 
@@ -344,7 +379,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 
@@ -361,7 +396,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 
@@ -379,7 +414,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 
@@ -396,7 +431,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1, 2], &mut importer, &recorded)
+            .import_from_fingerprints(&[1, 2], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 
@@ -413,7 +448,7 @@ mod tests {
         let recorded = RecordedImportService::new(import_repo.clone());
 
         service
-            .import_from_fingerprints(&[1, 2], &mut importer, &recorded)
+            .import_from_fingerprints(&[1, 2], &mut FakeIdentifier, &mut importer, &recorded)
             .await
             .unwrap();
 

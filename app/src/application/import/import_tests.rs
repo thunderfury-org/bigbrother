@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use super::identify::MediaIdentifyService;
 use super::*;
 use crate::application::import_ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
@@ -18,7 +19,8 @@ use crate::domain::share::{FileHash, RawFile};
 use crate::error::{AppError, AppResult};
 
 pub(crate) struct TestImportService<L, M, F> {
-    pub transfer: TransferWorkflow<L, M, F, FakeTitleExtractor>,
+    pub transfer: TransferWorkflow<L, F>,
+    pub identify_service: MediaIdentifyService<M, FakeTitleExtractor>,
     pub metadata_lookup: MetadataLookup,
 }
 
@@ -30,12 +32,8 @@ where
 {
     pub fn new(library_gateway: L, metadata_catalog: M, local_store: F) -> Self {
         Self {
-            transfer: TransferWorkflow::new(
-                library_gateway,
-                metadata_catalog,
-                local_store,
-                FakeTitleExtractor,
-            ),
+            transfer: TransferWorkflow::new(library_gateway, local_store),
+            identify_service: MediaIdentifyService::new(metadata_catalog, FakeTitleExtractor),
             metadata_lookup: MetadataLookup::default(),
         }
     }
@@ -47,7 +45,10 @@ where
         let media_files = self
             .metadata_lookup
             .build_media_files(raw_files, Vec::new());
-        self.transfer.transfer_media_files(&media_files).await
+        let outcome = self.identify_service.identify(&media_files).await?;
+        self.transfer
+            .import_groups(outcome.groups, outcome.unmatched)
+            .await
     }
 }
 

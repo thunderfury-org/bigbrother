@@ -8,7 +8,7 @@ use crate::{
     error::AppResult,
     infrastructure::repo::import_record::SeaOrmImportRecordRepository,
     infrastructure::services::{
-        FileIndexRuntimeService, ImportService, KeywordService, NotifyService,
+        FileIndexRuntimeService, IdentifyService, ImportService, KeywordService, NotifyService,
         ShareResolverRuntimeService,
     },
     infrastructure::share::{file_parser::ShareFileParser, resolver::ShareResolver},
@@ -23,6 +23,7 @@ pub struct ProcessMediaSourcesHandler {
     pub file_index_service: FileIndexRuntimeService,
     pub share_resolver: ShareResolverRuntimeService,
     pub import_service: ImportService,
+    pub identify_service: IdentifyService,
     pub recorded_import: RecordedImportService<SeaOrmImportRecordRepository>,
     pub metadata_lookup: MetadataLookup,
     pub notify_service: NotifyService,
@@ -132,10 +133,14 @@ pub async fn on_process_media_sources(
         );
         let import_source = source_of(&payload.source);
         let mut import_service = handler.import_service.clone();
+        let mut identify_service = handler.identify_service.clone();
         let outcome = handler
             .recorded_import
             .execute(import_source, || async {
-                import_service.transfer_media_files(&media_files).await
+                let outcome = identify_service.identify(&media_files).await?;
+                import_service
+                    .import_groups(outcome.groups, outcome.unmatched)
+                    .await
             })
             .await;
         match outcome {

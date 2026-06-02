@@ -17,7 +17,7 @@ use crate::{
             telegram_export_state::SeaOrmTelegramExportStateRepository,
         },
         services::{
-            FileIndexRuntimeService, ImportService, ParseRuntimeService,
+            FileIndexRuntimeService, IdentifyService, ImportService, ParseRuntimeService,
             ShareResolverRuntimeService,
         },
         share::{
@@ -101,6 +101,19 @@ impl CliContext {
     }
 
     pub(super) async fn import_service(&self) -> AppResult<ImportService> {
+        Ok(ImportService::new(
+            PanLibraryGateway::new(self.pan123()),
+            FilesystemImportLocalStore::new(
+                self.config.get_library_config().remote_path.clone(),
+                self.config.get_library_config().local_path.clone(),
+                self.config
+                    .get_media_server_config()
+                    .get_strm_download_url(),
+            ),
+        ))
+    }
+
+    pub(super) async fn identify_service(&self) -> AppResult<IdentifyService> {
         let openai_config = self.config.get_openai_config();
         let openai_client = if openai_config.is_configured() {
             Some(client::openai::Client::new(
@@ -114,16 +127,8 @@ impl CliContext {
         let db = self.db().await?.clone();
         let title_extractor = TitleExtractorService::new(openai_client, db);
 
-        Ok(ImportService::new(
-            PanLibraryGateway::new(self.pan123()),
+        Ok(IdentifyService::new(
             TmdbMetadataGateway::new(self.tmdb()),
-            FilesystemImportLocalStore::new(
-                self.config.get_library_config().remote_path.clone(),
-                self.config.get_library_config().local_path.clone(),
-                self.config
-                    .get_media_server_config()
-                    .get_strm_download_url(),
-            ),
             title_extractor,
         ))
     }
