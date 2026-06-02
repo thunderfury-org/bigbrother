@@ -8,8 +8,6 @@ use tracing::{error, info};
 
 use super::BotRuntime;
 
-const DELETE_KEYWORD_PREFIX: &str = "delete_keyword:";
-const DELETE_KEYWORD_CANCEL: &str = "delete_keyword:cancel";
 const DELETE_MEDIA_SELECT_PREFIX: &str = "delete_media_select:";
 const DELETE_MEDIA_CONFIRM_PREFIX: &str = "delete_media_confirm:";
 const DELETE_MEDIA_CANCEL_PREFIX: &str = "delete_media_cancel:";
@@ -19,12 +17,6 @@ const DELETE_MEDIA_CANCEL_PREFIX: &str = "delete_media_cancel:";
 pub(super) enum Command {
     #[command(description = "查看帮助")]
     Help,
-    #[command(description = "查看所有关键字")]
-    ListKeywords,
-    #[command(description = "添加新的关键字")]
-    AddKeyword(String),
-    #[command(description = "交互式删除关键字")]
-    DeleteKeyword,
     #[command(description = "搜索并删除媒体目录")]
     DeleteMedia(String),
     #[command(description = "同步远程库到本地")]
@@ -69,9 +61,6 @@ pub(super) async fn handle_command(
             bot.send_message(msg.chat.id, Command::descriptions().to_string())
                 .await?;
         }
-        Command::ListKeywords => list_keywords(&runtime, &bot, &msg).await?,
-        Command::AddKeyword(keyword) => add_keyword(&runtime, &bot, &msg, &keyword).await?,
-        Command::DeleteKeyword => prompt_delete_keyword(&runtime, &bot, &msg).await?,
         Command::DeleteMedia(keyword) => delete_media_cmd(&runtime, &bot, &msg, &keyword).await?,
         Command::SyncStrm => sync_strm_cmd(&runtime, &bot, &msg).await?,
     }
@@ -94,9 +83,6 @@ pub(super) async fn handle_callback_query(
         return Ok(());
     };
 
-    if data.starts_with(DELETE_KEYWORD_PREFIX) {
-        return handle_delete_keyword_callback(runtime, bot, query).await;
-    }
     if data.starts_with(DELETE_MEDIA_SELECT_PREFIX)
         || data.starts_with(DELETE_MEDIA_CONFIRM_PREFIX)
         || data.starts_with(DELETE_MEDIA_CANCEL_PREFIX)
@@ -118,110 +104,6 @@ pub(super) fn is_delete_media_usage_request(msg: &Message) -> bool {
             command == "/delete_media" || command.starts_with("/delete_media@")
         })
         .unwrap_or(false)
-}
-
-async fn list_keywords(runtime: &BotRuntime, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    let keywords = match runtime.keyword_service().list().await {
-        Ok(ks) => ks,
-        Err(e) => {
-            error!("Failed to list keywords: {}", e);
-            bot.send_message(msg.chat.id, "查询关键字失败")
-                .reply_to(msg.id)
-                .await?;
-            return Ok(());
-        }
-    };
-
-    if keywords.is_empty() {
-        bot.send_message(msg.chat.id, "没有关键字")
-            .reply_to(msg.id)
-            .await?;
-    } else {
-        let keyword_list = keywords
-            .iter()
-            .map(|k| k.value.as_str())
-            .collect::<Vec<&str>>()
-            .join("\n");
-        bot.send_message(msg.chat.id, format!("关键字:\n\n{}", keyword_list))
-            .reply_to(msg.id)
-            .await?;
-    }
-    Ok(())
-}
-
-async fn add_keyword(
-    runtime: &BotRuntime,
-    bot: &Bot,
-    msg: &Message,
-    keyword: &str,
-) -> ResponseResult<()> {
-    let kw = keyword.trim();
-    if kw.is_empty() {
-        bot.send_message(msg.chat.id, "关键字不能为空")
-            .reply_to(msg.id)
-            .await?;
-        return Ok(());
-    }
-
-    match runtime.keyword_service().add(kw).await {
-        Ok(keyword) => {
-            bot.send_message(msg.chat.id, format!("关键字 '{}' 添加成功", keyword))
-                .reply_to(msg.id)
-                .await?;
-        }
-        Err(e) => {
-            error!("Failed to add keyword '{}': {}", kw, e);
-            bot.send_message(msg.chat.id, format!("添加关键字 '{}' 失败", kw))
-                .reply_to(msg.id)
-                .await?;
-        }
-    }
-    Ok(())
-}
-
-async fn prompt_delete_keyword(
-    runtime: &BotRuntime,
-    bot: &Bot,
-    msg: &Message,
-) -> ResponseResult<()> {
-    let keywords = match runtime.keyword_service().list().await {
-        Ok(ks) => ks,
-        Err(e) => {
-            error!("Failed to list keywords for delete: {}", e);
-            bot.send_message(msg.chat.id, "查询关键字失败")
-                .reply_to(msg.id)
-                .await?;
-            return Ok(());
-        }
-    };
-
-    if keywords.is_empty() {
-        bot.send_message(msg.chat.id, "没有关键字可删除")
-            .reply_to(msg.id)
-            .await?;
-        return Ok(());
-    }
-
-    let mut keyboard: Vec<Vec<InlineKeyboardButton>> = keywords
-        .into_iter()
-        .map(|keyword| {
-            vec![InlineKeyboardButton::callback(
-                keyword.value,
-                format!("{}{}", DELETE_KEYWORD_PREFIX, keyword.id),
-            )]
-        })
-        .collect();
-    keyboard.push(vec![InlineKeyboardButton::callback(
-        "取消",
-        DELETE_KEYWORD_CANCEL,
-    )]);
-
-    bot.send_message(msg.chat.id, "请选择要删除的关键字")
-        .reply_to(msg.id)
-        .reply_markup(InlineKeyboardMarkup::new(keyboard))
-        .await?;
-
-    Ok(())
 }
 
 async fn delete_media_cmd(
@@ -282,57 +164,6 @@ async fn delete_media_cmd(
         .reply_to(msg.id)
         .reply_markup(InlineKeyboardMarkup::new(keyboard))
         .await?;
-
-    Ok(())
-}
-
-async fn handle_delete_keyword_callback(
-    runtime: BotRuntime,
-    bot: Bot,
-    query: CallbackQuery,
-) -> ResponseResult<()> {
-    let Some(data) = query.data.as_deref() else {
-        return Ok(());
-    };
-
-    if data == DELETE_KEYWORD_CANCEL {
-        bot.answer_callback_query(query.id.clone())
-            .text("已取消")
-            .await?;
-        if let Some(message) = query.regular_message() {
-            bot.edit_message_text(message.chat.id, message.id, "已取消删除关键字")
-                .reply_markup(InlineKeyboardMarkup::default())
-                .await?;
-        }
-        return Ok(());
-    }
-
-    let Some(keyword_id) = data
-        .strip_prefix(DELETE_KEYWORD_PREFIX)
-        .and_then(|v| v.parse::<i64>().ok())
-    else {
-        bot.answer_callback_query(query.id.clone())
-            .text("无效的关键字")
-            .await?;
-        return Ok(());
-    };
-
-    let result_text = match runtime.keyword_service().delete(keyword_id).await {
-        Ok(_) => "关键字删除成功",
-        Err(e) => {
-            error!("Failed to delete keyword by id '{}': {}", keyword_id, e);
-            "删除关键字失败"
-        }
-    };
-
-    bot.answer_callback_query(query.id.clone())
-        .text(result_text)
-        .await?;
-    if let Some(message) = query.regular_message() {
-        bot.edit_message_text(message.chat.id, message.id, result_text)
-            .reply_markup(InlineKeyboardMarkup::default())
-            .await?;
-    }
 
     Ok(())
 }

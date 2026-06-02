@@ -3,13 +3,14 @@ use tracing::{info, warn};
 use crate::{
     application::import::MetadataLookup,
     application::recorded_import::RecordedImportService,
+    application::subscription::import_filter,
     domain::import_record::ImportSource,
     domain::share::RawFile,
     error::AppResult,
     infrastructure::repo::import_record::SeaOrmImportRecordRepository,
     infrastructure::services::{
-        FileIndexRuntimeService, IdentifyService, ImportService, KeywordService, NotifyService,
-        ShareResolverRuntimeService,
+        FileIndexRuntimeService, IdentifyService, ImportService, NotifyService,
+        ShareResolverRuntimeService, SubscriptionRepo,
     },
     infrastructure::share::{file_parser::ShareFileParser, resolver::ShareResolver},
     interface::import::{source_for_fslink, source_for_share_url, source_for_telegram_document},
@@ -27,7 +28,7 @@ pub struct ProcessMediaSourcesHandler {
     pub recorded_import: RecordedImportService<SeaOrmImportRecordRepository>,
     pub metadata_lookup: MetadataLookup,
     pub notify_service: NotifyService,
-    pub keyword_service: KeywordService,
+    pub subscription_repo: SubscriptionRepo,
     pub bot: teloxide::Bot,
 }
 
@@ -106,7 +107,7 @@ pub async fn on_process_media_sources(
 
     // Step 3: Import
     let should_import = should_import(
-        &handler.keyword_service,
+        &handler.subscription_repo,
         payload.source_channel_post(),
         &payload.description,
     )
@@ -134,12 +135,15 @@ pub async fn on_process_media_sources(
         let import_source = source_of(&payload.source);
         let mut import_service = handler.import_service.clone();
         let mut identify_service = handler.identify_service.clone();
+        let subscription_repo = handler.subscription_repo.clone();
         let outcome = handler
             .recorded_import
             .execute(import_source, move || async move {
                 let outcome = identify_service.identify(media_files).await?;
+                let filtered_groups =
+                    import_filter::filter_by_subscription(&subscription_repo, outcome.groups).await;
                 import_service
-                    .import_groups(outcome.groups, outcome.unmatched)
+                    .import_groups(filtered_groups, outcome.unmatched)
                     .await
             })
             .await;
@@ -279,16 +283,15 @@ async fn fetch_tg_document(
 }
 
 async fn should_import(
-    keyword_service: &KeywordService,
+    subscription_repo: &SubscriptionRepo,
     channel_post: bool,
     description: &Option<String>,
 ) -> bool {
     if !channel_post {
         return true;
     }
-
     let text = description.as_deref().unwrap_or_default();
-    keyword_service.matches_any_keyword(text).await
+    import_filter::description_matches_subscription(subscription_repo, text).await
 }
 
 #[cfg(test)]

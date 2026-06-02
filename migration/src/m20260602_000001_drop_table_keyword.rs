@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
             .await
     }
 
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
         // Restore is handled by the original create migration (m20251210_105056)
         Ok(())
     }

@@ -7,6 +7,5 @@ pub mod file_index;
 pub mod file_location;
 pub mod file_location_description;
 pub mod import_record;
-pub mod keyword;
 pub mod subscription;
 pub mod telegram_export_state;

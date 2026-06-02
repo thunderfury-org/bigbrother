@@ -12,9 +12,7 @@ use crate::{
     application::delete_media::MediaDeleteCandidate,
     application::notify::{Message as OutboundMessage, MessageSender},
     infrastructure::event_bus::EventBus,
-    infrastructure::services::{
-        DeleteMediaServiceRuntime, KeywordService, NotifyService, SyncService,
-    },
+    infrastructure::services::{DeleteMediaServiceRuntime, NotifyService, SyncService},
 };
 
 mod cmd;
@@ -34,7 +32,6 @@ enum SourceHandling {
 }
 
 struct BotServices {
-    keyword: KeywordService,
     notify: NotifyService,
     sync: SyncService,
     delete_media: DeleteMediaServiceRuntime,
@@ -62,7 +59,6 @@ pub(crate) struct BotRuntime {
 
 pub(crate) struct BotRuntimeArgs {
     pub user_id: UserId,
-    pub keyword_service: KeywordService,
     pub notify_service: NotifyService,
     pub sync_service: SyncService,
     pub delete_media_service: DeleteMediaServiceRuntime,
@@ -74,7 +70,6 @@ impl BotRuntime {
         Self {
             user_id: args.user_id,
             services: Arc::new(BotServices {
-                keyword: args.keyword_service,
                 notify: args.notify_service,
                 sync: args.sync_service,
                 delete_media: args.delete_media_service,
@@ -82,10 +77,6 @@ impl BotRuntime {
                 delete_media_cache: DeleteMediaCandidateCache::new(Duration::from_secs(15 * 60)),
             }),
         }
-    }
-
-    fn keyword_service(&self) -> &KeywordService {
-        &self.services.keyword
     }
 
     fn notify_service(&self) -> &NotifyService {
