@@ -3,31 +3,30 @@ mod movie;
 mod season;
 mod tv;
 
+use std::collections::BTreeMap;
+
 use tracing::info;
 
 use crate::domain::import::inner::{Media, MediaFile};
 
-use super::{ImportedMedia, TransferWorkflow, TvDetail};
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
-};
+use super::identify::UnmatchedFile;
+use super::{ImportedMedia, TransferWorkflow};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T>
+impl<L, F> TransferWorkflow<L, F>
 where
     L: LibraryGateway,
-    M: MetadataCatalog,
     F: ImportLocalStore,
-    T: TitleExtractor,
 {
-    pub(crate) async fn transfer_media_files(
+    pub(crate) async fn import_groups(
         &mut self,
-        media_files: &[MediaFile],
+        groups: Vec<Media>,
+        unmatched: Vec<UnmatchedFile>,
     ) -> AppResult<Vec<ImportedMedia>> {
-        let (medias, unmatched) = self.build_import_plan(media_files).await?;
-        let mut results = self.execute_import_plan(&medias).await?;
+        let mut results = self.execute_import_plan(&groups).await?;
         info!(
-            media_group_count = medias.len(),
+            media_group_count = groups.len(),
             unmatched_count = unmatched.len(),
             "Executed import plan"
         );
@@ -37,7 +36,7 @@ where
                 count: unmatched.len(),
                 files: unmatched
                     .iter()
-                    .map(|(name, path)| format!("{path}/{name}"))
+                    .map(|u| format!("{}/{}", u.file_path, u.file_name))
                     .collect(),
             });
         }
@@ -45,34 +44,38 @@ where
         Ok(results)
     }
 
-    async fn build_import_plan<'a>(
-        &mut self,
-        media_files: &'a [MediaFile],
-    ) -> AppResult<(Vec<Media<'a>>, Vec<(&'a str, &'a str)>)> {
-        let (medias, unmatched) = self.group_media_files(media_files).await?;
-        info!(
-            "Grouped into {} media items, {} unmatched",
-            medias.len(),
-            unmatched.len()
-        );
-        Ok((medias, unmatched))
-    }
-
-    async fn execute_import_plan(&mut self, medias: &[Media<'_>]) -> AppResult<Vec<ImportedMedia>> {
+    async fn execute_import_plan(&mut self, medias: &[Media]) -> AppResult<Vec<ImportedMedia>> {
         let mut results = Vec::with_capacity(medias.len());
         for media in medias {
             match media {
                 Media::Movie { detail, files } => {
-                    if let Some(imported) = self.transfer_movie(detail, files).await? {
+                    let refs: Vec<&MediaFile> = files.iter().collect();
+                    if let Some(imported) = self.transfer_movie(detail, &refs).await? {
                         results.push(imported);
                     }
                 }
                 Media::Tv { detail, files } => {
-                    results.extend(self.transfer_tv(detail, files).await?);
+                    let refs = borrow_tv_files(files);
+                    results.extend(self.transfer_tv(detail, &refs).await?);
                 }
             }
         }
 
         Ok(results)
     }
+}
+
+fn borrow_tv_files(
+    files: &BTreeMap<u32, BTreeMap<u32, Vec<MediaFile>>>,
+) -> BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>> {
+    files
+        .iter()
+        .map(|(&season, episodes)| {
+            let eps = episodes
+                .iter()
+                .map(|(&ep, files)| (ep, files.iter().collect()))
+                .collect();
+            (season, eps)
+        })
+        .collect()
 }

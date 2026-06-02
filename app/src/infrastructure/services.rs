@@ -2,7 +2,7 @@ use crate::{
     application::{
         delete_media::DeleteMediaService,
         file_index::FileIndexService,
-        import::{ParseService, TransferWorkflow},
+        import::{ParseService, TransferWorkflow, identify::MediaIdentifyService},
         manage_keywords::ManageKeywordsService,
         resolve_download_url::ResolveDownloadUrlService,
         sync_strm::SyncStrmService,
@@ -26,12 +26,8 @@ use crate::{
 pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareResolverRuntimeService =
     ShareResolverService<pan123::Client, pan189::Client, pan115::Client>;
-pub type ImportService = TransferWorkflow<
-    PanLibraryGateway,
-    TmdbMetadataGateway,
-    FilesystemImportLocalStore,
-    TitleExtractorService,
->;
+pub type ImportService = TransferWorkflow<PanLibraryGateway, FilesystemImportLocalStore>;
+pub type IdentifyService = MediaIdentifyService<TmdbMetadataGateway, TitleExtractorService>;
 pub type NotifyService = EventBusPublisher;
 pub type SyncService = SyncStrmService<Pan123LibraryRemote, TokioFileStore>;
 pub type MediaDownloadUrlService = ResolveDownloadUrlService<StringCacheStore, Pan123LibraryRemote>;

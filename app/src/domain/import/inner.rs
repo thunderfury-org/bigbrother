@@ -6,7 +6,7 @@ use crate::domain::share::RawFile;
 use super::{MovieDetail, TvDetail};
 
 /// 表示一个媒体文件，包含视频文件和字幕文件
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct MediaFile {
     pub metadata: Box<Metadata>,
     pub video: RawFile,
@@ -14,15 +14,16 @@ pub(crate) struct MediaFile {
     pub descriptions: Vec<String>,
 }
 
-pub(crate) enum Media<'a> {
+#[derive(Clone)]
+pub(crate) enum Media {
     Movie {
         detail: MovieDetail,
-        files: Vec<&'a MediaFile>,
+        files: Vec<MediaFile>,
     },
     Tv {
         detail: TvDetail,
         /// (season, episode) -> files[]
-        files: BTreeMap<u32, BTreeMap<u32, Vec<&'a MediaFile>>>,
+        files: BTreeMap<u32, BTreeMap<u32, Vec<MediaFile>>>,
     },
 }
 

@@ -6,18 +6,14 @@ use super::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
 };
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T>
+impl<L, F> TransferWorkflow<L, F>
 where
     L: LibraryGateway,
-    M: MetadataCatalog,
     F: ImportLocalStore,
-    T: TitleExtractor,
 {
     pub(super) async fn cleanup_replaced_movie_files(
         &self,

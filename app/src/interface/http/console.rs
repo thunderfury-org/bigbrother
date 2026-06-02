@@ -27,7 +27,7 @@ use crate::{
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
         },
-        services::ImportService,
+        services::{IdentifyService, ImportService},
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
 };
@@ -52,6 +52,7 @@ pub(crate) struct ConsoleContext {
     repo: Arc<SeaOrmImportRecordRepository>,
     file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
     import_service: Option<Arc<ImportService>>,
+    identify_service: Option<Arc<IdentifyService>>,
     recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
 }
 
@@ -60,6 +61,7 @@ impl ConsoleContext {
         repo: SeaOrmImportRecordRepository,
         file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
         import_service: ImportService,
+        identify_service: IdentifyService,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -67,6 +69,7 @@ impl ConsoleContext {
             repo,
             file_index_service: Arc::new(file_index_service),
             import_service: Some(Arc::new(import_service)),
+            identify_service: Some(Arc::new(identify_service)),
             recorded_import: Some(recorded_import),
         }
     }
@@ -80,6 +83,7 @@ impl ConsoleContext {
             repo: Arc::new(repo),
             file_index_service: Arc::new(file_index_service),
             import_service: None,
+            identify_service: None,
             recorded_import: None,
         }
     }
@@ -361,9 +365,10 @@ async fn import_files(
     State(ctx): State<ConsoleContext>,
     axum::Json(body): axum::Json<ImportFilesRequest>,
 ) -> Response {
-    let Some((import_service, recorded_import)) = ctx
+    let Some(((import_service, identify_service), recorded_import)) = ctx
         .import_service
         .as_ref()
+        .zip(ctx.identify_service.as_ref())
         .zip(ctx.recorded_import.as_ref())
     else {
         return (
@@ -378,10 +383,11 @@ async fn import_files(
     }
 
     let service = FileIndexImportService::new(ctx.file_index_service.as_ref().clone());
+    let mut identifier = identify_service.as_ref().clone();
     let mut importer = import_service.as_ref().clone();
 
     let results = match service
-        .import_from_fingerprints(&body.ids, &mut importer, recorded_import)
+        .import_from_fingerprints(&body.ids, &mut identifier, &mut importer, recorded_import)
         .await
     {
         Ok(results) => results,

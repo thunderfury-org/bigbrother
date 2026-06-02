@@ -25,6 +25,7 @@ pub(crate) async fn run_import_share_url(
     let ctx = CliContext::new(data_dir)?;
     let share_resolver = ctx.share_resolver();
     let mut import_service = ctx.import_service().await?;
+    let mut identify_service = ctx.identify_service().await?;
     let mut metadata_lookup = MetadataLookup::default();
     let file_index_service = ctx.file_index_service().await?;
     let recorded = RecordedImportService::new(ctx.import_record_repository().await?);
@@ -45,8 +46,11 @@ pub(crate) async fn run_import_share_url(
     let descriptions: Vec<String> = description.into_iter().collect();
     let media_files = metadata_lookup.build_media_files(raw_files, descriptions);
     let imported = recorded
-        .execute(source_for_share_url(url), || async {
-            import_service.transfer_media_files(&media_files).await
+        .execute(source_for_share_url(url), move || async move {
+            let outcome = identify_service.identify(media_files).await?;
+            import_service
+                .import_groups(outcome.groups, outcome.unmatched)
+                .await
         })
         .await?;
     let summaries = format_import_summaries(&imported);

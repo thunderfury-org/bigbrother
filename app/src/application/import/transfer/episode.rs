@@ -1,6 +1,4 @@
-use crate::application::import_ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
-};
+use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::{
     inner::TransferEpisodeArgs,
     paths::get_year_from_date,
@@ -11,12 +9,10 @@ use tracing::info;
 
 use super::TransferWorkflow;
 
-impl<L, M, F, T> TransferWorkflow<L, M, F, T>
+impl<L, F> TransferWorkflow<L, F>
 where
     L: LibraryGateway,
-    M: MetadataCatalog,
     F: ImportLocalStore,
-    T: TitleExtractor,
 {
     pub(super) async fn transfer_episode(
         &self,
