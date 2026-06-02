@@ -7,7 +7,10 @@ pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
 ) -> bool {
     let subscriptions = match repo.list_all().await {
         Ok(s) => s,
-        Err(_) => return false,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load subscriptions for prefilter");
+            return false;
+        }
     };
     if subscriptions.is_empty() {
         return false;
@@ -32,13 +35,12 @@ pub(crate) async fn filter_by_subscription<R: SubscriptionRepository>(
             Media::Movie { detail, .. } => (detail.id, SubscriptionMediaType::Movie),
             Media::Tv { detail, .. } => (detail.id, SubscriptionMediaType::Tv),
         };
-        let found = repo
-            .find_by_tmdb_id(tmdb_id, &media_type)
-            .await
-            .ok()
-            .flatten();
-        if found.is_some() {
-            filtered.push(media);
+        match repo.find_by_tmdb_id(tmdb_id, &media_type).await {
+            Ok(Some(_)) => filtered.push(media),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(tmdb_id, error = %e, "subscription lookup failed, skipping media");
+            }
         }
     }
     filtered

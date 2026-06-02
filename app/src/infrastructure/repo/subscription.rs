@@ -23,14 +23,14 @@ impl SubscriptionRepository for SeaOrmSubscriptionRepository {
         Ok(entity::subscription::list_all(&self.db)
             .await?
             .into_iter()
-            .map(to_record)
+            .filter_map(to_record)
             .collect())
     }
 
     async fn get_by_id(&self, id: i64) -> AppResult<Option<SubscriptionRecord>> {
         Ok(entity::subscription::get_by_id(&self.db, id)
             .await?
-            .map(to_record))
+            .and_then(to_record))
     }
 
     async fn find_by_tmdb_id(
@@ -46,7 +46,7 @@ impl SubscriptionRepository for SeaOrmSubscriptionRepository {
             media_type.as_str(),
         )
         .await?
-        .map(to_record))
+        .and_then(to_record))
     }
 
     async fn create(&self, input: &SubscriptionCreateInput) -> AppResult<i64> {
@@ -81,17 +81,16 @@ impl SubscriptionRepository for SeaOrmSubscriptionRepository {
     }
 }
 
-fn to_record(model: entity::model::subscription::Model) -> SubscriptionRecord {
-    SubscriptionRecord {
+fn to_record(model: entity::model::subscription::Model) -> Option<SubscriptionRecord> {
+    Some(SubscriptionRecord {
         id: model.id,
-        tmdb_id: u32::try_from(model.tmdb_id).unwrap_or(0),
-        media_type: SubscriptionMediaType::from_str(&model.media_type)
-            .expect("invalid media_type in database"),
+        tmdb_id: u32::try_from(model.tmdb_id).ok()?,
+        media_type: SubscriptionMediaType::from_str(&model.media_type)?,
         title_zh: model.title_zh,
         title_en: model.title_en,
         create_time: model.create_time,
         update_time: model.update_time,
-    }
+    })
 }
 
 #[cfg(test)]

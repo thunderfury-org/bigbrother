@@ -133,6 +133,7 @@ pub async fn on_process_media_sources(
             "Built media files for import"
         );
         let import_source = source_of(&payload.source);
+        let is_channel_post = payload.source_channel_post();
         let mut import_service = handler.import_service.clone();
         let mut identify_service = handler.identify_service.clone();
         let subscription_repo = handler.subscription_repo.clone();
@@ -140,10 +141,13 @@ pub async fn on_process_media_sources(
             .recorded_import
             .execute(import_source, move || async move {
                 let outcome = identify_service.identify(media_files).await?;
-                let filtered_groups =
-                    import_filter::filter_by_subscription(&subscription_repo, outcome.groups).await;
+                let groups = if is_channel_post {
+                    import_filter::filter_by_subscription(&subscription_repo, outcome.groups).await
+                } else {
+                    outcome.groups
+                };
                 import_service
-                    .import_groups(filtered_groups, outcome.unmatched)
+                    .import_groups(groups, outcome.unmatched)
                     .await
             })
             .await;
