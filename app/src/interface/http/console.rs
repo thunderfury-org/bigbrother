@@ -5,7 +5,7 @@ use axum::{
     extract::{OriginalUri, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use chrono::{DateTime, Utc};
 use rust_embed::Embed;
@@ -26,8 +26,9 @@ use crate::{
     infrastructure::{
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+            subscription::SeaOrmSubscriptionRepository,
         },
-        services::{IdentifyService, ImportService},
+        services::{IdentifyService, ImportService, SubscriptionService},
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
 };
@@ -49,11 +50,13 @@ fn embedded_lookup(path: &str) -> Option<AssetFile> {
 
 #[derive(Clone)]
 pub(crate) struct ConsoleContext {
-    repo: Arc<SeaOrmImportRecordRepository>,
-    file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
-    import_service: Option<Arc<ImportService>>,
-    identify_service: Option<Arc<IdentifyService>>,
-    recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
+    pub(super) repo: Arc<SeaOrmImportRecordRepository>,
+    pub(super) file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
+    pub(super) import_service: Option<Arc<ImportService>>,
+    pub(super) identify_service: Option<Arc<IdentifyService>>,
+    pub(super) recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
+    pub(super) subscription_service: Option<Arc<SubscriptionService>>,
+    pub(super) subscription_repo: Option<Arc<SeaOrmSubscriptionRepository>>,
 }
 
 impl ConsoleContext {
@@ -62,6 +65,8 @@ impl ConsoleContext {
         file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
         import_service: ImportService,
         identify_service: IdentifyService,
+        subscription_service: SubscriptionService,
+        subscription_repo: SeaOrmSubscriptionRepository,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -71,6 +76,8 @@ impl ConsoleContext {
             import_service: Some(Arc::new(import_service)),
             identify_service: Some(Arc::new(identify_service)),
             recorded_import: Some(recorded_import),
+            subscription_service: Some(Arc::new(subscription_service)),
+            subscription_repo: Some(Arc::new(subscription_repo)),
         }
     }
 
@@ -85,16 +92,29 @@ impl ConsoleContext {
             import_service: None,
             identify_service: None,
             recorded_import: None,
+            subscription_service: None,
+            subscription_repo: None,
         }
     }
 }
 
 pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
+    use super::subscription as sub;
     Router::new()
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
         .route("/api/files/import", post(import_files))
+        .route(
+            "/api/subscriptions",
+            get(sub::list_subscriptions).post(sub::create_subscription),
+        )
+        .route("/api/subscriptions/candidates", get(sub::search_candidates))
+        .route("/api/subscriptions/{id}", delete(sub::delete_subscription))
+        .route(
+            "/api/subscriptions/{id}/rescan",
+            post(sub::rescan_subscription),
+        )
         .fallback(get(static_handler))
         .with_state(ctx)
 }
@@ -397,7 +417,7 @@ async fn import_files(
     json_response(StatusCode::OK, &ImportFilesResponse { results })
 }
 
-fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
+pub(super) fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
     let bytes = match serde_json::to_vec(body) {
         Ok(value) => value,
         Err(err) => {
@@ -413,7 +433,7 @@ fn bad_request(message: String) -> Response {
     (StatusCode::BAD_REQUEST, message).into_response()
 }
 
-fn app_error_to_response(err: AppError) -> Response {
+pub(super) fn app_error_to_response(err: AppError) -> Response {
     let status = match &err {
         AppError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
         AppError::NotFound(_) => StatusCode::NOT_FOUND,

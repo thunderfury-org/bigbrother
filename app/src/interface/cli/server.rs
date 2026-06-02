@@ -174,6 +174,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         let file_index_service = ctx.file_index_service().await?;
         let import_service = ctx.import_service().await?;
         let identify_service = ctx.identify_service().await?;
+        let (subscription_service, subscription_repo) = ctx.subscription_service().await?;
         (
             Some(config.get_console_config().get_addr()),
             Some(console::new_router(ConsoleContext::new(
@@ -181,6 +182,8 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 file_index_service,
                 import_service,
                 identify_service,
+                subscription_service,
+                subscription_repo,
             ))),
         )
     } else {

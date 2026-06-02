@@ -5,6 +5,7 @@ use crate::{
         import::{ParseService, TransferWorkflow, identify::MediaIdentifyService},
         manage_keywords::ManageKeywordsService,
         resolve_download_url::ResolveDownloadUrlService,
+        subscription::manage::ManageSubscriptionsService,
         sync_strm::SyncStrmService,
     },
     infrastructure::{
@@ -38,4 +39,7 @@ pub type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
 pub type ParseRuntimeService = ParseService<TmdbMetadataGateway, TitleExtractorService>;
+#[allow(dead_code)]
 pub type SubscriptionRepo = SeaOrmSubscriptionRepository;
+pub type SubscriptionService =
+    ManageSubscriptionsService<SeaOrmSubscriptionRepository, TmdbMetadataGateway>;

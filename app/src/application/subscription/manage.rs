@@ -1,5 +1,7 @@
 use crate::application::import_ports::MetadataCatalog;
-use crate::application::ports::{SubscriptionCreateInput, SubscriptionRecord, SubscriptionRepository};
+use crate::application::ports::{
+    SubscriptionCreateInput, SubscriptionRecord, SubscriptionRepository,
+};
 use crate::domain::subscription::SubscriptionMediaType;
 use crate::error::{AppError, AppResult};
 
@@ -34,14 +36,8 @@ where
     }
 
     pub(crate) async fn create(&self, input: SubscriptionCreateInput) -> AppResult<i64> {
-        let has_title = input
-            .title_zh
-            .as_deref()
-            .is_some_and(|t| !t.is_empty())
-            || input
-                .title_en
-                .as_deref()
-                .is_some_and(|t| !t.is_empty());
+        let has_title = input.title_zh.as_deref().is_some_and(|t| !t.is_empty())
+            || input.title_en.as_deref().is_some_and(|t| !t.is_empty());
         if !has_title {
             return Err(AppError::InvalidParameter(
                 "at least one of title_zh or title_en must be non-empty".into(),
@@ -109,7 +105,13 @@ mod tests {
             Ok(self.records.lock().unwrap().clone())
         }
         async fn get_by_id(&self, id: i64) -> AppResult<Option<SubscriptionRecord>> {
-            Ok(self.records.lock().unwrap().iter().find(|r| r.id == id).cloned())
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|r| r.id == id)
+                .cloned())
         }
         async fn find_by_tmdb_id(
             &self,
@@ -148,7 +150,11 @@ mod tests {
     struct FakeCatalog;
 
     impl MetadataCatalog for FakeCatalog {
-        async fn search_movie(&self, title: &str, _year: &str) -> AppResult<Vec<SearchMovieResult>> {
+        async fn search_movie(
+            &self,
+            title: &str,
+            _year: &str,
+        ) -> AppResult<Vec<SearchMovieResult>> {
             if title == "Inception" {
                 Ok(vec![SearchMovieResult {
                     id: 27205,
@@ -159,7 +165,10 @@ mod tests {
                 Ok(vec![])
             }
         }
-        async fn get_movie_detail(&self, _id: u32) -> AppResult<Option<crate::domain::import::MovieDetail>> {
+        async fn get_movie_detail(
+            &self,
+            _id: u32,
+        ) -> AppResult<Option<crate::domain::import::MovieDetail>> {
             Ok(None)
         }
         async fn search_tv(&self, title: &str, _year: &str) -> AppResult<Vec<SearchTvResult>> {
@@ -173,7 +182,10 @@ mod tests {
                 Ok(vec![])
             }
         }
-        async fn get_tv_detail(&self, _id: u32) -> AppResult<Option<crate::domain::import::TvDetail>> {
+        async fn get_tv_detail(
+            &self,
+            _id: u32,
+        ) -> AppResult<Option<crate::domain::import::TvDetail>> {
             Ok(None)
         }
     }

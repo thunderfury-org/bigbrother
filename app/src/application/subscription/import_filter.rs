@@ -1,6 +1,7 @@
 use crate::application::ports::SubscriptionRepository;
 use crate::domain::{import::inner::Media, subscription::SubscriptionMediaType};
 
+#[allow(dead_code)]
 pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
     repo: &R,
     description: &str,
@@ -16,8 +17,7 @@ pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
         s.title_zh
             .as_deref()
             .is_some_and(|t| !t.is_empty() && description.contains(t))
-            || s
-                .title_en
+            || s.title_en
                 .as_deref()
                 .is_some_and(|t| !t.is_empty() && description.contains(t))
     })
@@ -63,7 +63,13 @@ mod tests {
             Ok(self.records.lock().unwrap().clone())
         }
         async fn get_by_id(&self, id: i64) -> crate::error::AppResult<Option<SubscriptionRecord>> {
-            Ok(self.records.lock().unwrap().iter().find(|r| r.id == id).cloned())
+            Ok(self
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|r| r.id == id)
+                .cloned())
         }
         async fn find_by_tmdb_id(
             &self,

@@ -1,9 +1,11 @@
 use crate::application::file_index::FileIndexService;
+use crate::application::file_index_import::ImportFileResult;
 use crate::application::import::MetadataLookup;
 use crate::application::import_ports::{MediaIdentifier, MediaImporter};
-use crate::application::ports::{FileIndexRepository, ImportRecordRepository, SubscriptionRepository};
+use crate::application::ports::{
+    FileIndexRepository, ImportRecordRepository, SubscriptionRepository,
+};
 use crate::application::recorded_import::RecordedImportService;
-use crate::application::file_index_import::ImportFileResult;
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
 use crate::error::AppResult;
 
@@ -24,12 +26,9 @@ where
     D: MediaIdentifier,
     RecordRepo: ImportRecordRepository,
 {
-    let subscription = sub_repo
-        .get_by_id(subscription_id)
-        .await?
-        .ok_or_else(|| crate::error::AppError::NotFound(format!(
-            "subscription {subscription_id} not found"
-        )))?;
+    let subscription = sub_repo.get_by_id(subscription_id).await?.ok_or_else(|| {
+        crate::error::AppError::NotFound(format!("subscription {subscription_id} not found"))
+    })?;
 
     let query = subscription
         .title_en
@@ -76,8 +75,7 @@ where
                     let media_files =
                         metadata_lookup.build_media_files(raw_files.clone(), descriptions);
                     let identified = identifier.identify(media_files).await?;
-                    let filtered_groups =
-                        filter_by_subscription(sub_repo, identified.groups).await;
+                    let filtered_groups = filter_by_subscription(sub_repo, identified.groups).await;
                     importer
                         .import_groups(filtered_groups, identified.unmatched)
                         .await
