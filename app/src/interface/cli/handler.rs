@@ -46,8 +46,8 @@ pub(crate) async fn run_import_share_url(
     let descriptions: Vec<String> = description.into_iter().collect();
     let media_files = metadata_lookup.build_media_files(raw_files, descriptions);
     let imported = recorded
-        .execute(source_for_share_url(url), || async {
-            let outcome = identify_service.identify(&media_files).await?;
+        .execute(source_for_share_url(url), move || async move {
+            let outcome = identify_service.identify(media_files).await?;
             import_service
                 .import_groups(outcome.groups, outcome.unmatched)
                 .await

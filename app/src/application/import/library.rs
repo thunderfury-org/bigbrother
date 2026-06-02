@@ -6,7 +6,7 @@ use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::error::AppResult;
 
-use super::{TransferWorkflow, metadata::MetadataLookup};
+use super::TransferWorkflow;
 
 impl<L, F> TransferWorkflow<L, F>
 where
@@ -55,7 +55,9 @@ where
             });
         }
 
-        Ok(MetadataLookup::default().build_media_files(raw_files, Vec::new()))
+        Ok(self
+            .metadata_lookup
+            .build_media_files(raw_files, Vec::new()))
     }
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {

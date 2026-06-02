@@ -3,9 +3,12 @@ use std::collections::HashMap;
 use crate::{
     application::import::{
         ImportedMedia, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
-        identify::UnmatchedFile,
+        identify::{IdentifyOutcome, UnmatchedFile},
     },
-    domain::{import::inner::Media, media::Title},
+    domain::{
+        import::inner::{Media, MediaFile},
+        media::Title,
+    },
     error::AppResult,
 };
 
@@ -110,4 +113,11 @@ pub trait MediaImporter: Send + 'static {
         groups: Vec<Media>,
         unmatched: Vec<UnmatchedFile>,
     ) -> impl std::future::Future<Output = AppResult<Vec<ImportedMedia>>> + Send;
+}
+
+pub(crate) trait MediaIdentifier: Send + 'static {
+    fn identify(
+        &mut self,
+        files: Vec<MediaFile>,
+    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
 }

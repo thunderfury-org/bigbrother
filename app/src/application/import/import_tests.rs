@@ -45,7 +45,7 @@ where
         let media_files = self
             .metadata_lookup
             .build_media_files(raw_files, Vec::new());
-        let outcome = self.identify_service.identify(&media_files).await?;
+        let outcome = self.identify_service.identify(media_files).await?;
         self.transfer
             .import_groups(outcome.groups, outcome.unmatched)
             .await

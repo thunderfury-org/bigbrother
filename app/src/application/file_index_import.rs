@@ -4,12 +4,14 @@ use crate::{
     application::{
         file_index::FileIndexService,
         import::{ImportedMedia, MetadataLookup, identify::IdentifyOutcome},
-        import_ports::MediaImporter,
+        import_ports::{MediaIdentifier, MediaImporter},
         ports::{FileIndexRepository, ImportRecordRepository},
         recorded_import::RecordedImportService,
     },
-    domain::import::inner::MediaFile,
-    domain::import_record::{ImportSource, ImportSourceKind},
+    domain::{
+        import::inner::MediaFile,
+        import_record::{ImportSource, ImportSourceKind},
+    },
     error::{AppError, AppResult},
 };
 
@@ -78,13 +80,6 @@ impl ImportFileResult {
     }
 }
 
-pub(crate) trait Identifier: Send + 'static {
-    fn identify(
-        &mut self,
-        files: &[MediaFile],
-    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
-}
-
 pub struct FileIndexImportService<R> {
     file_index: FileIndexService<R>,
 }
@@ -103,7 +98,7 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
     ) -> AppResult<Vec<ImportFileResult>>
     where
         I: MediaImporter,
-        D: Identifier,
+        D: MediaIdentifier,
         RecordRepo: ImportRecordRepository,
     {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
@@ -143,7 +138,7 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
                     let mut metadata_lookup = MetadataLookup::default();
                     let media_files =
                         metadata_lookup.build_media_files(raw_files.clone(), descriptions);
-                    let identified = identifier.identify(&media_files).await?;
+                    let identified = identifier.identify(media_files).await?;
                     importer
                         .import_groups(identified.groups, identified.unmatched)
                         .await
@@ -170,12 +165,12 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
     }
 }
 
-impl<M, T> Identifier for crate::application::import::identify::MediaIdentifyService<M, T>
+impl<M, T> MediaIdentifier for crate::application::import::identify::MediaIdentifyService<M, T>
 where
     M: crate::application::import_ports::MetadataCatalog + Send + Sync + 'static,
     T: crate::application::import_ports::TitleExtractor + Send + Sync + 'static,
 {
-    async fn identify(&mut self, files: &[MediaFile]) -> AppResult<IdentifyOutcome> {
+    async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
         self.identify(files).await
     }
 }
@@ -253,10 +248,10 @@ mod tests {
 
     struct FakeIdentifier;
 
-    impl Identifier for FakeIdentifier {
+    impl MediaIdentifier for FakeIdentifier {
         async fn identify(
             &mut self,
-            _files: &[crate::domain::import::inner::MediaFile],
+            _files: Vec<crate::domain::import::inner::MediaFile>,
         ) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
                 groups: vec![],

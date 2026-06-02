@@ -166,7 +166,7 @@ async fn identify_buckets_movie_into_media_movie() {
     let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let files = vec![movie_media_file("Inception.2010.mkv", "Inception", "2010")];
 
-    let outcome = svc.identify(&files).await.unwrap();
+    let outcome = svc.identify(files).await.unwrap();
 
     assert_eq!(outcome.unmatched.len(), 0);
     assert_eq!(outcome.groups.len(), 1);
@@ -202,7 +202,7 @@ async fn identify_groups_tv_files_by_tmdb_id() {
         tv_media_file("Breaking.Bad.S01E06.mkv", "Breaking Bad", "2008", 1, 6),
     ];
 
-    let outcome = svc.identify(&files).await.unwrap();
+    let outcome = svc.identify(files).await.unwrap();
 
     assert_eq!(outcome.unmatched.len(), 0);
     assert_eq!(outcome.groups.len(), 1);
@@ -232,7 +232,7 @@ async fn identify_returns_unmatched_when_tmdb_returns_none() {
     let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let files = vec![movie_media_file("Unknown.2020.mkv", "Unknown", "2020")];
 
-    let outcome = svc.identify(&files).await.unwrap();
+    let outcome = svc.identify(files).await.unwrap();
 
     assert_eq!(outcome.groups.len(), 0);
     assert_eq!(outcome.unmatched.len(), 1);
@@ -257,7 +257,6 @@ async fn identify_returns_unmatched_when_episode_slot_unresolved() {
         .unwrap()
         .insert(1396, tv_detail(1396, "Breaking Bad", 5));
     let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
-    // Multi-season show with no episode number → resolve_tv_episode_slot returns None
     let bad_file = MediaFile {
         metadata: Box::new(Metadata {
             media_kind: MediaKind::TvEpisode,
@@ -277,7 +276,7 @@ async fn identify_returns_unmatched_when_episode_slot_unresolved() {
     };
     let files = vec![bad_file];
 
-    let outcome = svc.identify(&files).await.unwrap();
+    let outcome = svc.identify(files).await.unwrap();
 
     assert_eq!(outcome.groups.len(), 0);
     assert_eq!(outcome.unmatched.len(), 1);

@@ -136,8 +136,8 @@ pub async fn on_process_media_sources(
         let mut identify_service = handler.identify_service.clone();
         let outcome = handler
             .recorded_import
-            .execute(import_source, || async {
-                let outcome = identify_service.identify(&media_files).await?;
+            .execute(import_source, move || async move {
+                let outcome = identify_service.identify(media_files).await?;
                 import_service
                     .import_groups(outcome.groups, outcome.unmatched)
                     .await

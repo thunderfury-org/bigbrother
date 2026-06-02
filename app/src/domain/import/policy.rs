@@ -557,7 +557,7 @@ mod tests {
         );
     }
 
-    fn group_create_raw_file(name: &str) -> RawFile {
+    fn create_raw_file(name: &str) -> RawFile {
         RawFile {
             id: None,
             name: name.to_string(),
@@ -567,21 +567,21 @@ mod tests {
         }
     }
 
-    fn group_create_video_metadata() -> Box<Metadata> {
+    fn create_video_metadata() -> Box<Metadata> {
         Box::new(Metadata {
             file_type: FileType::Video,
             ..Default::default()
         })
     }
 
-    fn group_create_subtitle_metadata() -> Box<Metadata> {
+    fn create_subtitle_metadata() -> Box<Metadata> {
         Box::new(Metadata {
             file_type: FileType::Subtitle,
             ..Default::default()
         })
     }
 
-    fn group_create_tv_detail(number_of_seasons: u32) -> TvDetail {
+    fn create_tv_detail(number_of_seasons: u32) -> TvDetail {
         TvDetail {
             id: 1,
             name: "Test Show".to_string(),
@@ -604,7 +604,7 @@ mod tests {
         }
     }
 
-    fn group_create_tv_media_file(
+    fn create_tv_media_file(
         file_name: &str,
         season_number: Option<u32>,
         episode_number: Option<u32>,
@@ -617,7 +617,7 @@ mod tests {
                 extension: ".mkv".to_string(),
                 ..Default::default()
             }),
-            video: group_create_raw_file(file_name),
+            video: create_raw_file(file_name),
             subtitles: Vec::new(),
             descriptions: Vec::new(),
         }
@@ -633,14 +633,8 @@ mod tests {
     #[test]
     fn test_group_no_video_files() {
         let raw_files = vec![
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("sub1.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("sub2.srt"),
-            ),
+            (create_subtitle_metadata(), create_raw_file("sub1.srt")),
+            (create_subtitle_metadata(), create_raw_file("sub2.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 0);
@@ -649,14 +643,8 @@ mod tests {
     #[test]
     fn test_group_only_video_files_no_subtitles() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("video1.mp4"),
-            ),
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("video2.mkv"),
-            ),
+            (create_video_metadata(), create_raw_file("video1.mp4")),
+            (create_video_metadata(), create_raw_file("video2.mkv")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 2);
@@ -667,14 +655,8 @@ mod tests {
     #[test]
     fn test_group_single_video_with_matching_subtitle() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("movie.mp4")),
+            (create_subtitle_metadata(), create_raw_file("movie.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 1);
@@ -686,18 +668,9 @@ mod tests {
     #[test]
     fn test_group_video_with_multiple_subtitles() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie.en.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie.zh.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("movie.mp4")),
+            (create_subtitle_metadata(), create_raw_file("movie.en.srt")),
+            (create_subtitle_metadata(), create_raw_file("movie.zh.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 1);
@@ -707,22 +680,10 @@ mod tests {
     #[test]
     fn test_group_multiple_videos_with_matching_subtitles() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("video1.mp4"),
-            ),
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("video2.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("video1.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("video2.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("video1.mp4")),
+            (create_video_metadata(), create_raw_file("video2.mp4")),
+            (create_subtitle_metadata(), create_raw_file("video1.srt")),
+            (create_subtitle_metadata(), create_raw_file("video2.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 2);
@@ -745,14 +706,8 @@ mod tests {
     #[test]
     fn test_group_video_without_matching_subtitle() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("video1.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("different.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("video1.mp4")),
+            (create_subtitle_metadata(), create_raw_file("different.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 1);
@@ -762,13 +717,10 @@ mod tests {
     #[test]
     fn test_group_subtitle_matches_by_prefix() {
         let raw_files = vec![
+            (create_video_metadata(), create_raw_file("movie.mp4")),
             (
-                group_create_video_metadata(),
-                group_create_raw_file("movie.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie.en.forced.srt"),
+                create_subtitle_metadata(),
+                create_raw_file("movie.en.forced.srt"),
             ),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
@@ -779,14 +731,8 @@ mod tests {
     #[test]
     fn test_group_video_without_extension() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("videofile"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("videofile.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("videofile")),
+            (create_subtitle_metadata(), create_raw_file("videofile.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 1);
@@ -797,34 +743,13 @@ mod tests {
     #[test]
     fn test_group_complex_scenario() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie1.mp4"),
-            ),
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie2.mkv"),
-            ),
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie3.avi"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie1.en.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie1.zh.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie2.srt"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("unmatched.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("movie1.mp4")),
+            (create_video_metadata(), create_raw_file("movie2.mkv")),
+            (create_video_metadata(), create_raw_file("movie3.avi")),
+            (create_subtitle_metadata(), create_raw_file("movie1.en.srt")),
+            (create_subtitle_metadata(), create_raw_file("movie1.zh.srt")),
+            (create_subtitle_metadata(), create_raw_file("movie2.srt")),
+            (create_subtitle_metadata(), create_raw_file("unmatched.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 3);
@@ -850,14 +775,8 @@ mod tests {
     #[test]
     fn test_group_subtitle_matches_only_once() {
         let raw_files = vec![
-            (
-                group_create_video_metadata(),
-                group_create_raw_file("movie.mp4"),
-            ),
-            (
-                group_create_subtitle_metadata(),
-                group_create_raw_file("movie.srt"),
-            ),
+            (create_video_metadata(), create_raw_file("movie.mp4")),
+            (create_subtitle_metadata(), create_raw_file("movie.srt")),
         ];
         let result = group_video_and_subtitle_files(raw_files, Vec::new());
         assert_eq!(result.len(), 1);
@@ -866,8 +785,8 @@ mod tests {
 
     #[test]
     fn test_resolve_tv_episode_slot_defaults_single_season_to_one() {
-        let file = group_create_tv_media_file("show.s01e01.mkv", None, Some(1));
-        let tv = group_create_tv_detail(1);
+        let file = create_tv_media_file("show.s01e01.mkv", None, Some(1));
+        let tv = create_tv_detail(1);
 
         let slot = resolve_tv_episode_slot(&file, &tv);
 
@@ -876,8 +795,8 @@ mod tests {
 
     #[test]
     fn test_resolve_tv_episode_slot_rejects_missing_season_for_multi_season_show() {
-        let file = group_create_tv_media_file("show.e01.mkv", None, Some(1));
-        let tv = group_create_tv_detail(3);
+        let file = create_tv_media_file("show.e01.mkv", None, Some(1));
+        let tv = create_tv_detail(3);
 
         let slot = resolve_tv_episode_slot(&file, &tv);
 
@@ -886,8 +805,8 @@ mod tests {
 
     #[test]
     fn test_resolve_tv_episode_slot_rejects_missing_episode() {
-        let file = group_create_tv_media_file("show.s01.mkv", Some(1), None);
-        let tv = group_create_tv_detail(1);
+        let file = create_tv_media_file("show.s01.mkv", Some(1), None);
+        let tv = create_tv_detail(1);
 
         let slot = resolve_tv_episode_slot(&file, &tv);
 

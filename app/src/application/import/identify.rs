@@ -23,6 +23,15 @@ pub(crate) struct UnmatchedFile {
     pub file_path: String,
 }
 
+impl From<MediaFile> for UnmatchedFile {
+    fn from(file: MediaFile) -> Self {
+        Self {
+            file_name: file.video.name,
+            file_path: file.video.path,
+        }
+    }
+}
+
 impl<M, T> MediaIdentifyService<M, T>
 where
     M: MetadataCatalog,
@@ -34,23 +43,18 @@ where
         }
     }
 
-    pub async fn identify(&mut self, files: &[MediaFile]) -> AppResult<IdentifyOutcome> {
+    pub async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
         let mut grouped: HashMap<u32, Media> = HashMap::new();
         let mut unmatched = Vec::new();
 
         for file in files {
-            if file.metadata.is_tv_episode() {
-                if self.identify_tv(file, &mut grouped).await?.is_some() {
-                    unmatched.push(UnmatchedFile {
-                        file_name: file.video.name.clone(),
-                        file_path: file.video.path.clone(),
-                    });
-                }
-            } else if self.identify_movie(file, &mut grouped).await?.is_some() {
-                unmatched.push(UnmatchedFile {
-                    file_name: file.video.name.clone(),
-                    file_path: file.video.path.clone(),
-                });
+            let unmatched_file = if file.metadata.is_tv_episode() {
+                self.identify_tv(file, &mut grouped).await?
+            } else {
+                self.identify_movie(file, &mut grouped).await?
+            };
+            if let Some(file) = unmatched_file {
+                unmatched.push(file.into());
             }
         }
 
@@ -62,47 +66,42 @@ where
 
     async fn identify_tv(
         &mut self,
-        file: &MediaFile,
+        file: MediaFile,
         grouped: &mut HashMap<u32, Media>,
-    ) -> AppResult<Option<()>> {
+    ) -> AppResult<Option<MediaFile>> {
         let tv_info = self
             .tmdb_lookup
             .get_tv_info(&file.metadata, &file.descriptions)
             .await?;
         match tv_info {
             Some(tv_info) => {
-                let Some((season_number, episode_number)) = resolve_tv_episode_slot(file, &tv_info)
+                let Some((season_number, episode_number)) =
+                    resolve_tv_episode_slot(&file, &tv_info)
                 else {
-                    return Ok(Some(()));
+                    return Ok(Some(file));
                 };
-                insert_tv_media(
-                    grouped,
-                    tv_info,
-                    season_number,
-                    episode_number,
-                    file.clone(),
-                );
+                insert_tv_media(grouped, tv_info, season_number, episode_number, file);
                 Ok(None)
             }
-            None => Ok(Some(())),
+            None => Ok(Some(file)),
         }
     }
 
     async fn identify_movie(
         &mut self,
-        file: &MediaFile,
+        file: MediaFile,
         grouped: &mut HashMap<u32, Media>,
-    ) -> AppResult<Option<()>> {
+    ) -> AppResult<Option<MediaFile>> {
         let movie_info = self
             .tmdb_lookup
             .get_movie_info(&file.metadata, &file.descriptions)
             .await?;
         match movie_info {
             Some(movie_info) => {
-                insert_movie_media(grouped, movie_info, file.clone());
+                insert_movie_media(grouped, movie_info, file);
                 Ok(None)
             }
-            None => Ok(Some(())),
+            None => Ok(Some(file)),
         }
     }
 }

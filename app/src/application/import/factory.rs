@@ -2,11 +2,13 @@ use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MediaIm
 
 use super::ImportedMedia;
 use super::identify::UnmatchedFile;
+use super::metadata::MetadataLookup;
 
 #[derive(Clone)]
 pub(crate) struct TransferWorkflow<L, F> {
     pub(super) library_gateway: L,
     pub(super) local: F,
+    pub(super) metadata_lookup: MetadataLookup,
 }
 
 impl<L, F> TransferWorkflow<L, F> {
@@ -14,6 +16,7 @@ impl<L, F> TransferWorkflow<L, F> {
         Self {
             library_gateway,
             local,
+            metadata_lookup: MetadataLookup::default(),
         }
     }
 
