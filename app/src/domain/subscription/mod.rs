@@ -1,5 +1,3 @@
-use chrono::{DateTime, Utc};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubscriptionMediaType {
     Movie,
@@ -21,18 +19,6 @@ impl SubscriptionMediaType {
             _ => return None,
         })
     }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Subscription {
-    pub id: i64,
-    pub tmdb_id: u32,
-    pub media_type: SubscriptionMediaType,
-    pub title_zh: Option<String>,
-    pub title_en: Option<String>,
-    pub create_time: DateTime<Utc>,
-    pub update_time: DateTime<Utc>,
 }
 
 #[cfg(test)]

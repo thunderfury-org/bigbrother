@@ -1,7 +1,6 @@
 use crate::application::ports::SubscriptionRepository;
 use crate::domain::{import::inner::Media, subscription::SubscriptionMediaType};
 
-#[allow(dead_code)]
 pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
     repo: &R,
     description: &str,

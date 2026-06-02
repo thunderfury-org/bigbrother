@@ -96,6 +96,24 @@ impl ConsoleContext {
             subscription_repo: None,
         }
     }
+
+    #[cfg(test)]
+    fn new_with_subscription(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        subscription_service: SubscriptionService,
+        subscription_repo: SeaOrmSubscriptionRepository,
+    ) -> Self {
+        Self {
+            repo: Arc::new(repo),
+            file_index_service: Arc::new(file_index_service),
+            import_service: None,
+            identify_service: None,
+            recorded_import: None,
+            subscription_service: Some(Arc::new(subscription_service)),
+            subscription_repo: Some(Arc::new(subscription_repo)),
+        }
+    }
 }
 
 pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
@@ -791,6 +809,62 @@ mod tests {
                     .body(axum::body::Body::from(r#"{"ids":[]}"#))
                     .unwrap(),
             )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_list_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router.oneshot(request("/api/subscriptions")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_create_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":27205,"media_type":"movie","title_en":"Inception"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_delete_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("DELETE")
+                    .uri("/api/subscriptions/1")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_candidates_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(request("/api/subscriptions/candidates?query=test"))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);

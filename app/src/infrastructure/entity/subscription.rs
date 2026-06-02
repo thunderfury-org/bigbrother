@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use chrono::Utc;
 use sea_orm::{ActiveValue::Set, prelude::*};
 
