@@ -300,12 +300,15 @@ async fn should_import(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_share_url_raw_files;
-    use crate::{
-        domain::share::RawFile,
-        error::{AppError, AppResult},
-        infrastructure::share::resolver::ShareResolver,
-    };
+    use super::{resolve_share_url_raw_files, should_import};
+    use crate::application::ports::{SubscriptionCreateInput, SubscriptionRepository};
+    use crate::domain::share::RawFile;
+    use crate::domain::subscription::SubscriptionMediaType;
+    use crate::error::{AppError, AppResult};
+    use crate::infrastructure::repo::subscription::SeaOrmSubscriptionRepository;
+    use crate::infrastructure::share::resolver::ShareResolver;
+    use migration::{Migrator, MigratorTrait};
+    use sea_orm::{ConnectOptions, Database};
 
     #[derive(Clone)]
     struct FakeShareResolver {
@@ -351,5 +354,115 @@ mod tests {
 
         assert!(matches!(err, AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("share password invalid"));
+    }
+
+    // --- should_import + subscription filtering tests ---
+
+    async fn fresh_sub_repo() -> SeaOrmSubscriptionRepository {
+        let mut options = ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = Database::connect(options).await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        SeaOrmSubscriptionRepository::new(db)
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_true_for_channel_post_with_matching_title() {
+        let repo = fresh_sub_repo().await;
+        repo.create(&SubscriptionCreateInput {
+            tmdb_id: 27205,
+            media_type: SubscriptionMediaType::Movie,
+            title_zh: Some("盗梦空间".into()),
+            title_en: Some("Inception".into()),
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            should_import(&repo, true, &Some("分享：Inception 2010".into())).await,
+            "channel post with matching title_en should pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_true_for_channel_post_with_matching_zh_title() {
+        let repo = fresh_sub_repo().await;
+        repo.create(&SubscriptionCreateInput {
+            tmdb_id: 27205,
+            media_type: SubscriptionMediaType::Movie,
+            title_zh: Some("盗梦空间".into()),
+            title_en: Some("Inception".into()),
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            should_import(&repo, true, &Some("盗梦空间 4K".into())).await,
+            "channel post with matching title_zh should pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_false_for_channel_post_without_matching_title() {
+        let repo = fresh_sub_repo().await;
+        repo.create(&SubscriptionCreateInput {
+            tmdb_id: 27205,
+            media_type: SubscriptionMediaType::Movie,
+            title_zh: Some("盗梦空间".into()),
+            title_en: Some("Inception".into()),
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            !should_import(&repo, true, &Some("Breaking Bad S01".into())).await,
+            "channel post without matching title should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_false_for_channel_post_with_no_subscriptions() {
+        let repo = fresh_sub_repo().await;
+
+        assert!(
+            !should_import(&repo, true, &Some("anything".into())).await,
+            "channel post with empty subscription list should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_true_for_dm_bypassing_subscriptions() {
+        let repo = fresh_sub_repo().await;
+        // No subscriptions at all — DM should still pass
+        assert!(
+            should_import(&repo, false, &Some("anything".into())).await,
+            "DM should bypass subscription prefilter"
+        );
+        assert!(
+            should_import(&repo, false, &None).await,
+            "DM with no description should bypass"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_import_returns_false_for_channel_post_with_empty_description() {
+        let repo = fresh_sub_repo().await;
+        repo.create(&SubscriptionCreateInput {
+            tmdb_id: 1,
+            media_type: SubscriptionMediaType::Movie,
+            title_zh: None,
+            title_en: Some("Test".into()),
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            !should_import(&repo, true, &None).await,
+            "channel post with no description should be rejected"
+        );
+        assert!(
+            !should_import(&repo, true, &Some("".into())).await,
+            "channel post with empty description should be rejected"
+        );
     }
 }
