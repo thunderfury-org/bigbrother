@@ -111,7 +111,6 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     // Telegram bot runtime
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
-        keyword_service: ctx.keyword_service().await?,
         notify_service: EventBusPublisher::new(event_bus.clone()),
         sync_service: SyncStrmService::new(
             Pan123LibraryRemote::new(pan123.clone()),
@@ -136,7 +135,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         bot: bot.clone(),
         user_id: config.get_telegram_config().user_id,
     };
-    let keyword_service = ctx.keyword_service().await?;
+    let subscription_repo = ctx.subscription_repo().await?;
     let notify_service = EventBusPublisher::new(event_bus.clone());
     let event_delivery_media_handler = ProcessMediaSourcesHandler {
         file_index_service: ctx.file_index_service().await?,
@@ -146,7 +145,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         recorded_import: RecordedImportService::new(ctx.import_record_repository().await?),
         metadata_lookup: MetadataLookup::default(),
         notify_service,
-        keyword_service,
+        subscription_repo,
         bot: bot.clone(),
     };
 
@@ -174,6 +173,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         let file_index_service = ctx.file_index_service().await?;
         let import_service = ctx.import_service().await?;
         let identify_service = ctx.identify_service().await?;
+        let (subscription_service, subscription_repo) = ctx.subscription_service().await?;
         (
             Some(config.get_console_config().get_addr()),
             Some(console::new_router(ConsoleContext::new(
@@ -181,6 +181,8 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 file_index_service,
                 import_service,
                 identify_service,
+                subscription_service,
+                subscription_repo,
             ))),
         )
     } else {

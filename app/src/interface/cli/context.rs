@@ -3,7 +3,6 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 
 use crate::{
-    application::manage_keywords::ManageKeywordsService,
     error::AppResult,
     infrastructure::{
         client,
@@ -13,12 +12,12 @@ use crate::{
         },
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
-            keyword::SeaOrmKeywordRepository,
+            subscription::SeaOrmSubscriptionRepository,
             telegram_export_state::SeaOrmTelegramExportStateRepository,
         },
         services::{
             FileIndexRuntimeService, IdentifyService, ImportService, ParseRuntimeService,
-            ShareResolverRuntimeService,
+            ShareResolverRuntimeService, SubscriptionService,
         },
         share::{
             pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
@@ -160,11 +159,18 @@ impl CliContext {
         ))
     }
 
-    pub(super) async fn keyword_service(
-        &self,
-    ) -> AppResult<ManageKeywordsService<SeaOrmKeywordRepository>> {
+    pub(super) async fn subscription_repo(&self) -> AppResult<SeaOrmSubscriptionRepository> {
         let db = self.db().await?.clone();
-        Ok(ManageKeywordsService::new(SeaOrmKeywordRepository::new(db)))
+        Ok(SeaOrmSubscriptionRepository::new(db))
+    }
+
+    pub(super) async fn subscription_service(
+        &self,
+    ) -> AppResult<(SubscriptionService, SeaOrmSubscriptionRepository)> {
+        let db = self.db().await?.clone();
+        let repo = SeaOrmSubscriptionRepository::new(db);
+        let service = SubscriptionService::new(repo.clone(), TmdbMetadataGateway::new(self.tmdb()));
+        Ok((service, repo))
     }
 
     pub(super) async fn telegram_export_index_services(

@@ -56,6 +56,15 @@ _Avoid_: deduplicated file catalog, canonical file identity
 A short release-scene token that describes distribution channel or source and must not become part of a media title candidate.
 _Avoid_: title word, release group
 
+**Subscription**:
+A user-registered TMDB target (a movie or a whole TV series) that acts as the sole positive-allow gate for **Media Source** import. A **Subscription** is purely passive: BigBrother does not actively reach out to external systems to find content for it. It is applied at three points:
+  - new channel-post **Source Record** ingest: two layers.
+      * Layer 1 (cheap prefilter): the message description must contain at least one subscription's title text (`title_zh` or `title_en`).
+      * Layer 2 (precise): after raw file parsing and TMDB lookup, the resolved `tmdb_id` must match a subscription.
+  - manual rescan: best-effort scan of the **File Index** by subscription title text, then verified via TMDB lookup; misses are expected (e.g. obfuscated file names won't be found).
+  - direct messages bypass both layers and are imported regardless of subscriptions (treated as explicit operator intent).
+_Avoid_: follow, watch, auto-tracking (these imply active fetching, which this system does not do); keyword (which this concept replaces).
+
 ## Relationships
 
 - A Telegram message may contain zero or more **Media Sources**
@@ -72,6 +81,8 @@ _Avoid_: title word, release group
 - A **File Fingerprint** carries one **File Hash**
 - Two different hashes may coexist in the **File Index** even when they refer to the same real-world file
 - A **Source Tag** may appear inside a raw media filename but is not part of any parsed title candidate
+- A channel-post **Media Source** is imported only if both its description text matches some **Subscription** title AND its resolved `tmdb_id` is covered by a **Subscription**
+- A direct-message **Media Source** is imported regardless of **Subscriptions**
 
 ## Example dialogue
 

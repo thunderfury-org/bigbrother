@@ -3,8 +3,8 @@ use crate::{
         delete_media::DeleteMediaService,
         file_index::FileIndexService,
         import::{ParseService, TransferWorkflow, identify::MediaIdentifyService},
-        manage_keywords::ManageKeywordsService,
         resolve_download_url::ResolveDownloadUrlService,
+        subscription::manage::ManageSubscriptionsService,
         sync_strm::SyncStrmService,
     },
     infrastructure::{
@@ -17,13 +17,12 @@ use crate::{
             gateway::{Pan123MediaSearchGateway, PanLibraryGateway, TmdbMetadataGateway},
             local_store::FilesystemImportLocalStore,
         },
-        repo::{file_index::SeaOrmFileIndexRepository, keyword::SeaOrmKeywordRepository},
+        repo::{file_index::SeaOrmFileIndexRepository, subscription::SeaOrmSubscriptionRepository},
         share::resolver::ShareResolverService,
         title_extractor::TitleExtractorService,
     },
 };
 
-pub type KeywordService = ManageKeywordsService<SeaOrmKeywordRepository>;
 pub type ShareResolverRuntimeService =
     ShareResolverService<pan123::Client, pan189::Client, pan115::Client>;
 pub type ImportService = TransferWorkflow<PanLibraryGateway, FilesystemImportLocalStore>;
@@ -35,3 +34,6 @@ pub type DeleteMediaServiceRuntime =
     DeleteMediaService<Pan123MediaSearchGateway, PanLibraryGateway, FilesystemImportLocalStore>;
 pub type FileIndexRuntimeService = FileIndexService<SeaOrmFileIndexRepository>;
 pub type ParseRuntimeService = ParseService<TmdbMetadataGateway, TitleExtractorService>;
+pub type SubscriptionRepo = SeaOrmSubscriptionRepository;
+pub type SubscriptionService =
+    ManageSubscriptionsService<SeaOrmSubscriptionRepository, TmdbMetadataGateway>;

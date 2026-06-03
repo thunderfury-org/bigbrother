@@ -5,7 +5,7 @@ use axum::{
     extract::{OriginalUri, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use chrono::{DateTime, Utc};
 use rust_embed::Embed;
@@ -26,8 +26,9 @@ use crate::{
     infrastructure::{
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
+            subscription::SeaOrmSubscriptionRepository,
         },
-        services::{IdentifyService, ImportService},
+        services::{IdentifyService, ImportService, SubscriptionService},
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
 };
@@ -49,11 +50,13 @@ fn embedded_lookup(path: &str) -> Option<AssetFile> {
 
 #[derive(Clone)]
 pub(crate) struct ConsoleContext {
-    repo: Arc<SeaOrmImportRecordRepository>,
-    file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
-    import_service: Option<Arc<ImportService>>,
-    identify_service: Option<Arc<IdentifyService>>,
-    recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
+    pub(super) repo: Arc<SeaOrmImportRecordRepository>,
+    pub(super) file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
+    pub(super) import_service: Option<Arc<ImportService>>,
+    pub(super) identify_service: Option<Arc<IdentifyService>>,
+    pub(super) recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
+    pub(super) subscription_service: Option<Arc<SubscriptionService>>,
+    pub(super) subscription_repo: Option<Arc<SeaOrmSubscriptionRepository>>,
 }
 
 impl ConsoleContext {
@@ -62,6 +65,8 @@ impl ConsoleContext {
         file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
         import_service: ImportService,
         identify_service: IdentifyService,
+        subscription_service: SubscriptionService,
+        subscription_repo: SeaOrmSubscriptionRepository,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -71,6 +76,8 @@ impl ConsoleContext {
             import_service: Some(Arc::new(import_service)),
             identify_service: Some(Arc::new(identify_service)),
             recorded_import: Some(recorded_import),
+            subscription_service: Some(Arc::new(subscription_service)),
+            subscription_repo: Some(Arc::new(subscription_repo)),
         }
     }
 
@@ -85,16 +92,47 @@ impl ConsoleContext {
             import_service: None,
             identify_service: None,
             recorded_import: None,
+            subscription_service: None,
+            subscription_repo: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_subscription(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        subscription_service: SubscriptionService,
+        subscription_repo: SeaOrmSubscriptionRepository,
+    ) -> Self {
+        Self {
+            repo: Arc::new(repo),
+            file_index_service: Arc::new(file_index_service),
+            import_service: None,
+            identify_service: None,
+            recorded_import: None,
+            subscription_service: Some(Arc::new(subscription_service)),
+            subscription_repo: Some(Arc::new(subscription_repo)),
         }
     }
 }
 
 pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
+    use super::subscription as sub;
     Router::new()
         .route("/api/imports", get(list_imports))
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
         .route("/api/files/import", post(import_files))
+        .route(
+            "/api/subscriptions",
+            get(sub::list_subscriptions).post(sub::create_subscription),
+        )
+        .route("/api/subscriptions/candidates", get(sub::search_candidates))
+        .route("/api/subscriptions/{id}", delete(sub::delete_subscription))
+        .route(
+            "/api/subscriptions/{id}/rescan",
+            post(sub::rescan_subscription),
+        )
         .fallback(get(static_handler))
         .with_state(ctx)
 }
@@ -397,7 +435,7 @@ async fn import_files(
     json_response(StatusCode::OK, &ImportFilesResponse { results })
 }
 
-fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
+pub(super) fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
     let bytes = match serde_json::to_vec(body) {
         Ok(value) => value,
         Err(err) => {
@@ -413,7 +451,7 @@ fn bad_request(message: String) -> Response {
     (StatusCode::BAD_REQUEST, message).into_response()
 }
 
-fn app_error_to_response(err: AppError) -> Response {
+pub(super) fn app_error_to_response(err: AppError) -> Response {
     let status = match &err {
         AppError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
         AppError::NotFound(_) => StatusCode::NOT_FOUND,
@@ -774,5 +812,240 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_list_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router.oneshot(request("/api/subscriptions")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_create_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":27205,"media_type":"movie","title_en":"Inception"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_delete_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("DELETE")
+                    .uri("/api/subscriptions/1")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn subscription_candidates_returns_503_without_service() {
+        let router = router_with(fresh_repo().await).await;
+
+        let response = router
+            .oneshot(request("/api/subscriptions/candidates?query=test"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // --- Subscription success-path tests ---
+
+    use crate::application::ports::SubscriptionRepository;
+    use crate::application::subscription::manage::ManageSubscriptionsService;
+    use crate::domain::subscription::SubscriptionMediaType;
+    use crate::infrastructure::import::gateway::TmdbMetadataGateway;
+    use crate::infrastructure::repo::subscription::SeaOrmSubscriptionRepository;
+
+    async fn subscription_router_with_seeded() -> (Router, SeaOrmSubscriptionRepository) {
+        let db = fresh_db().await;
+        let repo = SeaOrmImportRecordRepository::new(db.clone());
+        let file_service = FileIndexService::new(SeaOrmFileIndexRepository::new(db.clone()));
+        let sub_repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let tmdb =
+            TmdbMetadataGateway::new(crate::infrastructure::client::tmdb::Client::new("test"));
+        let sub_service = ManageSubscriptionsService::new(sub_repo.clone(), tmdb);
+        sub_repo
+            .create(&crate::application::ports::SubscriptionCreateInput {
+                tmdb_id: 27205,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: Some("盗梦空间".into()),
+                title_en: Some("Inception".into()),
+            })
+            .await
+            .unwrap();
+        let router = new_router(ConsoleContext::new_with_subscription(
+            repo,
+            file_service,
+            sub_service,
+            sub_repo.clone(),
+        ));
+        (router, sub_repo)
+    }
+
+    #[tokio::test]
+    async fn subscription_list_returns_seeded_item() {
+        let (router, _repo) = subscription_router_with_seeded().await;
+        let response = router.oneshot(request("/api/subscriptions")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 65536).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let items = json["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["tmdb_id"].as_u64().unwrap(), 27205);
+        assert_eq!(items[0]["media_type"].as_str().unwrap(), "movie");
+        assert_eq!(items[0]["title_en"].as_str().unwrap(), "Inception");
+    }
+
+    #[tokio::test]
+    async fn subscription_create_returns_201_with_valid_input() {
+        let db = fresh_db().await;
+        let repo = SeaOrmImportRecordRepository::new(db.clone());
+        let file_service = FileIndexService::new(SeaOrmFileIndexRepository::new(db.clone()));
+        let sub_repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let tmdb =
+            TmdbMetadataGateway::new(crate::infrastructure::client::tmdb::Client::new("test"));
+        let sub_service = ManageSubscriptionsService::new(sub_repo.clone(), tmdb);
+        let router = new_router(ConsoleContext::new_with_subscription(
+            repo,
+            file_service,
+            sub_service,
+            sub_repo,
+        ));
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":27205,"media_type":"movie","title_en":"Inception"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), 65536).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["id"].as_i64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn subscription_create_returns_400_with_empty_titles() {
+        let db = fresh_db().await;
+        let repo = SeaOrmImportRecordRepository::new(db.clone());
+        let file_service = FileIndexService::new(SeaOrmFileIndexRepository::new(db.clone()));
+        let sub_repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let tmdb =
+            TmdbMetadataGateway::new(crate::infrastructure::client::tmdb::Client::new("test"));
+        let sub_service = ManageSubscriptionsService::new(sub_repo.clone(), tmdb);
+        let router = new_router(ConsoleContext::new_with_subscription(
+            repo,
+            file_service,
+            sub_service,
+            sub_repo,
+        ));
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":1,"media_type":"movie"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn subscription_create_returns_400_with_invalid_media_type() {
+        let db = fresh_db().await;
+        let repo = SeaOrmImportRecordRepository::new(db.clone());
+        let file_service = FileIndexService::new(SeaOrmFileIndexRepository::new(db.clone()));
+        let sub_repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let tmdb =
+            TmdbMetadataGateway::new(crate::infrastructure::client::tmdb::Client::new("test"));
+        let sub_service = ManageSubscriptionsService::new(sub_repo.clone(), tmdb);
+        let router = new_router(ConsoleContext::new_with_subscription(
+            repo,
+            file_service,
+            sub_service,
+            sub_repo,
+        ));
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":1,"media_type":"invalid","title_en":"Test"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn subscription_delete_returns_204() {
+        let (router, _repo) = subscription_router_with_seeded().await;
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("DELETE")
+                    .uri("/api/subscriptions/1")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn subscription_create_duplicate_returns_400() {
+        let (router, _repo) = subscription_router_with_seeded().await;
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":27205,"media_type":"movie","title_en":"Inception"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

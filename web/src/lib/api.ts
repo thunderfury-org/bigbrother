@@ -125,3 +125,80 @@ export async function importFiles(ids: number[]): Promise<ImportFilesResponse> {
   }
   return (await res.json()) as ImportFilesResponse;
 }
+
+// ── Subscriptions ──
+
+export interface SubscriptionItem {
+  id: number;
+  tmdb_id: number;
+  media_type: string;
+  title_zh: string | null;
+  title_en: string | null;
+  create_time: string;
+  update_time: string;
+}
+
+export interface SubscriptionListResponse {
+  items: SubscriptionItem[];
+}
+
+export interface CandidateItem {
+  tmdb_id: number;
+  media_type: string;
+  title: string;
+  original_title: string;
+}
+
+export interface CandidatesResponse {
+  candidates: CandidateItem[];
+}
+
+export interface CreateSubscriptionInput {
+  tmdb_id: number;
+  media_type: string;
+  title_zh?: string;
+  title_en?: string;
+}
+
+export async function listSubscriptions(): Promise<SubscriptionListResponse> {
+  return fetchJson<SubscriptionListResponse>('/api/subscriptions');
+}
+
+export async function searchCandidates(query: string): Promise<CandidatesResponse> {
+  const params = new URLSearchParams({ query });
+  return fetchJson<CandidatesResponse>(`/api/subscriptions/candidates?${params.toString()}`);
+}
+
+export async function createSubscription(input: CreateSubscriptionInput): Promise<{ id: number }> {
+  const res = await fetch('/api/subscriptions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  return (await res.json()) as { id: number };
+}
+
+export async function deleteSubscription(id: number): Promise<void> {
+  const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+}
+
+export async function rescanSubscription(id: number): Promise<ImportFileResult[]> {
+  const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}/rescan`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  return (await res.json()) as ImportFileResult[];
+}

@@ -8,6 +8,8 @@ mod m20260516_000000_reset_table_file_index;
 mod m20260516_120000_create_table_telegram_export_state;
 mod m20260522_000000_create_table_import_record;
 mod m20260527_000000_add_llm_fields_to_file_description;
+mod m20260602_000000_create_table_subscription;
+mod m20260602_000001_drop_table_keyword;
 
 pub struct Migrator;
 
@@ -23,6 +25,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260516_120000_create_table_telegram_export_state::Migration),
             Box::new(m20260522_000000_create_table_import_record::Migration),
             Box::new(m20260527_000000_add_llm_fields_to_file_description::Migration),
+            Box::new(m20260602_000000_create_table_subscription::Migration),
+            Box::new(m20260602_000001_drop_table_keyword::Migration),
         ]
     }
 }
