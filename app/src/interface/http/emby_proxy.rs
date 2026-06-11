@@ -13,25 +13,17 @@ use reqwest::Url;
 use tracing::error;
 
 use crate::{
-    application::{
-        emby_proxy::BigbrotherStrmMatcher, resolve_download_url::ResolveDownloadUrlResult,
-    },
+    application::emby_proxy::BigbrotherStrmMatcher,
     error::{AppError, AppResult},
     infrastructure::services::MediaDownloadUrlService,
 };
 
 pub(crate) trait DownloadUrlResolver: Clone + Send + Sync + 'static {
-    fn resolve_download_url(
-        &self,
-        file_id: i64,
-    ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>>;
+    fn resolve_download_url(&self, file_id: i64) -> BoxFuture<'static, AppResult<String>>;
 }
 
 impl DownloadUrlResolver for MediaDownloadUrlService {
-    fn resolve_download_url(
-        &self,
-        file_id: i64,
-    ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>> {
+    fn resolve_download_url(&self, file_id: i64) -> BoxFuture<'static, AppResult<String>> {
         let resolver = self.clone();
         Box::pin(async move { resolver.resolve(file_id).await })
     }
@@ -228,13 +220,13 @@ where
                 &ctx.matcher,
             ) {
                 return match ctx.resolver.resolve_download_url(file_id).await {
-                    Ok(ResolveDownloadUrlResult::Redirect(url)) => {
+                    Ok(url) => {
                         (StatusCode::FOUND, [(axum::http::header::LOCATION, url)]).into_response()
                     }
-                    Ok(ResolveDownloadUrlResult::Unauthorized) => {
+                    Err(AppError::Unauthorized(_)) => {
                         (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
                     }
-                    Ok(ResolveDownloadUrlResult::NotFound) => {
+                    Err(AppError::NotFound(_)) => {
                         (StatusCode::NOT_FOUND, "File not found").into_response()
                     }
                     Err(err) => crate::interface::http::media::map_app_error_to_response(err),
@@ -857,15 +849,8 @@ mod tests {
     struct FakeResolver;
 
     impl DownloadUrlResolver for FakeResolver {
-        fn resolve_download_url(
-            &self,
-            _file_id: i64,
-        ) -> BoxFuture<'static, AppResult<ResolveDownloadUrlResult>> {
-            Box::pin(async {
-                Ok(ResolveDownloadUrlResult::Redirect(
-                    "https://download.example/video.mkv".to_string(),
-                ))
-            })
+        fn resolve_download_url(&self, _file_id: i64) -> BoxFuture<'static, AppResult<String>> {
+            Box::pin(async { Ok("https://download.example/video.mkv".to_string()) })
         }
     }
 

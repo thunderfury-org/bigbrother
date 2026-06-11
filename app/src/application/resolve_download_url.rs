@@ -11,14 +11,7 @@ use crate::error::{AppError, AppResult};
 
 use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResolveDownloadUrlResult {
-    Redirect(String),
-    Unauthorized,
-    NotFound,
-}
-
-type SharedResolveResult = AppResult<ResolveDownloadUrlResult>;
+type SharedResolveResult = AppResult<String>;
 
 #[derive(Debug)]
 struct InflightResolve {
@@ -76,10 +69,16 @@ where
     C: DownloadUrlCache,
     S: DownloadUrlSource,
 {
-    pub async fn resolve(&self, file_id: i64) -> AppResult<ResolveDownloadUrlResult> {
+    /// Resolve a download URL for the given file_id.
+    ///
+    /// Returns `Ok(url)` on success, or an `AppError`:
+    /// - `AppError::Unauthorized` when the source reports unauthorized
+    /// - `AppError::NotFound` when the file is not found
+    /// - `AppError::ExternalService` when the source encounters an error
+    pub async fn resolve(&self, file_id: i64) -> AppResult<String> {
         let cache_key = format!("pan123:download_url:{file_id}");
         if let Some(cached_url) = self.cache.get_download_url(&cache_key).await? {
-            return Ok(ResolveDownloadUrlResult::Redirect(cached_url));
+            return Ok(cached_url);
         }
         debug!("download url cache miss for file {file_id}");
 
@@ -102,21 +101,9 @@ where
         let started_at = Instant::now();
         let result = self.resolve_uncached(file_id, &cache_key).await;
         match &result {
-            Ok(ResolveDownloadUrlResult::Redirect(_)) => {
+            Ok(_) => {
                 debug!(
                     "resolved download url for file {file_id} in {:?}",
-                    started_at.elapsed()
-                );
-            }
-            Ok(ResolveDownloadUrlResult::Unauthorized) => {
-                warn!(
-                    "download url resolve unauthorized for file {file_id} after {:?}",
-                    started_at.elapsed()
-                );
-            }
-            Ok(ResolveDownloadUrlResult::NotFound) => {
-                warn!(
-                    "download url resolve not found for file {file_id} after {:?}",
                     started_at.elapsed()
                 );
             }
@@ -150,10 +137,12 @@ where
                     error!("Failed to cache download url for file {file_id}, {err}");
                 }
 
-                Ok(ResolveDownloadUrlResult::Redirect(url))
+                Ok(url)
             }
-            Err(DownloadUrlError::Unauthorized) => Ok(ResolveDownloadUrlResult::Unauthorized),
-            Err(DownloadUrlError::NotFound(_)) => Ok(ResolveDownloadUrlResult::NotFound),
+            Err(DownloadUrlError::Unauthorized) => Err(AppError::Unauthorized(
+                "download url source unauthorized".to_owned(),
+            )),
+            Err(DownloadUrlError::NotFound(msg)) => Err(AppError::NotFound(msg)),
             Err(err) => Err(AppError::ExternalService(
                 format!("failed to get download url: {err}"),
                 false,
@@ -275,10 +264,7 @@ mod tests {
         let service = ResolveDownloadUrlService::new(cache, source.clone());
 
         let result = service.resolve(1).await.unwrap();
-        assert!(matches!(
-            result,
-            ResolveDownloadUrlResult::Redirect(url) if url == "https://cached"
-        ));
+        assert_eq!(result, "https://cached");
         assert_eq!(source.calls(), 0);
     }
 
@@ -287,8 +273,19 @@ mod tests {
         let service =
             ResolveDownloadUrlService::new(FakeCache::default(), FakeSource::new(Err("not_found")));
 
-        let result = service.resolve(1).await.unwrap();
-        assert!(matches!(result, ResolveDownloadUrlResult::NotFound));
+        let error = service.resolve(1).await.unwrap_err();
+        assert!(matches!(error, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_unauthorized() {
+        let service = ResolveDownloadUrlService::new(
+            FakeCache::default(),
+            FakeSource::new(Err("unauthorized")),
+        );
+
+        let error = service.resolve(1).await.unwrap_err();
+        assert!(matches!(error, AppError::Unauthorized(_)));
     }
 
     #[tokio::test]
@@ -326,15 +323,15 @@ mod tests {
             handles.push(tokio::spawn(async move { service.resolve(1).await }));
         }
 
-        let mut redirects = Vec::new();
+        let mut urls = Vec::new();
         for handle in handles {
-            match handle.await.unwrap().unwrap() {
-                ResolveDownloadUrlResult::Redirect(url) => redirects.push(url),
-                other => panic!("expected redirect, got {other:?}"),
+            match handle.await.unwrap() {
+                Ok(url) => urls.push(url),
+                Err(other) => panic!("expected ok, got {other:?}"),
             }
         }
 
-        assert_eq!(redirects, vec!["https://remote".to_string(); 8]);
+        assert_eq!(urls, vec!["https://remote".to_string(); 8]);
         assert_eq!(source.calls(), 1);
     }
 
@@ -362,14 +359,8 @@ mod tests {
         let first = first.await.unwrap().unwrap();
         let second = second.await.unwrap().unwrap();
 
-        assert!(matches!(
-            first,
-            ResolveDownloadUrlResult::Redirect(url) if url == "https://remote/1"
-        ));
-        assert!(matches!(
-            second,
-            ResolveDownloadUrlResult::Redirect(url) if url == "https://remote/2"
-        ));
+        assert_eq!(first, "https://remote/1");
+        assert_eq!(second, "https://remote/2");
         assert_eq!(source.calls(), 2);
     }
 

@@ -369,6 +369,7 @@ pub async fn send_import_error(
     let suffix = match error {
         AppError::InvalidParameter(_) => format!("参数错误：{error}"),
         AppError::NotFound(_) => format!("未找到资源：{error}"),
+        AppError::Unauthorized(_) => format!("未授权：{error}"),
         AppError::Database(_, _) => format!("数据库错误：{error}"),
         AppError::ExternalService(_, _) => format!("外部服务失败：{error}"),
         AppError::Network(_, _) => format!("网络错误：{error}"),

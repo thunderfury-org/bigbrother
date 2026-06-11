@@ -10,8 +10,7 @@ use reqwest::StatusCode;
 use tracing::error;
 
 use crate::{
-    application::resolve_download_url::{ResolveDownloadUrlResult, ResolveDownloadUrlService},
-    error::AppError,
+    application::resolve_download_url::ResolveDownloadUrlService, error::AppError,
     infrastructure::services::MediaDownloadUrlService,
 };
 
@@ -65,17 +64,15 @@ where
         )
             .into_response(),
         Ok(id) => match resolver.resolve(id).await {
-            Ok(ResolveDownloadUrlResult::Redirect(url)) => {
-                Redirect::to(url.as_str()).into_response()
-            }
-            Ok(ResolveDownloadUrlResult::Unauthorized) => {
+            Ok(url) => Redirect::to(url.as_str()).into_response(),
+            Err(AppError::Unauthorized(_)) => {
                 error!(
                     "Unauthorized to get download url of file {}, id: {}",
                     path, id
                 );
                 (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
             }
-            Ok(ResolveDownloadUrlResult::NotFound) => {
+            Err(AppError::NotFound(_)) => {
                 error!("File {} not found, id: {}", path, id);
                 (StatusCode::NOT_FOUND, "File not found").into_response()
             }
@@ -96,6 +93,7 @@ pub(crate) fn map_app_error_to_response(error: AppError) -> Response {
             (StatusCode::BAD_REQUEST, error.to_string()).into_response()
         }
         AppError::NotFound(_) => (StatusCode::NOT_FOUND, error.to_string()).into_response(),
+        AppError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, error.to_string()).into_response(),
         AppError::Database(_, _) | AppError::Network(_, _) | AppError::ExternalService(_, _) => {
             (StatusCode::BAD_GATEWAY, error.to_string()).into_response()
         }
@@ -206,14 +204,20 @@ mod tests {
     #[tokio::test]
     async fn test_redirect_from_cache() {
         let cache = FakeCache::default();
-        let cache_key = "pan123:download_url:12345";
         let test_url = "https://example.com/download/test.mp4";
-        cache
-            .set_download_url(cache_key, test_url, std::time::Duration::from_secs(60))
-            .await
-            .unwrap();
+
+        // Resolve once to populate the cache via the service's public API.
         let resolver = ResolveDownloadUrlService::new(
-            cache,
+            cache.clone(),
+            FakeSource {
+                result: FakeSourceResult::Url(test_url.to_string()),
+            },
+        );
+        resolver.resolve(12345).await.unwrap();
+
+        // Now resolve with a source that would fail — should hit cache.
+        let resolver = ResolveDownloadUrlService::new(
+            cache.clone(),
             FakeSource {
                 result: FakeSourceResult::NotFound,
             },
