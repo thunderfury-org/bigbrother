@@ -82,6 +82,7 @@ fn classify_error(err: &AppError) -> &'static str {
     match err {
         AppError::InvalidParameter(_) => "invalid_parameter",
         AppError::NotFound(_) => "not_found",
+        AppError::Unauthorized(_) => "unauthorized",
         AppError::Database(_, _) => "database",
         AppError::ExternalService(_, _) => "external_service",
         AppError::Network(_, _) => "network",
