@@ -149,6 +149,38 @@ Helper scripts:
 - [`tools/generate_entity.sh`](tools/generate_entity.sh): regenerate SeaORM entities
 - [`tools/migrate_db.sh`](tools/migrate_db.sh): run migration helpers
 
+## Releasing
+
+One-time setup:
+
+```bash
+cargo install git-cliff
+```
+
+Release workflow:
+
+```bash
+# 1. Ensure on main, up to date
+git checkout main && git pull
+
+# 2. Preview the changelog to decide the next semver level
+make changelog
+
+# 3. Execute the release (runs tests, lint, bumps version, generates changelog, commits and tags)
+make release VERSION=0.2.0
+
+# 4. Review the commit and tag
+git log -1
+git show v0.2.0
+
+# 5. Push to trigger CI (Docker image build + GitHub Release)
+git push --follow-tags
+```
+
+On push, CI will:
+- Build a multi-arch Docker image and push it to `ghcr.io`
+- Create a GitHub Release with the changelog section for the new version
+
 ## License
 
 MIT

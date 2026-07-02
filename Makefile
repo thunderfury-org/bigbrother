@@ -22,3 +22,11 @@ lint:
 
 test:
 	cargo test
+
+# Preview the changelog for the next release (requires git-cliff)
+changelog:
+	git cliff --bump --unreleased
+
+# Execute a release. Usage: make release VERSION=0.2.0
+release:
+	tools/release.sh $(VERSION)
