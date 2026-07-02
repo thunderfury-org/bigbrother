@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use super::{RequestError, RequestResult, http};
 
 const OPEN_API_BASE: &str = "https://open-api.123pan.com";
-const WEB_API_BASE: &str = "https://www.123pan.com/b";
+const WEB_API_BASE: &str = "https://yun.123pan.com/b";
 
 const PLATFORM_KEY: &str = "Platform";
 const PLATFORM_VALUE: &str = "open_platform";
