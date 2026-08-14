@@ -28,11 +28,6 @@ pub enum ObservationNotice {
     PermanentError { error: crate::error::AppError },
 }
 
-#[derive(Debug, Clone)]
-pub struct ObservationOutcome {
-    pub notice: Option<ObservationNotice>,
-}
-
 #[derive(Clone)]
 pub struct ProcessObservationService<F, R, I, M, S> {
     file_index: FileIndexService<F>,
@@ -71,7 +66,7 @@ where
     pub async fn process(
         &self,
         observation: MediaSourceObservation,
-    ) -> AppResult<ObservationOutcome> {
+    ) -> AppResult<Option<ObservationNotice>> {
         let source_kind = observation.import_source.kind.as_str();
         if let Err(err) = self
             .file_index
@@ -103,7 +98,7 @@ where
             "Evaluated import policy for media source observation"
         );
         if !should_import {
-            return Ok(ObservationOutcome { notice: None });
+            return Ok(None);
         }
 
         let descriptions: Vec<String> = observation.description.into_iter().collect();
@@ -139,13 +134,11 @@ where
                     imported_summary_count = imported.len(),
                     "Import completed for media source observation"
                 );
-                Ok(ObservationOutcome {
-                    notice: Some(ObservationNotice::ImportResults(imported)),
-                })
+                Ok(Some(ObservationNotice::ImportResults(imported)))
             }
-            Err(err) if !err.is_retryable() => Ok(ObservationOutcome {
-                notice: Some(ObservationNotice::PermanentError { error: err }),
-            }),
+            Err(err) if !err.is_retryable() => {
+                Ok(Some(ObservationNotice::PermanentError { error: err }))
+            }
             Err(err) => Err(err),
         }
     }
@@ -390,8 +383,8 @@ mod tests {
         )
     }
 
-    fn assert_import_results(outcome: ObservationOutcome) {
-        match outcome.notice {
+    fn assert_import_results(notice: Option<ObservationNotice>) {
+        match notice {
             Some(ObservationNotice::ImportResults(items)) => {
                 assert_eq!(items, vec![sample_imported_movie()]);
             }
@@ -468,7 +461,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(outcome.notice.is_none());
+        assert!(outcome.is_none());
         assert_eq!(*import_calls.lock().unwrap(), 0);
         assert_eq!(recorded.lock().unwrap().len(), 1);
     }
@@ -509,7 +502,7 @@ mod tests {
         .await
         .unwrap();
 
-        match outcome.notice {
+        match outcome {
             Some(ObservationNotice::PermanentError { error }) => {
                 assert!(error.to_string().contains("library rejected"));
             }

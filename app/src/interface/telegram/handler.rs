@@ -1,9 +1,7 @@
 use tracing::{info, warn};
 
 use crate::{
-    application::media_source_observation::{
-        MediaSourceObservation, ObservationNotice, ObservationOutcome,
-    },
+    application::media_source_observation::{MediaSourceObservation, ObservationNotice},
     application::notify::MessageSender,
     domain::import_record::ImportSource,
     domain::share::RawFile,
@@ -11,7 +9,6 @@ use crate::{
     infrastructure::{
         services::{NotifyService, ObservationProcessor, ShareResolverRuntimeService},
         share::{file_parser::ShareFileParser, resolver::ShareResolver},
-        telegram::document::{PreparedSourceDocument, TelegramDocumentLoader},
     },
     interface::import::{source_for_fslink, source_for_share_url, source_for_telegram_document},
     interface::telegram::file_index::{
@@ -26,7 +23,7 @@ pub struct ProcessMediaSourcesHandler {
     pub processor: ObservationProcessor,
     pub notify_service: NotifyService,
     pub share_resolver: ShareResolverRuntimeService,
-    pub documents: TelegramDocumentLoader,
+    pub bot: teloxide::Bot,
 }
 
 pub async fn on_process_media_sources(
@@ -47,7 +44,7 @@ pub async fn on_process_media_sources(
     );
 
     let raw_files =
-        match fetch_raw_files(&handler.share_resolver, &handler.documents, &payload.source).await {
+        match fetch_raw_files(&handler.share_resolver, &handler.bot, &payload.source).await {
             Ok(files) => files,
             Err(err) if !err.is_retryable() => {
                 warn!(error = %err, "skipping permanent error");
@@ -69,16 +66,16 @@ pub async fn on_process_media_sources(
         "Fetched raw files for media source observation"
     );
 
-    let outcome = handler
+    let notice = handler
         .processor
         .process(observation_from_payload(&payload, raw_files))
         .await?;
-    deliver_observation_outcome(
+    deliver_observation_notice(
         &handler.notify_service,
         source_context.as_ref(),
         reply_to,
         error_prefix,
-        outcome,
+        notice,
     )
     .await;
     Ok(())
@@ -114,17 +111,14 @@ fn error_prefix(source: &MediaSource) -> &'static str {
 
 async fn fetch_raw_files<R: ShareResolver>(
     resolver: &R,
-    documents: &TelegramDocumentLoader,
+    bot: &teloxide::Bot,
     source: &MediaSource,
 ) -> AppResult<Vec<RawFile>> {
     match source {
         MediaSource::ShareUrl(url) => resolve_share_url_raw_files(resolver, url).await,
         MediaSource::Fslink(fslink) => ShareFileParser::parse_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
-            let prepared = documents
-                .prepare(file_id, MAX_TELEGRAM_DOCUMENT_BYTES)
-                .await?;
-            document_raw_files(file_name, prepared)
+            fetch_tg_document(bot, file_id, file_name).await
         }
     }
 }
@@ -139,26 +133,37 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
         .ok_or_else(|| AppError::InvalidParameter(format!("unsupported share url: {raw_url}")))
 }
 
-fn document_raw_files(
+async fn fetch_tg_document(
+    bot: &teloxide::Bot,
+    file_id: &str,
     file_name: &str,
-    prepared: PreparedSourceDocument,
 ) -> AppResult<Vec<RawFile>> {
-    match prepared {
-        PreparedSourceDocument::ExceedsLimit { size } => Err(AppError::InvalidParameter(format!(
+    use teloxide::net::Download;
+    use teloxide::prelude::Requester;
+
+    let file = bot
+        .get_file(teloxide::types::FileId(file_id.to_string()))
+        .await?;
+    let size = u64::from(file.meta.size);
+    if size > MAX_TELEGRAM_DOCUMENT_BYTES {
+        return Err(AppError::InvalidParameter(format!(
             "Telegram document too large ({file_name}): {size} bytes exceeds 10MB limit"
-        ))),
-        PreparedSourceDocument::Content(bytes) => ShareFileParser::parse_json_bytes(bytes),
+        )));
     }
+
+    let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
+    bot.download_file(&file.path, &mut content).await?;
+    ShareFileParser::parse_json_bytes(content)
 }
 
-pub(crate) async fn deliver_observation_outcome(
+async fn deliver_observation_notice(
     notify_service: &impl MessageSender,
     source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
     reply_to: Option<i32>,
     error_prefix: &str,
-    outcome: ObservationOutcome,
+    notice: Option<ObservationNotice>,
 ) {
-    match outcome.notice {
+    match notice {
         Some(ObservationNotice::ImportResults(imported)) => {
             send_import_results(notify_service, source_context, reply_to, &imported).await;
         }
@@ -179,17 +184,16 @@ pub(crate) async fn deliver_observation_outcome(
 #[cfg(test)]
 mod tests {
     use super::{
-        deliver_observation_outcome, document_raw_files, error_prefix, observation_from_payload,
+        deliver_observation_notice, error_prefix, observation_from_payload,
         resolve_share_url_raw_files,
     };
     use crate::application::import::ImportedMedia;
-    use crate::application::media_source_observation::{ObservationNotice, ObservationOutcome};
+    use crate::application::media_source_observation::ObservationNotice;
     use crate::application::notify::{Message, MessageSender};
     use crate::domain::import_record::ImportSourceKind;
     use crate::domain::share::RawFile;
     use crate::error::{AppError, AppResult};
     use crate::infrastructure::share::resolver::ShareResolver;
-    use crate::infrastructure::telegram::document::PreparedSourceDocument;
     use crate::interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, SourceContext, TelegramSourceContext,
     };
@@ -325,63 +329,25 @@ mod tests {
         assert!(err.to_string().contains("share password invalid"));
     }
 
-    #[test]
-    fn parses_fslink_into_raw_files() {
-        let files = crate::infrastructure::share::file_parser::ShareFileParser::parse_fslink(
-            "123FSLinkV2$/Media/Movies%MovieHash#1024#Movie.2026.mkv",
-        )
-        .unwrap();
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "Movie.2026.mkv");
-    }
-
-    #[test]
-    fn oversized_document_is_a_permanent_parameter_error() {
-        let err = document_raw_files(
-            "dump.json",
-            PreparedSourceDocument::ExceedsLimit {
-                size: 11 * 1024 * 1024,
-            },
-        )
-        .unwrap_err();
-
-        assert!(err.to_string().contains("Telegram document too large"));
-        assert!(err.to_string().contains("dump.json"));
-        assert!(!err.is_retryable());
-    }
-
-    #[test]
-    fn document_bytes_are_parsed_into_raw_files() {
-        let json = br#"{"files":[{"path":"Inception.2010.mkv","md5":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1000}]}"#;
-        let files = document_raw_files("dump.json", PreparedSourceDocument::Content(json.to_vec()))
-            .unwrap();
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "Inception.2010.mkv");
-    }
-
     #[tokio::test]
     async fn deliver_import_results_keeps_reply_to_and_source_link() {
         let sender = FakeSender::default();
         let payloads = sender.payloads.clone();
 
-        deliver_observation_outcome(
+        deliver_observation_notice(
             &sender,
             Some(&telegram_context(true, Some(7))),
             Some(7),
             "分享处理失败",
-            ObservationOutcome {
-                notice: Some(ObservationNotice::ImportResults(vec![
-                    ImportedMedia::Movie {
-                        title: "Inception".into(),
-                        year: "2010".into(),
-                        size: 2 * 1024 * 1024 * 1024,
-                        cost: Duration::from_secs(2),
-                        has_failed: false,
-                    },
-                ])),
-            },
+            Some(ObservationNotice::ImportResults(vec![
+                ImportedMedia::Movie {
+                    title: "Inception".into(),
+                    year: "2010".into(),
+                    size: 2 * 1024 * 1024 * 1024,
+                    cost: Duration::from_secs(2),
+                    has_failed: false,
+                },
+            ])),
         )
         .await;
 
@@ -401,16 +367,14 @@ mod tests {
         let sender = FakeSender::default();
         let payloads = sender.payloads.clone();
 
-        deliver_observation_outcome(
+        deliver_observation_notice(
             &sender,
             Some(&telegram_context(true, None)),
             None,
             "秒传处理失败",
-            ObservationOutcome {
-                notice: Some(ObservationNotice::PermanentError {
-                    error: AppError::InvalidParameter("bad fslink".into()),
-                }),
-            },
+            Some(ObservationNotice::PermanentError {
+                error: AppError::InvalidParameter("bad fslink".into()),
+            }),
         )
         .await;
 
@@ -431,12 +395,12 @@ mod tests {
         let sender = FakeSender::default();
         let payloads = sender.payloads.clone();
 
-        deliver_observation_outcome(
+        deliver_observation_notice(
             &sender,
             Some(&telegram_context(true, Some(7))),
             Some(7),
             "分享处理失败",
-            ObservationOutcome { notice: None },
+            None,
         )
         .await;
 

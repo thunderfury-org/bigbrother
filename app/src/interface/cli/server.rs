@@ -21,7 +21,6 @@ use crate::{
             local_store::FilesystemImportLocalStore,
         },
         services::MediaDownloadUrlService,
-        telegram::document::TelegramDocumentLoader,
     },
     interface::{
         http,
@@ -148,7 +147,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         ),
         notify_service,
         share_resolver: ctx.share_resolver(),
-        documents: TelegramDocumentLoader::new(bot.clone()),
+        bot: bot.clone(),
     };
 
     // Emby proxy server
