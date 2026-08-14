@@ -51,10 +51,10 @@ echo "--- Running lint ---"
 cargo fmt --all -- --check
 cargo clippy -- -D warnings
 
-# Bump version in app/Cargo.toml
+# Bump version in Cargo.toml
 echo ""
 echo "--- Bumping version to $VERSION ---"
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" app/Cargo.toml
+sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
 # Verify it compiles with new version
 echo ""
@@ -69,7 +69,7 @@ git cliff --bump --tag "v$VERSION" -o CHANGELOG.md
 # Commit and tag
 echo ""
 echo "--- Committing and tagging ---"
-git add app/Cargo.toml Cargo.lock CHANGELOG.md
+git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "chore: release v$VERSION"
 git tag -a "v$VERSION" -m "v$VERSION"
 

@@ -37,7 +37,7 @@ const DEFAULT_LIMIT: u64 = 50;
 const MAX_LIMIT: u64 = 200;
 
 #[derive(Embed)]
-#[folder = "../web/dist"]
+#[folder = "web/dist"]
 struct Assets;
 
 fn embedded_lookup(path: &str) -> Option<AssetFile> {
@@ -462,9 +462,9 @@ pub(super) fn app_error_to_response(err: AppError) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use crate::migration::{Migrator, MigratorTrait};
     use axum::body::to_bytes;
     use chrono::TimeZone;
-    use migration::{Migrator, MigratorTrait};
     use sea_orm::{ConnectOptions, Database};
     use tower::ServiceExt;
 

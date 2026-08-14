@@ -109,11 +109,11 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use tokio::time::{Duration, sleep};
 
+    use crate::migration::{Migrator, MigratorTrait};
     use crate::{
         application::notify::{Message, MessageSender},
         infrastructure::event::publisher::EventBusPublisher,
     };
-    use migration::{Migrator, MigratorTrait};
 
     #[derive(Clone, Serialize, Deserialize)]
     struct SampleEvent;

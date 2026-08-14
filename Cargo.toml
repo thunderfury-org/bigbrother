@@ -1,13 +1,13 @@
-[workspace]
-resolver = "3"
-members = ["app", "migration"]
-default-members = ["app"]
+[package]
+name = "bigbrother"
+version = "0.1.0"
+edition = "2024"
 
 [profile.release]
 lto = true
 codegen-units = 1
 
-[workspace.dependencies]
+[dependencies]
 axum = "0.8"
 tower = "0"
 tower-http = { version = "0.6", features = ["trace"] }
@@ -60,6 +60,7 @@ base64 = "0.22"
 hex = "0.4"
 rsa = "0.9"
 sha2 = "0.10"
+rust-embed = { version = "8", features = ["debug-embed", "mime-guess"] }
 
-# For testing
+[dev-dependencies]
 wiremock = "0.6"

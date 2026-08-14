@@ -36,7 +36,7 @@ mod tests {
     use sea_orm::{ConnectOptions, Database};
 
     use super::*;
-    use migration::{Migrator, MigratorTrait};
+    use crate::migration::{Migrator, MigratorTrait};
 
     async fn repo() -> SeaOrmFileIndexRepository {
         let mut options = ConnectOptions::new("sqlite::memory:");

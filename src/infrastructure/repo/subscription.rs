@@ -97,7 +97,7 @@ fn to_record(model: entity::model::subscription::Model) -> Option<SubscriptionRe
 mod tests {
     use super::*;
     use crate::domain::subscription::SubscriptionMediaType;
-    use migration::{Migrator, MigratorTrait};
+    use crate::migration::{Migrator, MigratorTrait};
     use sea_orm::{ConnectOptions, Database};
 
     async fn fresh_db() -> sea_orm::DatabaseConnection {
