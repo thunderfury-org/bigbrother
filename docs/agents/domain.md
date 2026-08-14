@@ -1,32 +1,12 @@
-# Domain Docs
+# Domain
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+Before exploring the codebase, or when naming or changing import, subscription, file-index, or media-source behavior:
 
-## Before exploring, read these
+1. Read `CONTEXT.md` if it exists.
+2. Read relevant files under `docs/adr/`.
+3. Use `CONTEXT.md` glossary terms in output.
+4. If a change contradicts an ADR, surface the conflict instead of overriding it.
 
-- `CONTEXT.md` at the repo root, if it exists
-- `CONTEXT-MAP.md` at the repo root, if it exists
-- `docs/adr/` for relevant architecture decisions
+This repo is single-context. If `CONTEXT-MAP.md` appears, treat the repo as multi-context.
 
-If any of these files don't exist, proceed silently.
-
-## File structure
-
-Single-context repo:
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-└── src/
-```
-
-When `CONTEXT-MAP.md` exists, treat the repo as multi-context.
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept, use the term as defined in `CONTEXT.md`.
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding.
+If a listed file is missing, continue.
