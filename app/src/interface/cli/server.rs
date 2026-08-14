@@ -5,7 +5,7 @@ use tracing::{error, info};
 use crate::{
     application::{
         delete_media::DeleteMediaService,
-        import::MetadataLookup,
+        media_source_observation::ProcessObservationService,
         recorded_import::RecordedImportService,
         sync_strm::{SyncStrmConfig, SyncStrmService},
     },
@@ -21,6 +21,7 @@ use crate::{
             local_store::FilesystemImportLocalStore,
         },
         services::MediaDownloadUrlService,
+        telegram::document::TelegramDocumentLoader,
     },
     interface::{
         http,
@@ -138,15 +139,16 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let subscription_repo = ctx.subscription_repo().await?;
     let notify_service = EventBusPublisher::new(event_bus.clone());
     let event_delivery_media_handler = ProcessMediaSourcesHandler {
-        file_index_service: ctx.file_index_service().await?,
-        share_resolver: ctx.share_resolver(),
-        import_service: ctx.import_service().await?,
-        identify_service: ctx.identify_service().await?,
-        recorded_import: RecordedImportService::new(ctx.import_record_repository().await?),
-        metadata_lookup: MetadataLookup::default(),
+        processor: ProcessObservationService::new(
+            ctx.file_index_service().await?,
+            RecordedImportService::new(ctx.import_record_repository().await?),
+            ctx.identify_service().await?,
+            ctx.import_service().await?,
+            subscription_repo,
+        ),
         notify_service,
-        subscription_repo,
-        bot: bot.clone(),
+        share_resolver: ctx.share_resolver(),
+        documents: TelegramDocumentLoader::new(bot.clone()),
     };
 
     // Emby proxy server
