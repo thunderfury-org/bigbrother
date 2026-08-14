@@ -1,57 +1,38 @@
 use tracing::{info, warn};
 
 use crate::{
-    application::import::MetadataLookup,
-    application::recorded_import::RecordedImportService,
-    application::subscription::import_filter,
+    application::media_source_observation::{MediaSourceObservation, ObservationNotice},
+    application::notify::MessageSender,
     domain::import_record::ImportSource,
     domain::share::RawFile,
-    error::AppResult,
-    infrastructure::repo::import_record::SeaOrmImportRecordRepository,
-    infrastructure::services::{
-        FileIndexRuntimeService, IdentifyService, ImportService, NotifyService,
-        ShareResolverRuntimeService, SubscriptionRepo,
+    error::{AppError, AppResult},
+    infrastructure::{
+        services::{NotifyService, ObservationProcessor, ShareResolverRuntimeService},
+        share::{file_parser::ShareFileParser, resolver::ShareResolver},
     },
-    infrastructure::share::{file_parser::ShareFileParser, resolver::ShareResolver},
     interface::import::{source_for_fslink, source_for_share_url, source_for_telegram_document},
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
 };
 
+const MAX_TELEGRAM_DOCUMENT_BYTES: u64 = 10 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct ProcessMediaSourcesHandler {
-    pub file_index_service: FileIndexRuntimeService,
-    pub share_resolver: ShareResolverRuntimeService,
-    pub import_service: ImportService,
-    pub identify_service: IdentifyService,
-    pub recorded_import: RecordedImportService<SeaOrmImportRecordRepository>,
-    pub metadata_lookup: MetadataLookup,
+    pub processor: ObservationProcessor,
     pub notify_service: NotifyService,
-    pub subscription_repo: SubscriptionRepo,
+    pub share_resolver: ShareResolverRuntimeService,
     pub bot: teloxide::Bot,
 }
 
-fn source_of(source: &MediaSource) -> ImportSource {
-    match source {
-        MediaSource::ShareUrl(url) => source_for_share_url(url),
-        MediaSource::Fslink(raw) => source_for_fslink(raw),
-        MediaSource::TgDocument { file_name, .. } => source_for_telegram_document(file_name),
-    }
-}
-
 pub async fn on_process_media_sources(
-    mut handler: ProcessMediaSourcesHandler,
+    handler: ProcessMediaSourcesHandler,
     payload: ProcessMediaSources,
 ) -> AppResult<()> {
     let reply_to = payload.source_reply_to_message_id();
-    let description = payload.description.clone();
-    let source_context = payload.source_context();
-    let error_prefix = match &payload.source {
-        MediaSource::ShareUrl(_) => "分享处理失败",
-        MediaSource::Fslink(_) => "秒传处理失败",
-        MediaSource::TgDocument { .. } => "JSON/CAS 文件处理失败",
-    };
+    let source_context = payload.source_context().cloned();
+    let error_prefix = error_prefix(&payload.source);
     info!(
         source_kind = payload.source.kind(),
         channel_post = payload.source_channel_post(),
@@ -62,165 +43,83 @@ pub async fn on_process_media_sources(
         "Processing media source observation"
     );
 
-    // Step 1: Fetch raw files (source-specific)
-    let raw_files = fetch_raw_files(
-        &handler,
-        &payload.source,
-        source_context,
-        reply_to,
-        error_prefix,
-    )
-    .await?;
-    let Some(raw_files) = raw_files else {
-        info!(
-            source_kind = payload.source.kind(),
-            source_chat_id = ?payload.source_chat_id(),
-            source_message_id = ?payload.source_message_id(),
-            "Media source observation ended without raw files"
-        );
-        return Ok(());
-    };
-    info!(
-        source_kind = payload.source.kind(),
-        raw_file_count = raw_files.len(),
-        source_chat_id = ?payload.source_chat_id(),
-        source_message_id = ?payload.source_message_id(),
-        "Fetched raw files for media source observation"
-    );
-
-    // Step 2: Index
-    if let Err(err) = handler
-        .file_index_service
-        .record_raw_files(raw_files.clone(), description.clone())
-        .await
-    {
-        warn!(error = %err, "file index record failed (non-blocking)");
-    } else {
-        info!(
-            source_kind = payload.source.kind(),
-            raw_file_count = raw_files.len(),
-            source_chat_id = ?payload.source_chat_id(),
-            source_message_id = ?payload.source_message_id(),
-            "Recorded raw files into file index"
-        );
-    }
-
-    // Step 3: Import
-    let should_import = should_import(
-        &handler.subscription_repo,
-        payload.source_channel_post(),
-        &payload.description,
-    )
-    .await;
-    info!(
-        source_kind = payload.source.kind(),
-        should_import,
-        channel_post = payload.source_channel_post(),
-        source_chat_id = ?payload.source_chat_id(),
-        source_message_id = ?payload.source_message_id(),
-        "Evaluated import policy for media source observation"
-    );
-    if should_import {
-        let descriptions: Vec<String> = description.into_iter().collect();
-        let media_files = handler
-            .metadata_lookup
-            .build_media_files(raw_files, descriptions);
-        info!(
-            source_kind = payload.source.kind(),
-            media_file_count = media_files.len(),
-            source_chat_id = ?payload.source_chat_id(),
-            source_message_id = ?payload.source_message_id(),
-            "Built media files for import"
-        );
-        let import_source = source_of(&payload.source);
-        let is_channel_post = payload.source_channel_post();
-        let mut import_service = handler.import_service.clone();
-        let mut identify_service = handler.identify_service.clone();
-        let subscription_repo = handler.subscription_repo.clone();
-        let outcome = handler
-            .recorded_import
-            .execute(import_source, move || async move {
-                let outcome = identify_service.identify(media_files).await?;
-                let groups = if is_channel_post {
-                    import_filter::filter_by_subscription(&subscription_repo, outcome.groups).await
-                } else {
-                    outcome.groups
-                };
-                import_service
-                    .import_groups(groups, outcome.unmatched)
-                    .await
-            })
-            .await;
-        match outcome {
-            Ok(imported) => {
-                info!(
-                    source_kind = payload.source.kind(),
-                    imported_summary_count = imported.len(),
-                    source_chat_id = ?payload.source_chat_id(),
-                    source_message_id = ?payload.source_message_id(),
-                    "Import completed for media source observation"
-                );
-                send_import_results(&handler.notify_service, source_context, reply_to, &imported)
-                    .await;
-            }
+    let raw_files =
+        match fetch_raw_files(&handler.share_resolver, &handler.bot, &payload.source).await {
+            Ok(files) => files,
             Err(err) if !err.is_retryable() => {
+                warn!(error = %err, "skipping permanent error");
                 send_import_error(
                     &handler.notify_service,
-                    source_context,
+                    source_context.as_ref(),
                     reply_to,
                     error_prefix,
                     &err,
                 )
                 .await;
+                return Ok(());
             }
             Err(err) => return Err(err),
-        }
-    }
+        };
+    info!(
+        source_kind = payload.source.kind(),
+        raw_file_count = raw_files.len(),
+        "Fetched raw files for media source observation"
+    );
 
+    let notice = handler
+        .processor
+        .process(observation_from_payload(&payload, raw_files))
+        .await?;
+    deliver_observation_notice(
+        &handler.notify_service,
+        source_context.as_ref(),
+        reply_to,
+        error_prefix,
+        notice,
+    )
+    .await;
     Ok(())
 }
 
-/// Fetch raw files from the source. Returns Ok(None) if the source should be skipped (permanent error).
-async fn fetch_raw_files(
-    handler: &ProcessMediaSourcesHandler,
+fn observation_from_payload(
+    payload: &ProcessMediaSources,
+    raw_files: Vec<RawFile>,
+) -> MediaSourceObservation {
+    MediaSourceObservation {
+        import_source: import_source_of(&payload.source),
+        description: payload.description.clone(),
+        channel_post: payload.source_channel_post(),
+        raw_files,
+    }
+}
+
+fn import_source_of(source: &MediaSource) -> ImportSource {
+    match source {
+        MediaSource::ShareUrl(url) => source_for_share_url(url),
+        MediaSource::Fslink(raw) => source_for_fslink(raw),
+        MediaSource::TgDocument { file_name, .. } => source_for_telegram_document(file_name),
+    }
+}
+
+fn error_prefix(source: &MediaSource) -> &'static str {
+    match source {
+        MediaSource::ShareUrl(_) => "分享处理失败",
+        MediaSource::Fslink(_) => "秒传处理失败",
+        MediaSource::TgDocument { .. } => "JSON/CAS 文件处理失败",
+    }
+}
+
+async fn fetch_raw_files<R: ShareResolver>(
+    resolver: &R,
+    bot: &teloxide::Bot,
     source: &MediaSource,
-    source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
-    reply_to: Option<i32>,
-    error_prefix: &str,
-) -> AppResult<Option<Vec<RawFile>>> {
-    let result = match source {
-        MediaSource::ShareUrl(url) => {
-            resolve_share_url_raw_files(&handler.share_resolver, url).await
-        }
+) -> AppResult<Vec<RawFile>> {
+    match source {
+        MediaSource::ShareUrl(url) => resolve_share_url_raw_files(resolver, url).await,
         MediaSource::Fslink(fslink) => ShareFileParser::parse_fslink(fslink),
         MediaSource::TgDocument { file_id, file_name } => {
-            return fetch_tg_document(
-                handler,
-                file_id,
-                file_name,
-                source_context,
-                reply_to,
-                error_prefix,
-            )
-            .await;
+            fetch_tg_document(bot, file_id, file_name).await
         }
-    };
-
-    match result {
-        Ok(files) => Ok(Some(files)),
-        Err(err) if !err.is_retryable() => {
-            warn!(error = %err, "skipping permanent error");
-            send_import_error(
-                &handler.notify_service,
-                source_context,
-                reply_to,
-                error_prefix,
-                &err,
-            )
-            .await;
-            Ok(None)
-        }
-        Err(err) => Err(err),
     }
 }
 
@@ -228,103 +127,185 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
     resolver: &R,
     raw_url: &str,
 ) -> AppResult<Vec<RawFile>> {
-    resolver.raw_files_from_url(raw_url).await?.ok_or_else(|| {
-        crate::error::AppError::InvalidParameter(format!("unsupported share url: {raw_url}"))
-    })
+    resolver
+        .raw_files_from_url(raw_url)
+        .await?
+        .ok_or_else(|| AppError::InvalidParameter(format!("unsupported share url: {raw_url}")))
 }
 
 async fn fetch_tg_document(
-    handler: &ProcessMediaSourcesHandler,
+    bot: &teloxide::Bot,
     file_id: &str,
     file_name: &str,
-    source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
-    reply_to: Option<i32>,
-    error_prefix: &str,
-) -> AppResult<Option<Vec<RawFile>>> {
+) -> AppResult<Vec<RawFile>> {
     use teloxide::net::Download;
     use teloxide::prelude::Requester;
 
-    let file = handler
-        .bot
+    let file = bot
         .get_file(teloxide::types::FileId(file_id.to_string()))
         .await?;
-
-    if file.meta.size > 10 * 1024 * 1024 {
-        let err = crate::error::AppError::InvalidParameter(format!(
-            "Telegram document too large ({file_name}): {} bytes exceeds 10MB limit",
-            file.meta.size
-        ));
-        warn!(file_name = %file_name, size = file.meta.size, "document too large");
-        send_import_error(
-            &handler.notify_service,
-            source_context,
-            reply_to,
-            error_prefix,
-            &err,
-        )
-        .await;
-        return Ok(None);
+    let size = u64::from(file.meta.size);
+    if size > MAX_TELEGRAM_DOCUMENT_BYTES {
+        return Err(AppError::InvalidParameter(format!(
+            "Telegram document too large ({file_name}): {size} bytes exceeds 10MB limit"
+        )));
     }
 
     let mut content = Vec::with_capacity(file.meta.size.try_into().unwrap_or_default());
-    handler.bot.download_file(&file.path, &mut content).await?;
+    bot.download_file(&file.path, &mut content).await?;
+    ShareFileParser::parse_json_bytes(content)
+}
 
-    match ShareFileParser::parse_json_bytes(content) {
-        Ok(files) => Ok(Some(files)),
-        Err(err) => {
-            warn!(file_name = %file_name, error = %err, "failed to parse document");
+async fn deliver_observation_notice(
+    notify_service: &impl MessageSender,
+    source_context: Option<&crate::interface::telegram::file_index::SourceContext>,
+    reply_to: Option<i32>,
+    error_prefix: &str,
+    notice: Option<ObservationNotice>,
+) {
+    match notice {
+        Some(ObservationNotice::ImportResults(imported)) => {
+            send_import_results(notify_service, source_context, reply_to, &imported).await;
+        }
+        Some(ObservationNotice::PermanentError { error }) => {
             send_import_error(
-                &handler.notify_service,
+                notify_service,
                 source_context,
                 reply_to,
                 error_prefix,
-                &err,
+                &error,
             )
             .await;
-            Ok(None)
         }
+        None => {}
     }
-}
-
-async fn should_import(
-    subscription_repo: &SubscriptionRepo,
-    channel_post: bool,
-    description: &Option<String>,
-) -> bool {
-    if !channel_post {
-        return true;
-    }
-    let text = description.as_deref().unwrap_or_default();
-    import_filter::description_matches_subscription(subscription_repo, text).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_share_url_raw_files, should_import};
-    use crate::application::ports::{SubscriptionCreateInput, SubscriptionRepository};
+    use super::{
+        deliver_observation_notice, error_prefix, observation_from_payload,
+        resolve_share_url_raw_files,
+    };
+    use crate::application::import::ImportedMedia;
+    use crate::application::media_source_observation::ObservationNotice;
+    use crate::application::notify::{Message, MessageSender};
+    use crate::domain::import_record::ImportSourceKind;
     use crate::domain::share::RawFile;
-    use crate::domain::subscription::SubscriptionMediaType;
     use crate::error::{AppError, AppResult};
-    use crate::infrastructure::repo::subscription::SeaOrmSubscriptionRepository;
     use crate::infrastructure::share::resolver::ShareResolver;
-    use migration::{Migrator, MigratorTrait};
-    use sea_orm::{ConnectOptions, Database};
+    use crate::interface::telegram::file_index::{
+        MediaSource, ProcessMediaSources, SourceContext, TelegramSourceContext,
+    };
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     #[derive(Clone)]
     struct FakeShareResolver {
-        result: Option<Vec<RawFile>>,
+        result: AppResult<Option<Vec<RawFile>>>,
     }
 
     impl ShareResolver for FakeShareResolver {
         async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
-            Ok(self.result.clone())
+            self.result.clone()
         }
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeSender {
+        payloads: Arc<Mutex<Vec<Message>>>,
+    }
+
+    impl MessageSender for FakeSender {
+        async fn send(&self, payload: &Message) -> AppResult<()> {
+            self.payloads.lock().unwrap().push(payload.clone());
+            Ok(())
+        }
+    }
+
+    fn telegram_context(channel_post: bool, reply_to: Option<i32>) -> SourceContext {
+        SourceContext::Telegram(TelegramSourceContext {
+            channel_post,
+            reply_to_message_id: reply_to,
+            source_chat_id: -1001234567890,
+            source_message_id: 321,
+            source_message_link: Some("https://t.me/c/1234567890/321".into()),
+        })
+    }
+
+    fn sample_raw_file() -> RawFile {
+        RawFile {
+            id: None,
+            name: "Inception.2010.1080p.mkv".into(),
+            hash: crate::domain::share::FileHash::Md5("a".repeat(32)),
+            size: 1000,
+            path: "/share".into(),
+        }
+    }
+
+    #[test]
+    fn observation_from_payload_prefers_source_context_and_keeps_import_source() {
+        let payload = ProcessMediaSources {
+            source: MediaSource::ShareUrl("https://115.com/s/share-id?rc=abc".into()),
+            description: Some("Inception".into()),
+            source_context: Some(telegram_context(true, None)),
+            channel_post: false,
+            reply_to_message_id: Some(7),
+        };
+
+        let observation = observation_from_payload(&payload, vec![sample_raw_file()]);
+        assert_eq!(observation.import_source.kind, ImportSourceKind::Pan115);
+        assert_eq!(
+            observation.import_source.raw,
+            "https://115.com/s/share-id?rc=abc"
+        );
+        assert_eq!(observation.description.as_deref(), Some("Inception"));
+        assert!(observation.channel_post);
+        assert_eq!(observation.raw_files.len(), 1);
+    }
+
+    #[test]
+    fn observation_from_payload_maps_telegram_document_source() {
+        let payload = ProcessMediaSources {
+            source: MediaSource::TgDocument {
+                file_id: "file-1".into(),
+                file_name: "dump.json".into(),
+            },
+            description: None,
+            source_context: None,
+            channel_post: false,
+            reply_to_message_id: Some(8),
+        };
+
+        let observation = observation_from_payload(&payload, Vec::new());
+        assert_eq!(observation.import_source.kind, ImportSourceKind::Telegram);
+        assert_eq!(observation.import_source.raw, "dump.json");
+        assert!(!observation.channel_post);
+    }
+
+    #[test]
+    fn error_prefix_matches_source_kind() {
+        assert_eq!(
+            error_prefix(&MediaSource::ShareUrl("https://115.com/s/a".into())),
+            "分享处理失败"
+        );
+        assert_eq!(
+            error_prefix(&MediaSource::Fslink("123FSLinkV2$x".into())),
+            "秒传处理失败"
+        );
+        assert_eq!(
+            error_prefix(&MediaSource::TgDocument {
+                file_id: "1".into(),
+                file_name: "a.json".into(),
+            }),
+            "JSON/CAS 文件处理失败"
+        );
     }
 
     #[tokio::test]
     async fn resolve_share_url_raw_files_rejects_unsupported_provider() {
         let err = resolve_share_url_raw_files(
-            &FakeShareResolver { result: None },
+            &FakeShareResolver { result: Ok(None) },
             "https://example.com/share",
         )
         .await
@@ -336,133 +317,93 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_share_url_raw_files_keeps_supported_provider_failures_visible() {
-        #[derive(Clone)]
-        struct FailingShareResolver;
+        let err = resolve_share_url_raw_files(
+            &FakeShareResolver {
+                result: Err(AppError::InvalidParameter("share password invalid".into())),
+            },
+            "https://115.com/s/share-id?rc=bad",
+        )
+        .await
+        .unwrap_err();
 
-        impl ShareResolver for FailingShareResolver {
-            async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
-                Err(AppError::InvalidParameter(
-                    "share password invalid".to_string(),
-                ))
-            }
-        }
-
-        let err =
-            resolve_share_url_raw_files(&FailingShareResolver, "https://115.com/s/share-id?rc=bad")
-                .await
-                .unwrap_err();
-
-        assert!(matches!(err, AppError::InvalidParameter(_)));
         assert!(err.to_string().contains("share password invalid"));
     }
 
-    // --- should_import + subscription filtering tests ---
-
-    async fn fresh_sub_repo() -> SeaOrmSubscriptionRepository {
-        let mut options = ConnectOptions::new("sqlite::memory:");
-        options.sqlx_logging(false);
-        let db = Database::connect(options).await.unwrap();
-        Migrator::up(&db, None).await.unwrap();
-        SeaOrmSubscriptionRepository::new(db)
-    }
-
     #[tokio::test]
-    async fn should_import_returns_true_for_channel_post_with_matching_title() {
-        let repo = fresh_sub_repo().await;
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 27205,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
-        .await
-        .unwrap();
+    async fn deliver_import_results_keeps_reply_to_and_source_link() {
+        let sender = FakeSender::default();
+        let payloads = sender.payloads.clone();
 
+        deliver_observation_notice(
+            &sender,
+            Some(&telegram_context(true, Some(7))),
+            Some(7),
+            "分享处理失败",
+            Some(ObservationNotice::ImportResults(vec![
+                ImportedMedia::Movie {
+                    title: "Inception".into(),
+                    year: "2010".into(),
+                    size: 2 * 1024 * 1024 * 1024,
+                    cost: Duration::from_secs(2),
+                    has_failed: false,
+                },
+            ])),
+        )
+        .await;
+
+        let payloads = payloads.lock().unwrap();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].reply_to, Some(7));
+        assert!(payloads[0].message.contains("Inception"));
         assert!(
-            should_import(&repo, true, &Some("分享：Inception 2010".into())).await,
-            "channel post with matching title_en should pass"
-        );
-    }
-
-    #[tokio::test]
-    async fn should_import_returns_true_for_channel_post_with_matching_zh_title() {
-        let repo = fresh_sub_repo().await;
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 27205,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
-        .await
-        .unwrap();
-
-        assert!(
-            should_import(&repo, true, &Some("盗梦空间 4K".into())).await,
-            "channel post with matching title_zh should pass"
+            payloads[0]
+                .message
+                .contains("源消息: https://t.me/c/1234567890/321")
         );
     }
 
     #[tokio::test]
-    async fn should_import_returns_false_for_channel_post_without_matching_title() {
-        let repo = fresh_sub_repo().await;
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 27205,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
-        .await
-        .unwrap();
+    async fn deliver_permanent_error_uses_source_prefix_and_transport_context() {
+        let sender = FakeSender::default();
+        let payloads = sender.payloads.clone();
 
+        deliver_observation_notice(
+            &sender,
+            Some(&telegram_context(true, None)),
+            None,
+            "秒传处理失败",
+            Some(ObservationNotice::PermanentError {
+                error: AppError::InvalidParameter("bad fslink".into()),
+            }),
+        )
+        .await;
+
+        let payloads = payloads.lock().unwrap();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].reply_to, None);
+        assert!(payloads[0].message.starts_with("秒传处理失败: 参数错误："));
+        assert!(payloads[0].message.contains("bad fslink"));
         assert!(
-            !should_import(&repo, true, &Some("Breaking Bad S01".into())).await,
-            "channel post without matching title should be rejected"
+            payloads[0]
+                .message
+                .contains("源消息: https://t.me/c/1234567890/321")
         );
     }
 
     #[tokio::test]
-    async fn should_import_returns_false_for_channel_post_with_no_subscriptions() {
-        let repo = fresh_sub_repo().await;
+    async fn deliver_skips_notification_when_outcome_has_no_notice() {
+        let sender = FakeSender::default();
+        let payloads = sender.payloads.clone();
 
-        assert!(
-            !should_import(&repo, true, &Some("anything".into())).await,
-            "channel post with empty subscription list should be rejected"
-        );
-    }
+        deliver_observation_notice(
+            &sender,
+            Some(&telegram_context(true, Some(7))),
+            Some(7),
+            "分享处理失败",
+            None,
+        )
+        .await;
 
-    #[tokio::test]
-    async fn should_import_returns_true_for_dm_bypassing_subscriptions() {
-        let repo = fresh_sub_repo().await;
-        // No subscriptions at all — DM should still pass
-        assert!(
-            should_import(&repo, false, &Some("anything".into())).await,
-            "DM should bypass subscription prefilter"
-        );
-        assert!(
-            should_import(&repo, false, &None).await,
-            "DM with no description should bypass"
-        );
-    }
-
-    #[tokio::test]
-    async fn should_import_returns_false_for_channel_post_with_empty_description() {
-        let repo = fresh_sub_repo().await;
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: None,
-            title_en: Some("Test".into()),
-        })
-        .await
-        .unwrap();
-
-        assert!(
-            !should_import(&repo, true, &None).await,
-            "channel post with no description should be rejected"
-        );
-        assert!(
-            !should_import(&repo, true, &Some("".into())).await,
-            "channel post with empty description should be rejected"
-        );
+        assert!(payloads.lock().unwrap().is_empty());
     }
 }

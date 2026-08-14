@@ -14,8 +14,6 @@ use crate::{
     interface::import::{NO_NEW_MEDIA_MESSAGE, format_imported_media},
 };
 
-use super::NotifyService;
-
 // --- MediaSource & ProcessMediaSources event ---
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,7 +270,7 @@ fn extract_urls_from_text(text: &str, urls: &mut Vec<Url>) {
 // --- Notification helpers ---
 
 pub async fn send_import_results(
-    notify_service: &NotifyService,
+    notify_service: &impl MessageSender,
     source_context: Option<&SourceContext>,
     reply_to: Option<i32>,
     imported: &[ImportedMedia],
@@ -360,7 +358,7 @@ mod notification_tests {
 }
 
 pub async fn send_import_error(
-    notify_service: &NotifyService,
+    notify_service: &impl MessageSender,
     source_context: Option<&SourceContext>,
     reply_to: Option<i32>,
     prefix: &str,
@@ -386,7 +384,7 @@ pub async fn send_import_error(
 }
 
 pub(crate) async fn send_observation_notification(
-    notify_service: &NotifyService,
+    notify_service: &impl MessageSender,
     source_context: Option<&SourceContext>,
     reply_to: Option<i32>,
     notification_kind: &'static str,
@@ -403,7 +401,7 @@ pub(crate) async fn send_observation_notification(
 }
 
 async fn send_notify(
-    notify_service: &NotifyService,
+    notify_service: &impl MessageSender,
     source_context: Option<&SourceContext>,
     reply_to: Option<i32>,
     notification_kind: &'static str,

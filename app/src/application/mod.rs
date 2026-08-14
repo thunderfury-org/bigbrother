@@ -4,6 +4,7 @@ pub mod file_index;
 pub mod file_index_import;
 pub mod import;
 pub mod import_ports;
+pub mod media_source_observation;
 pub mod notify;
 pub mod ports;
 pub mod recorded_import;
