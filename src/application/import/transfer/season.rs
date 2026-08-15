@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::application::import::transfer_support::build_imported_tv_result;
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::{
     inner::{MediaFile, TransferEpisodeArgs},
     paths::get_tv_base_name,
@@ -9,10 +9,10 @@ use crate::domain::import::{
 use crate::{error::AppResult, log_time};
 
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::import::TvDetail;
 use crate::application::import::transfer_support::{
     SeasonTransferState, accumulate_episode_transfer_result,
 };
+use crate::domain::import::TvDetail;
 
 impl<L, F> TransferWorkflow<L, F>
 where

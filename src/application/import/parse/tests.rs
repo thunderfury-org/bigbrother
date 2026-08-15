@@ -1,6 +1,6 @@
 use super::super::import_tests::FakeTitleExtractor;
 use super::*;
-use crate::application::import_ports::MetadataCatalog;
+use crate::application::ports::MetadataCatalog;
 use crate::domain::import::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail};
 use crate::domain::share::{FileHash, RawFile};
 use crate::error::AppResult;

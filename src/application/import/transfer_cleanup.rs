@@ -6,7 +6,7 @@ use super::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
 };
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 use tracing::info;
 

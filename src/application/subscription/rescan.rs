@@ -1,7 +1,7 @@
 use crate::application::file_index::FileIndexService;
 use crate::application::file_index_import::ImportFileResult;
 use crate::application::import::MetadataLookup;
-use crate::application::import_ports::{MediaIdentifier, MediaImporter};
+use crate::application::import::{MediaIdentifier, MediaImporter};
 use crate::application::ports::{
     FileIndexRepository, ImportRecordRepository, SubscriptionRepository,
 };
@@ -123,7 +123,7 @@ mod tests {
     use crate::application::{
         import::ImportedMedia,
         import::identify::IdentifyOutcome,
-        import_ports::{MediaIdentifier, MediaImporter},
+        import::{MediaIdentifier, MediaImporter},
         ports::{
             FileIndexRecordInput, FileLocationRecord, FileSearchRecord, ImportRecordCreate,
             ImportRecordFilter, ImportRecordFinalize, ImportRecordPage, ImportRecordPaging,

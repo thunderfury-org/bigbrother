@@ -9,11 +9,12 @@
 ## Architecture
 
 - `domain`: policy. No deps on `application`, `infrastructure`, or `interface`.
-- `application`: use cases. Depends on `domain` only.
-- `infrastructure`: ports and adapters. May depend on `domain` and `application`.
-- `interface`: CLI, Telegram, HTTP. May depend on other modules.
+- `application`: use cases. Depends on `domain` only. Ports live in `application/ports`.
+- `infrastructure`: adapters. May depend on `domain` and `application`.
+- `interface`: CLI, Telegram, HTTP. Composition root. May depend on other modules.
 - `error`: lowest. No module deps.
 
+Ports (traits) live in `application/ports`. Adapters live in `infrastructure`. Composition root is `interface`.
 `infrastructure/client` holds third-party API and protocol calls only. Keep third-party field names there; translate in adapters. Match adjacent modules instead of adding a shared layer.
 
 The root crate is `bigbrother`. `web/` is the Svelte console; `make build` compiles it.

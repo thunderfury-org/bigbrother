@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tracing::info;
 
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::error::AppResult;
 

@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::*;
-use crate::application::import_ports::{MetadataCatalog, TitleExtractor};
+use crate::application::ports::{MetadataCatalog, TitleExtractor};
 use crate::domain::import::inner::MediaFile;
 use crate::domain::import::{
     Genre, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,

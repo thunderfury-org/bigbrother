@@ -1,7 +1,7 @@
 use std::{io, path::Path};
 
 use crate::{
-    application::import_ports::ImportLocalStore,
+    application::ports::ImportLocalStore,
     domain::library::path_mapping::SyncPathMapper,
     error::{AppError, AppResult},
 };

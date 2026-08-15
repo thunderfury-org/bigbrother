@@ -2,15 +2,13 @@ use tracing::{info, warn};
 
 use crate::{
     application::media_source_observation::{MediaSourceObservation, ObservationNotice},
-    application::notify::MessageSender,
+    application::ports::{MessageSender, ShareResolver},
     domain::import_record::ImportSource,
     domain::share::RawFile,
     error::{AppError, AppResult},
-    infrastructure::{
-        services::{NotifyService, ObservationProcessor, ShareResolverRuntimeService},
-        share::{file_parser::ShareFileParser, resolver::ShareResolver},
-    },
+    infrastructure::share::file_parser::ShareFileParser,
     interface::import::{source_for_fslink, source_for_share_url, source_for_telegram_document},
+    interface::runtime::{NotifyService, ObservationProcessor, ShareResolverRuntimeService},
     interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, send_import_error, send_import_results,
     },
@@ -189,11 +187,11 @@ mod tests {
     };
     use crate::application::import::ImportedMedia;
     use crate::application::media_source_observation::ObservationNotice;
-    use crate::application::notify::{Message, MessageSender};
+    use crate::application::ports::ShareResolver;
+    use crate::application::ports::{Message, MessageSender};
     use crate::domain::import_record::ImportSourceKind;
     use crate::domain::share::RawFile;
     use crate::error::{AppError, AppResult};
-    use crate::infrastructure::share::resolver::ShareResolver;
     use crate::interface::telegram::file_index::{
         MediaSource, ProcessMediaSources, SourceContext, TelegramSourceContext,
     };

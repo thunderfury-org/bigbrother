@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::domain::import::inner::MediaFile;
 
-use super::{TransferWorkflow, TvDetail, transfer_support::existing_season_dir_id};
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use super::{TransferWorkflow, transfer_support::existing_season_dir_id};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
+use crate::domain::import::TvDetail;
 use crate::error::AppResult;
 use tracing::info;
 

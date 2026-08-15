@@ -1,4 +1,5 @@
 use crate::{
+    application::ports::ShareResolver,
     domain::share::RawFile,
     error::{AppError, AppResult},
     infrastructure::share::{
@@ -8,10 +9,6 @@ use crate::{
     },
 };
 use tracing::info;
-
-pub trait ShareResolver: Clone {
-    async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>>;
-}
 
 #[derive(Clone)]
 pub struct ShareResolverService<P123, P189, P115> {
@@ -68,7 +65,8 @@ impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource> 
 
 #[cfg(test)]
 mod tests {
-    use super::{ShareResolver, ShareResolverService};
+    use super::ShareResolverService;
+    use crate::application::ports::ShareResolver;
 
     use crate::{
         error::AppResult,

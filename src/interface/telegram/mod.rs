@@ -10,9 +10,9 @@ use tracing::{error, info};
 
 use crate::{
     application::delete_media::MediaDeleteCandidate,
-    application::notify::{Message as OutboundMessage, MessageSender},
+    application::ports::{Message as OutboundMessage, MessageSender},
     infrastructure::event_bus::EventBus,
-    infrastructure::services::{DeleteMediaServiceRuntime, NotifyService, SyncService},
+    interface::runtime::{DeleteMediaServiceRuntime, NotifyService, SyncService},
 };
 
 mod cmd;

@@ -1,8 +1,20 @@
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway, MediaImporter};
+use crate::{
+    application::ports::{ImportLocalStore, LibraryGateway},
+    domain::import::inner::Media,
+    error::AppResult,
+};
 
 use super::ImportedMedia;
 use super::identify::UnmatchedFile;
 use super::metadata::MetadataLookup;
+
+pub trait MediaImporter: Send + 'static {
+    fn import_groups(
+        &mut self,
+        groups: Vec<Media>,
+        unmatched: Vec<UnmatchedFile>,
+    ) -> impl std::future::Future<Output = AppResult<Vec<ImportedMedia>>> + Send;
+}
 
 #[derive(Clone)]
 pub(crate) struct TransferWorkflow<L, F> {
@@ -36,9 +48,9 @@ where
 {
     async fn import_groups(
         &mut self,
-        groups: Vec<crate::domain::import::inner::Media>,
+        groups: Vec<Media>,
         unmatched: Vec<UnmatchedFile>,
-    ) -> crate::error::AppResult<Vec<ImportedMedia>> {
-        self.import_groups(groups, unmatched).await
+    ) -> AppResult<Vec<ImportedMedia>> {
+        TransferWorkflow::import_groups(self, groups, unmatched).await
     }
 }

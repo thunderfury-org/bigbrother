@@ -5,7 +5,7 @@ use crate::{
         file_index::FileIndexService,
         import::ImportedMedia,
         import::MetadataLookup,
-        import_ports::{MediaIdentifier, MediaImporter},
+        import::{MediaIdentifier, MediaImporter},
         ports::{FileIndexRepository, ImportRecordRepository, SubscriptionRepository},
         recorded_import::RecordedImportService,
         subscription::import_filter,

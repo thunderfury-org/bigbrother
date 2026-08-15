@@ -7,7 +7,8 @@ use tracing::info;
 use crate::{
     application::file_index::FileIndexService,
     application::ports::{
-        FileIndexRepository, TelegramExportStateRecord, TelegramExportStateRepository,
+        FileIndexRepository, ShareResolver, TelegramExportStateRecord,
+        TelegramExportStateRepository,
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -15,12 +16,14 @@ use crate::{
             file_index::SeaOrmFileIndexRepository,
             telegram_export_state::SeaOrmTelegramExportStateRepository,
         },
-        services::ShareResolverRuntimeService,
-        share::{file_parser::ShareFileParser, resolver::ShareResolver},
+        share::file_parser::ShareFileParser,
     },
-    interface::telegram::{
-        export::{ExportRoot, extract_media_sources, message_description},
-        file_index::MediaSource,
+    interface::{
+        runtime::ShareResolverRuntimeService,
+        telegram::{
+            export::{ExportRoot, extract_media_sources, message_description},
+            file_index::MediaSource,
+        },
     },
 };
 

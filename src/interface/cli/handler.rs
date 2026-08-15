@@ -1,8 +1,8 @@
 use crate::{
     application::import::{MetadataLookup, ParsedMediaInfo},
+    application::ports::ShareResolver,
     application::recorded_import::RecordedImportService,
     error::{self, AppResult},
-    infrastructure::share::resolver::ShareResolver,
 };
 
 use crate::interface::import::{
@@ -396,9 +396,9 @@ async fn resolve_share_url_raw_files<R: ShareResolver>(
 mod tests {
     use super::{format_file_size, format_share_list_output, resolve_share_url_raw_files};
     use crate::{
+        application::ports::ShareResolver,
         domain::share::{FileHash, RawFile},
         error::AppResult,
-        infrastructure::share::resolver::ShareResolver,
     };
 
     #[derive(Clone)]

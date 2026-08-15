@@ -15,14 +15,14 @@ use crate::{
             subscription::SeaOrmSubscriptionRepository,
             telegram_export_state::SeaOrmTelegramExportStateRepository,
         },
-        services::{
-            FileIndexRuntimeService, IdentifyService, ImportService, ParseRuntimeService,
-            ShareResolverRuntimeService, SubscriptionService,
-        },
         share::{
             pan115::Pan115ShareService, pan123::Pan123ShareService, pan189::Pan189ShareService,
         },
         title_extractor::TitleExtractorService,
+    },
+    interface::runtime::{
+        FileIndexRuntimeService, IdentifyService, ImportService, ParseRuntimeService,
+        ShareResolverRuntimeService, SubscriptionService,
     },
 };
 

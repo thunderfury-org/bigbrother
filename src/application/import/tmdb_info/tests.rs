@@ -5,7 +5,7 @@ use std::{
 
 use super::super::import_tests::FakeTitleExtractor;
 use super::*;
-use crate::application::import_ports::TitleExtractor;
+use crate::application::ports::TitleExtractor;
 use crate::domain::import::{SearchMovieResult, SearchTvResult, Season};
 use crate::domain::media::{Metadata, Title};
 

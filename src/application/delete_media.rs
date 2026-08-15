@@ -1,7 +1,6 @@
 use crate::{
-    application::{
-        import_ports::{ImportLocalStore, LibraryGateway},
-        ports::{MediaDirectoryRecord, MediaSearchSource},
+    application::ports::{
+        ImportLocalStore, LibraryGateway, MediaDirectoryRecord, MediaSearchSource,
     },
     error::{AppError, AppResult},
 };
@@ -119,7 +118,7 @@ mod tests {
 
     use super::*;
     use crate::application::{
-        import_ports::ImportLocalStore,
+        ports::ImportLocalStore,
         ports::{MediaDirectoryRecord, MediaSearchSource},
     };
 
@@ -143,7 +142,7 @@ mod tests {
         async fn list_library_files(
             &self,
             _dir_id: i64,
-        ) -> AppResult<Vec<crate::application::import::LibraryFile>> {
+        ) -> AppResult<Vec<crate::domain::import::LibraryFile>> {
             unimplemented!()
         }
 
