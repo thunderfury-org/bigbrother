@@ -110,8 +110,8 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::*;
+    use crate::migration::{Migrator, MigratorTrait};
     use crate::{error::AppError, infrastructure::event::store::SeaOrmEventStore};
-    use migration::{Migrator, MigratorTrait};
 
     #[derive(Clone, Serialize, Deserialize)]
     struct SampleEvent {

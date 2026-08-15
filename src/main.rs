@@ -5,6 +5,7 @@ mod domain;
 mod error;
 mod infrastructure;
 mod interface;
+mod migration;
 mod util;
 
 #[tokio::main]

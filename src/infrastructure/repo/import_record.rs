@@ -45,8 +45,8 @@ impl ImportRecordRepository for SeaOrmImportRecordRepository {
 
 #[cfg(test)]
 mod tests {
+    use crate::migration::{Migrator, MigratorTrait};
     use chrono::{Duration, TimeZone, Utc};
-    use migration::{Migrator, MigratorTrait};
     use sea_orm::{ConnectOptions, Database};
 
     use crate::domain::import_record::{ImportSourceKind, ImportStatus};

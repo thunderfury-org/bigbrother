@@ -16,7 +16,7 @@
 
 `infrastructure/client` holds third-party API and protocol calls only. Keep third-party field names there; translate in adapters. Match adjacent modules instead of adding a shared layer.
 
-The crate under `app/` is packaged as `bigbrother`; use `-p bigbrother`, not `-p app`. `web/` is the Svelte console; `make build` compiles it.
+The root crate is `bigbrother`. `web/` is the Svelte console; `make build` compiles it.
 
 ## Errors
 

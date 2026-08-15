@@ -5,7 +5,7 @@ mod logger;
 pub(crate) mod server;
 mod telegram_export;
 
-use migration::{Migrator, MigratorTrait};
+use crate::migration::{Migrator, MigratorTrait};
 use sea_orm::DatabaseConnection;
 
 use crate::error::{AppError, AppResult};

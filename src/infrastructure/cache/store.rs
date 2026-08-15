@@ -57,7 +57,7 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use migration::{Migrator, MigratorTrait};
+    use crate::migration::{Migrator, MigratorTrait};
     use sea_orm::Database;
     use serde::{Deserialize, Serialize};
 
