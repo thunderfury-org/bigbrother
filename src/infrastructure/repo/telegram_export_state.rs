@@ -17,6 +17,7 @@ impl SeaOrmTelegramExportStateRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl TelegramExportStateRepository for SeaOrmTelegramExportStateRepository {
     async fn get(
         &self,

@@ -29,8 +29,8 @@ pub struct SyncStrmService {
 
 impl SyncStrmService {
     pub fn new(
-        remote: impl LibraryRemote + Send + Sync + 'static,
-        file_store: impl FileStore + Send + Sync + 'static,
+        remote: impl LibraryRemote + 'static,
+        file_store: impl FileStore + 'static,
         config: SyncStrmConfig,
     ) -> Self {
         Self {
@@ -240,6 +240,7 @@ mod tests {
         fail_download: Arc<Mutex<bool>>,
     }
 
+    #[async_trait::async_trait]
     impl LibraryRemote for FakeRemote {
         async fn get_file_id_by_path(&self, path: &str) -> AppResult<Option<i64>> {
             Ok(self.root_ids.lock().unwrap().get(path).copied())
@@ -283,6 +284,7 @@ mod tests {
         fail_remove_dir: Arc<Mutex<bool>>,
     }
 
+    #[async_trait::async_trait]
     impl FileStore for FakeFileStore {
         async fn read_to_string_if_exists(&self, path: &str) -> AppResult<Option<String>> {
             Ok(self.strings.lock().unwrap().get(path).cloned())

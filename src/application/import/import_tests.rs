@@ -29,9 +29,9 @@ pub(crate) struct TestImportService {
 
 impl TestImportService {
     pub fn new(
-        library_gateway: impl LibraryGateway + Send + Sync + 'static,
-        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
-        local_store: impl ImportLocalStore + Send + Sync + 'static,
+        library_gateway: impl LibraryGateway + 'static,
+        metadata_catalog: impl MetadataCatalog + 'static,
+        local_store: impl ImportLocalStore + 'static,
     ) -> Self {
         Self {
             transfer: TransferWorkflow::new(library_gateway, local_store),
@@ -79,6 +79,7 @@ struct FakeMetadataCatalog;
 #[derive(Clone)]
 pub(crate) struct FakeTitleExtractor;
 
+#[async_trait::async_trait]
 impl TitleExtractor for FakeTitleExtractor {
     async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
         Ok(None)
@@ -93,6 +94,7 @@ struct FakeLocalStore {
     fail_remove: bool,
 }
 
+#[async_trait::async_trait]
 impl LibraryGateway for FakeLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
         Ok(self
@@ -194,6 +196,7 @@ impl LibraryGateway for FakeLibraryGateway {
     }
 }
 
+#[async_trait::async_trait]
 impl MetadataCatalog for FakeMetadataCatalog {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         if title == "Inception" && year == "2010" {
@@ -261,6 +264,7 @@ impl FakeLocalStore {
     }
 }
 
+#[async_trait::async_trait]
 impl ImportLocalStore for FakeLocalStore {
     fn remote_library_path(&self) -> &str {
         self.remote_path.as_str()

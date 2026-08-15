@@ -24,9 +24,9 @@ pub struct DeleteMediaService {
 
 impl DeleteMediaService {
     pub fn new(
-        search: impl MediaSearchSource + Send + Sync + 'static,
-        library: impl LibraryGateway + Send + Sync + 'static,
-        local: impl ImportLocalStore + Send + Sync + 'static,
+        search: impl MediaSearchSource + 'static,
+        library: impl LibraryGateway + 'static,
+        local: impl ImportLocalStore + 'static,
         root_path: String,
     ) -> Self {
         Self {
@@ -128,6 +128,7 @@ mod tests {
         records: Arc<Vec<MediaDirectoryRecord>>,
     }
 
+    #[async_trait::async_trait]
     impl MediaSearchSource for FakeSearchSource {
         async fn search_media_dirs(&self, _keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
             Ok(self.records.as_ref().clone())
@@ -139,6 +140,7 @@ mod tests {
         trashed: Arc<Mutex<Vec<Vec<i64>>>>,
     }
 
+    #[async_trait::async_trait]
     impl LibraryGateway for FakeLibraryGateway {
         async fn list_library_files(
             &self,
@@ -205,6 +207,7 @@ mod tests {
         removed_dirs: Arc<Mutex<Vec<String>>>,
     }
 
+    #[async_trait::async_trait]
     impl ImportLocalStore for FakeLocalStore {
         fn remote_library_path(&self) -> &str {
             "/remote"

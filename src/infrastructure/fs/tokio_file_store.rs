@@ -8,6 +8,7 @@ use crate::{
 #[derive(Clone, Copy, Default)]
 pub struct TokioFileStore;
 
+#[async_trait::async_trait]
 impl FileStore for TokioFileStore {
     async fn read_to_string_if_exists(&self, path: &str) -> AppResult<Option<String>> {
         match tokio::fs::read_to_string(path).await {

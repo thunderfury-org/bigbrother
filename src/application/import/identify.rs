@@ -4,7 +4,6 @@ use crate::application::ports::{MetadataCatalog, TitleExtractor};
 use crate::domain::import::inner::{Media, MediaFile};
 use crate::domain::import::policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot};
 use crate::error::AppResult;
-use futures::future::BoxFuture;
 use std::sync::Arc;
 
 use super::tmdb_info::TmdbLookup;
@@ -34,29 +33,17 @@ impl From<MediaFile> for UnmatchedFile {
     }
 }
 
-pub(crate) trait MediaIdentifier: Send + Sync + 'static {
-    fn identify(
-        &self,
-        files: Vec<MediaFile>,
-    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
+#[async_trait::async_trait]
+pub(crate) trait MediaIdentifier: Send + Sync {
+    async fn identify(&self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome>;
 }
 
-pub(crate) trait DynMediaIdentifier: Send + Sync {
-    fn identify(&self, files: Vec<MediaFile>) -> BoxFuture<'_, AppResult<IdentifyOutcome>>;
-}
-
-impl<T: MediaIdentifier> DynMediaIdentifier for T {
-    fn identify(&self, files: Vec<MediaFile>) -> BoxFuture<'_, AppResult<IdentifyOutcome>> {
-        Box::pin(MediaIdentifier::identify(self, files))
-    }
-}
-
-pub(crate) type MediaIdentifierHandle = Arc<dyn DynMediaIdentifier>;
+pub(crate) type MediaIdentifierHandle = Arc<dyn MediaIdentifier>;
 
 impl MediaIdentifyService {
     pub fn new(
-        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
-        title_extractor: impl TitleExtractor + Send + Sync + 'static,
+        metadata_catalog: impl MetadataCatalog + 'static,
+        title_extractor: impl TitleExtractor + 'static,
     ) -> Self {
         Self {
             tmdb_lookup: TmdbLookup::new(metadata_catalog, title_extractor),
@@ -126,6 +113,7 @@ impl MediaIdentifyService {
     }
 }
 
+#[async_trait::async_trait]
 impl MediaIdentifier for MediaIdentifyService {
     async fn identify(&self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
         MediaIdentifyService::identify(self, files).await

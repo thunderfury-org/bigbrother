@@ -129,6 +129,7 @@ impl From<pan123::File> for LibraryFile {
     }
 }
 
+#[async_trait::async_trait]
 impl LibraryGateway for PanLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
         Ok(self
@@ -191,6 +192,7 @@ impl LibraryGateway for PanLibraryGateway {
     }
 }
 
+#[async_trait::async_trait]
 impl MediaSearchSource for Pan123MediaSearchGateway {
     async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
         Ok(self
@@ -207,6 +209,7 @@ impl MediaSearchSource for Pan123MediaSearchGateway {
     }
 }
 
+#[async_trait::async_trait]
 impl MetadataCatalog for TmdbMetadataGateway {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         Ok(self

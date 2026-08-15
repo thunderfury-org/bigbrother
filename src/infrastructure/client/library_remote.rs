@@ -18,6 +18,7 @@ impl Pan123LibraryRemote {
     }
 }
 
+#[async_trait::async_trait]
 impl LibraryRemote for Pan123LibraryRemote {
     async fn get_file_id_by_path(&self, path: &str) -> AppResult<Option<i64>> {
         Ok(self.client.get_file_id_by_path(path).await?)
@@ -47,6 +48,7 @@ impl LibraryRemote for Pan123LibraryRemote {
     }
 }
 
+#[async_trait::async_trait]
 impl DownloadUrlSource for Pan123LibraryRemote {
     async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String> {
         self.client

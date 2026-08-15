@@ -1,8 +1,8 @@
 use crate::application::file_index::FileIndexService;
 use crate::application::file_index_import::ImportFileResult;
 use crate::application::import::MetadataLookup;
-use crate::application::import::{DynMediaIdentifier, DynMediaImporter};
-use crate::application::ports::erase::DynSubscriptionRepository;
+use crate::application::import::{MediaIdentifier, MediaImporter};
+use crate::application::ports::SubscriptionRepository;
 use crate::application::recorded_import::RecordedImportService;
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
 use crate::error::AppResult;
@@ -11,10 +11,10 @@ use super::import_filter::filter_by_subscription;
 
 pub(crate) async fn rescan_subscription(
     subscription_id: i64,
-    sub_repo: &dyn DynSubscriptionRepository,
+    sub_repo: &dyn SubscriptionRepository,
     file_index: &FileIndexService,
-    identifier: &dyn DynMediaIdentifier,
-    importer: &dyn DynMediaImporter,
+    identifier: &dyn MediaIdentifier,
+    importer: &dyn MediaImporter,
     recorded: &RecordedImportService,
 ) -> AppResult<Vec<ImportFileResult>> {
     let subscription = sub_repo.get_by_id(subscription_id).await?.ok_or_else(|| {
@@ -133,6 +133,7 @@ mod tests {
         records: Arc<Mutex<Vec<SubscriptionRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl SubscriptionRepository for FakeSubRepo {
         async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>> {
             Ok(self.records.lock().unwrap().clone())
@@ -184,6 +185,7 @@ mod tests {
         records: Arc<Mutex<Vec<FileSearchRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl FileIndexRepository for FakeFileRepo {
         async fn record_files(&self, _inputs: &[FileIndexRecordInput]) -> AppResult<()> {
             Ok(())
@@ -213,6 +215,7 @@ mod tests {
         finalized: Arc<Mutex<Vec<(i64, ImportRecordFinalize)>>>,
     }
 
+    #[async_trait::async_trait]
     impl ImportRecordRepository for FakeImportRepo {
         async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64> {
             let mut created = self.created.lock().unwrap();
@@ -237,6 +240,7 @@ mod tests {
 
     struct FakeIdentifier;
 
+    #[async_trait::async_trait]
     impl MediaIdentifier for FakeIdentifier {
         async fn identify(&self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
@@ -250,6 +254,7 @@ mod tests {
         make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send + Sync>,
     }
 
+    #[async_trait::async_trait]
     impl MediaImporter for FakeImporter {
         async fn import_groups(
             &self,

@@ -32,6 +32,7 @@ impl TitleExtractorService {
     }
 }
 
+#[async_trait::async_trait]
 impl TitleExtractor for TitleExtractorService {
     async fn extract_title(&self, description: &str) -> AppResult<Option<Title>> {
         let trimmed = description.trim();

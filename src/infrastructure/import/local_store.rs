@@ -30,6 +30,7 @@ impl FilesystemImportLocalStore {
     }
 }
 
+#[async_trait::async_trait]
 impl ImportLocalStore for FilesystemImportLocalStore {
     fn remote_library_path(&self) -> &str {
         self.remote_path.as_str()

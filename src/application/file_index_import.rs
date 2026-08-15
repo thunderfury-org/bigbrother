@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::{
     application::{
         file_index::FileIndexService,
-        import::{DynMediaIdentifier, DynMediaImporter, ImportedMedia, MetadataLookup},
+        import::{ImportedMedia, MediaIdentifier, MediaImporter, MetadataLookup},
         recorded_import::RecordedImportService,
     },
     domain::import_record::{ImportSource, ImportSourceKind},
@@ -87,8 +87,8 @@ impl FileIndexImportService {
     pub async fn import_from_fingerprints(
         &self,
         ids: &[i64],
-        identifier: &dyn DynMediaIdentifier,
-        importer: &dyn DynMediaImporter,
+        identifier: &dyn MediaIdentifier,
+        importer: &dyn MediaImporter,
         recorded: &RecordedImportService,
     ) -> AppResult<Vec<ImportFileResult>> {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
@@ -177,6 +177,7 @@ mod tests {
         records: Arc<Mutex<Vec<FileSearchRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl FileIndexRepository for FakeFileRepo {
         async fn record_files(&self, _inputs: &[FileIndexRecordInput]) -> AppResult<()> {
             Ok(())
@@ -206,6 +207,7 @@ mod tests {
         finalized: Arc<Mutex<Vec<(i64, ImportRecordFinalize)>>>,
     }
 
+    #[async_trait::async_trait]
     impl ImportRecordRepository for FakeImportRepo {
         async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64> {
             let mut created = self.created.lock().unwrap();
@@ -230,6 +232,7 @@ mod tests {
 
     struct FakeIdentifier;
 
+    #[async_trait::async_trait]
     impl MediaIdentifier for FakeIdentifier {
         async fn identify(
             &self,
@@ -246,6 +249,7 @@ mod tests {
         make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send + Sync>,
     }
 
+    #[async_trait::async_trait]
     impl MediaImporter for FakeImporter {
         async fn import_groups(
             &self,

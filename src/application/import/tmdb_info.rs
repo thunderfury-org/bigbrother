@@ -30,8 +30,8 @@ pub(super) struct TmdbLookup {
 
 impl TmdbLookup {
     pub(super) fn new(
-        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
-        title_extractor: impl TitleExtractor + Send + Sync + 'static,
+        metadata_catalog: impl MetadataCatalog + 'static,
+        title_extractor: impl TitleExtractor + 'static,
     ) -> Self {
         Self {
             metadata_catalog: Arc::new(metadata_catalog),

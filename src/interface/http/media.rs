@@ -122,6 +122,7 @@ mod tests {
         stored: Arc<Mutex<HashMap<String, String>>>,
     }
 
+    #[async_trait::async_trait]
     impl DownloadUrlCache for FakeCache {
         async fn get_download_url(&self, key: &str) -> AppResult<Option<String>> {
             Ok(self.stored.lock().unwrap().get(key).cloned())
@@ -148,6 +149,7 @@ mod tests {
         result: FakeSourceResult,
     }
 
+    #[async_trait::async_trait]
     impl DownloadUrlSource for FakeSource {
         async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
             match &self.result {

@@ -108,7 +108,7 @@ fn error_prefix(source: &MediaSource) -> &'static str {
 }
 
 async fn fetch_raw_files(
-    resolver: &dyn crate::application::ports::erase::DynShareResolver,
+    resolver: &dyn crate::application::ports::ShareResolver,
     bot: &teloxide::Bot,
     source: &MediaSource,
 ) -> AppResult<Vec<RawFile>> {
@@ -122,7 +122,7 @@ async fn fetch_raw_files(
 }
 
 async fn resolve_share_url_raw_files(
-    resolver: &dyn crate::application::ports::erase::DynShareResolver,
+    resolver: &dyn crate::application::ports::ShareResolver,
     raw_url: &str,
 ) -> AppResult<Vec<RawFile>> {
     resolver
@@ -203,6 +203,7 @@ mod tests {
         result: AppResult<Option<Vec<RawFile>>>,
     }
 
+    #[async_trait::async_trait]
     impl ShareResolver for FakeShareResolver {
         async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
             self.result.clone()

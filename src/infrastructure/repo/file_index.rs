@@ -17,6 +17,7 @@ impl SeaOrmFileIndexRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl FileIndexRepository for SeaOrmFileIndexRepository {
     async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
         entity::file_index::record_files(&self.db, files).await

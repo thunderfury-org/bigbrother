@@ -8,6 +8,7 @@ use crate::error::AppResult;
 #[derive(Clone, Default)]
 struct StubMetadataCatalog;
 
+#[async_trait::async_trait]
 impl MetadataCatalog for StubMetadataCatalog {
     async fn search_movie(&self, title: &str, _year: &str) -> AppResult<Vec<SearchMovieResult>> {
         Ok(vec![SearchMovieResult {

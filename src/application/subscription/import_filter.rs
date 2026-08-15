@@ -1,8 +1,8 @@
-use crate::application::ports::erase::DynSubscriptionRepository;
+use crate::application::ports::SubscriptionRepository;
 use crate::domain::{import::inner::Media, subscription::SubscriptionMediaType};
 
 pub(crate) async fn description_matches_subscription(
-    repo: &dyn DynSubscriptionRepository,
+    repo: &dyn SubscriptionRepository,
     description: &str,
 ) -> bool {
     let subscriptions = match repo.list_all().await {
@@ -26,7 +26,7 @@ pub(crate) async fn description_matches_subscription(
 }
 
 pub(crate) async fn filter_by_subscription(
-    repo: &dyn DynSubscriptionRepository,
+    repo: &dyn SubscriptionRepository,
     groups: Vec<Media>,
 ) -> Vec<Media> {
     let mut filtered = Vec::new();
@@ -61,6 +61,7 @@ mod tests {
         records: Arc<Mutex<Vec<SubscriptionRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl SubscriptionRepository for FakeSubscriptionRepo {
         async fn list_all(&self) -> crate::error::AppResult<Vec<SubscriptionRecord>> {
             Ok(self.records.lock().unwrap().clone())

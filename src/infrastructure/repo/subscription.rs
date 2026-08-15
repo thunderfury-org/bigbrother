@@ -18,6 +18,7 @@ impl SeaOrmSubscriptionRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl SubscriptionRepository for SeaOrmSubscriptionRepository {
     async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>> {
         Ok(entity::subscription::list_all(&self.db)

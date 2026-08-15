@@ -20,6 +20,7 @@ impl SeaOrmImportRecordRepository {
     }
 }
 
+#[async_trait::async_trait]
 impl ImportRecordRepository for SeaOrmImportRecordRepository {
     async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64> {
         Ok(entity::import_record::insert(&self.db, input).await?)

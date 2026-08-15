@@ -13,6 +13,7 @@ impl StringCacheStore {
     }
 }
 
+#[async_trait::async_trait]
 impl DownloadUrlCache for StringCacheStore {
     async fn get_download_url(&self, key: &str) -> AppResult<Option<String>> {
         self.cache.get(key).await

@@ -59,8 +59,8 @@ pub struct ResolveDownloadUrlService {
 
 impl ResolveDownloadUrlService {
     pub fn new(
-        cache: impl DownloadUrlCache + Send + Sync + 'static,
-        source: impl DownloadUrlSource + Send + Sync + 'static,
+        cache: impl DownloadUrlCache + 'static,
+        source: impl DownloadUrlSource + 'static,
     ) -> Self {
         Self {
             cache: Arc::new(cache),
@@ -185,6 +185,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl DownloadUrlCache for FakeCache {
         async fn get_download_url(&self, key: &str) -> AppResult<Option<String>> {
             Ok(self.stored.lock().unwrap().get(key).cloned())
@@ -235,6 +236,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl DownloadUrlSource for FakeSource {
         async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String> {
             self.calls.fetch_add(1, Ordering::SeqCst);

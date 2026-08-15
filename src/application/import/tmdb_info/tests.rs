@@ -23,6 +23,7 @@ struct FakeMetadataCatalog {
     tv_details: Arc<Mutex<HashMap<u32, TvDetail>>>,
 }
 
+#[async_trait::async_trait]
 impl MetadataCatalog for FakeMetadataCatalog {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         self.movie_search_calls
@@ -257,6 +258,7 @@ struct StubTitleExtractor {
     title: Option<Title>,
 }
 
+#[async_trait::async_trait]
 impl TitleExtractor for StubTitleExtractor {
     async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
         Ok(self.title.clone())

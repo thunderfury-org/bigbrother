@@ -21,8 +21,8 @@ pub(crate) struct ManageSubscriptionsService {
 
 impl ManageSubscriptionsService {
     pub(crate) fn new(
-        repo: impl SubscriptionRepository + Send + Sync + 'static,
-        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
+        repo: impl SubscriptionRepository + 'static,
+        metadata_catalog: impl MetadataCatalog + 'static,
     ) -> Self {
         Self {
             repo: std::sync::Arc::new(repo),
@@ -99,6 +99,7 @@ mod tests {
         records: Arc<Mutex<Vec<SubscriptionRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl SubscriptionRepository for FakeRepo {
         async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>> {
             Ok(self.records.lock().unwrap().clone())
@@ -148,6 +149,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct FakeCatalog;
 
+    #[async_trait::async_trait]
     impl MetadataCatalog for FakeCatalog {
         async fn search_movie(
             &self,

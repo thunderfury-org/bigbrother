@@ -381,7 +381,7 @@ fn display_share_path(path: &str) -> &str {
 }
 
 async fn resolve_share_url_raw_files(
-    resolver: &dyn crate::application::ports::erase::DynShareResolver,
+    resolver: &dyn crate::application::ports::ShareResolver,
     url: &str,
 ) -> AppResult<Vec<crate::domain::share::RawFile>> {
     resolver.raw_files_from_url(url).await?.ok_or_else(|| {
@@ -405,6 +405,7 @@ mod tests {
         result: Option<Vec<RawFile>>,
     }
 
+    #[async_trait::async_trait]
     impl ShareResolver for FakeShareResolver {
         async fn raw_files_from_url(&self, _url: &str) -> AppResult<Option<Vec<RawFile>>> {
             Ok(self.result.clone())
