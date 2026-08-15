@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::{
+        delete_media::DeleteMediaService,
         file_index::FileIndexService,
         file_index_import::{FileIndexImportService, ImportFileResult},
         ports::{
@@ -54,6 +55,7 @@ pub(crate) struct ConsoleContext {
     pub(super) recorded_import: Option<Arc<RecordedImportService>>,
     pub(super) subscription_service: Option<Arc<SubscriptionService>>,
     pub(super) subscription_repo: Option<Arc<SeaOrmSubscriptionRepository>>,
+    pub(super) delete_media_service: Option<Arc<DeleteMediaService>>,
 }
 
 impl ConsoleContext {
@@ -64,6 +66,7 @@ impl ConsoleContext {
         identify_service: IdentifyService,
         subscription_service: SubscriptionService,
         subscription_repo: SeaOrmSubscriptionRepository,
+        delete_media_service: DeleteMediaService,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -75,11 +78,12 @@ impl ConsoleContext {
             recorded_import: Some(recorded_import),
             subscription_service: Some(Arc::new(subscription_service)),
             subscription_repo: Some(Arc::new(subscription_repo)),
+            delete_media_service: Some(Arc::new(delete_media_service)),
         }
     }
 
     #[cfg(test)]
-    fn new_without_import(
+    pub(super) fn new_without_import(
         repo: SeaOrmImportRecordRepository,
         file_index_service: FileIndexService,
     ) -> Self {
@@ -91,6 +95,7 @@ impl ConsoleContext {
             recorded_import: None,
             subscription_service: None,
             subscription_repo: None,
+            delete_media_service: None,
         }
     }
 
@@ -109,11 +114,31 @@ impl ConsoleContext {
             recorded_import: None,
             subscription_service: Some(Arc::new(subscription_service)),
             subscription_repo: Some(Arc::new(subscription_repo)),
+            delete_media_service: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_delete_media(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService,
+        delete_media_service: DeleteMediaService,
+    ) -> Self {
+        Self {
+            repo: Arc::new(repo),
+            file_index_service: Arc::new(file_index_service),
+            import_service: None,
+            identify_service: None,
+            recorded_import: None,
+            subscription_service: None,
+            subscription_repo: None,
+            delete_media_service: Some(Arc::new(delete_media_service)),
         }
     }
 }
 
 pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
+    use super::media_dirs;
     use super::subscription as sub;
     Router::new()
         .route("/api/imports", get(list_imports))
@@ -129,6 +154,11 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route(
             "/api/subscriptions/{id}/rescan",
             post(sub::rescan_subscription),
+        )
+        .route("/api/media-dirs", get(media_dirs::list_media_dirs))
+        .route(
+            "/api/media-dirs/delete",
+            post(media_dirs::delete_media_dirs),
         )
         .fallback(get(static_handler))
         .with_state(ctx)

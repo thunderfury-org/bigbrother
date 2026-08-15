@@ -9,6 +9,7 @@ pub(crate) mod console_assets;
 pub(crate) mod emby_proxy;
 pub(crate) mod log;
 pub(crate) mod media;
+pub(crate) mod media_dirs;
 pub(crate) mod subscription;
 
 pub(crate) async fn run(name: &'static str, addr: String, app: Router) -> AppResult<()> {
