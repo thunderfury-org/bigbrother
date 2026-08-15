@@ -21,19 +21,18 @@ use crate::domain::media::Title;
 use crate::domain::share::{FileHash, RawFile};
 use crate::error::{AppError, AppResult};
 
-pub(crate) struct TestImportService<L, M, F> {
-    pub transfer: TransferWorkflow<L, F>,
-    pub identify_service: MediaIdentifyService<M, FakeTitleExtractor>,
+pub(crate) struct TestImportService {
+    pub transfer: TransferWorkflow,
+    pub identify_service: MediaIdentifyService,
     pub metadata_lookup: MetadataLookup,
 }
 
-impl<L, M, F> TestImportService<L, M, F>
-where
-    L: LibraryGateway,
-    M: MetadataCatalog,
-    F: ImportLocalStore,
-{
-    pub fn new(library_gateway: L, metadata_catalog: M, local_store: F) -> Self {
+impl TestImportService {
+    pub fn new(
+        library_gateway: impl LibraryGateway + Send + Sync + 'static,
+        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
+        local_store: impl ImportLocalStore + Send + Sync + 'static,
+    ) -> Self {
         Self {
             transfer: TransferWorkflow::new(library_gateway, local_store),
             identify_service: MediaIdentifyService::new(metadata_catalog, FakeTitleExtractor),
@@ -42,7 +41,7 @@ where
     }
 
     pub async fn import_from_raw_files(
-        &mut self,
+        &self,
         raw_files: Vec<RawFile>,
     ) -> AppResult<Vec<ImportedMedia>> {
         let media_files = self
@@ -395,7 +394,7 @@ fn existing_season_dir(
 async fn import_from_raw_files_writes_strm_and_records_upload() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -451,7 +450,7 @@ async fn import_from_raw_files_writes_strm_and_records_upload() {
 async fn import_from_raw_files_groups_tv_episodes_and_writes_season_strms() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -545,7 +544,7 @@ async fn import_from_raw_files_groups_tv_episodes_and_writes_season_strms() {
 async fn import_from_raw_files_imports_movie() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -607,7 +606,7 @@ async fn import_from_raw_files_skips_when_existing_movie_is_not_smaller() {
             )],
         );
     }
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -659,7 +658,7 @@ async fn import_from_raw_files_overwrites_when_incoming_movie_is_larger() {
     fs::create_dir_all(&old_local_dir).unwrap();
     fs::write(old_local_dir.join("Inception.2010.720p.strm"), "old").unwrap();
 
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -723,7 +722,7 @@ async fn import_from_raw_files_skips_existing_tv_episode_when_existing_is_not_sm
             )],
         );
     }
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -793,7 +792,7 @@ async fn import_from_raw_files_overwrites_existing_tv_episode_when_incoming_is_l
     )
     .unwrap();
 
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -852,8 +851,7 @@ async fn import_from_raw_files_returns_error_when_library_dir_creation_fails() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().fail_mkdir_path = true;
-    let mut service =
-        TestImportService::new(gateway, FakeMetadataCatalog, local_store_for(&local_dir));
+    let service = TestImportService::new(gateway, FakeMetadataCatalog, local_store_for(&local_dir));
     let error = service
         .import_from_raw_files(vec![raw_file(
             "Inception.2010.1080p.mkv",
@@ -877,7 +875,7 @@ async fn import_from_raw_files_marks_movie_failed_when_upload_returns_none() {
     let local_dir = unique_temp_dir();
     let gateway = FakeLibraryGateway::default();
     gateway.state.lock().unwrap().md5_upload_returns_none = true;
-    let mut service = TestImportService::new(
+    let service = TestImportService::new(
         gateway.clone(),
         FakeMetadataCatalog,
         local_store_for(&local_dir),
@@ -938,7 +936,7 @@ async fn import_from_raw_files_returns_error_when_local_cleanup_fails_on_overwri
 
     let mut local_store = FakeLocalStore::new(local_dir.clone());
     local_store.fail_remove = true;
-    let mut service = TestImportService::new(gateway, FakeMetadataCatalog, local_store);
+    let service = TestImportService::new(gateway, FakeMetadataCatalog, local_store);
     let error = service
         .import_from_raw_files(vec![raw_file(
             "Inception.2010.1080p.mkv",

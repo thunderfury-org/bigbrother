@@ -48,17 +48,16 @@ pub(crate) enum ParsedMediaInfo {
     },
 }
 
-pub(crate) struct ParseService<M, T> {
+pub(crate) struct ParseService {
     metadata_lookup: MetadataLookup,
-    tmdb_lookup: TmdbLookup<M, T>,
+    tmdb_lookup: TmdbLookup,
 }
 
-impl<M, T> ParseService<M, T>
-where
-    M: MetadataCatalog,
-    T: TitleExtractor,
-{
-    pub(crate) fn new(metadata_catalog: M, title_extractor: T) -> Self {
+impl ParseService {
+    pub(crate) fn new(
+        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
+        title_extractor: impl TitleExtractor + Send + Sync + 'static,
+    ) -> Self {
         Self {
             metadata_lookup: MetadataLookup::default(),
             tmdb_lookup: TmdbLookup::new(metadata_catalog, title_extractor),
@@ -66,7 +65,7 @@ where
     }
 
     pub(crate) async fn parse_media_files(
-        &mut self,
+        &self,
         raw_files: Vec<RawFile>,
         descriptions: Vec<String>,
     ) -> AppResult<Vec<ParsedMediaInfo>> {

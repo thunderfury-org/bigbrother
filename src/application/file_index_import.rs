@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use crate::{
     application::{
         file_index::FileIndexService,
-        import::{ImportedMedia, MediaIdentifier, MediaImporter, MetadataLookup},
-        ports::{FileIndexRepository, ImportRecordRepository},
+        import::{DynMediaIdentifier, DynMediaImporter, ImportedMedia, MetadataLookup},
         recorded_import::RecordedImportService,
     },
     domain::import_record::{ImportSource, ImportSourceKind},
@@ -76,27 +75,22 @@ impl ImportFileResult {
     }
 }
 
-pub struct FileIndexImportService<R> {
-    file_index: FileIndexService<R>,
+pub struct FileIndexImportService {
+    file_index: FileIndexService,
 }
 
-impl<R: FileIndexRepository> FileIndexImportService<R> {
-    pub fn new(file_index: FileIndexService<R>) -> Self {
+impl FileIndexImportService {
+    pub fn new(file_index: FileIndexService) -> Self {
         Self { file_index }
     }
 
-    pub async fn import_from_fingerprints<I, D, RecordRepo>(
+    pub async fn import_from_fingerprints(
         &self,
         ids: &[i64],
-        identifier: &mut D,
-        importer: &mut I,
-        recorded: &RecordedImportService<RecordRepo>,
-    ) -> AppResult<Vec<ImportFileResult>>
-    where
-        I: MediaImporter,
-        D: MediaIdentifier,
-        RecordRepo: ImportRecordRepository,
-    {
+        identifier: &dyn DynMediaIdentifier,
+        importer: &dyn DynMediaImporter,
+        recorded: &RecordedImportService,
+    ) -> AppResult<Vec<ImportFileResult>> {
         let ready_files = self.file_index.get_import_ready_files(ids).await?;
 
         let found_ids: HashSet<i64> = ready_files.iter().map(|(id, _, _)| *id).collect();
@@ -131,7 +125,7 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
 
             let outcome = recorded
                 .execute(source, || async {
-                    let mut metadata_lookup = MetadataLookup::default();
+                    let metadata_lookup = MetadataLookup::default();
                     let media_files =
                         metadata_lookup.build_media_files(raw_files.clone(), descriptions);
                     let identified = identifier.identify(media_files).await?;
@@ -165,12 +159,13 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
 mod tests {
     use super::*;
     use crate::application::import::identify::IdentifyOutcome;
+    use crate::application::import::{MediaIdentifier, MediaImporter};
     use crate::application::{
         import::ImportedMedia,
         ports::{
-            FileIndexRecordInput, FileLocationRecord, FileSearchRecord, ImportRecordCreate,
-            ImportRecordFilter, ImportRecordFinalize, ImportRecordPage, ImportRecordPaging,
-            ImportRecordView,
+            FileIndexRecordInput, FileIndexRepository, FileLocationRecord, FileSearchRecord,
+            ImportRecordCreate, ImportRecordFilter, ImportRecordFinalize, ImportRecordPage,
+            ImportRecordPaging, ImportRecordRepository, ImportRecordView,
         },
     };
     use crate::domain::import_record::ImportSourceKind;
@@ -237,7 +232,7 @@ mod tests {
 
     impl MediaIdentifier for FakeIdentifier {
         async fn identify(
-            &mut self,
+            &self,
             _files: Vec<crate::domain::import::inner::MediaFile>,
         ) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
@@ -248,12 +243,12 @@ mod tests {
     }
 
     struct FakeImporter {
-        make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send>,
+        make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send + Sync>,
     }
 
     impl MediaImporter for FakeImporter {
         async fn import_groups(
-            &mut self,
+            &self,
             _groups: Vec<crate::domain::import::inner::Media>,
             _unmatched: Vec<crate::application::import::identify::UnmatchedFile>,
         ) -> AppResult<Vec<ImportedMedia>> {
@@ -275,9 +270,7 @@ mod tests {
         }
     }
 
-    fn service_with_records(
-        records: Vec<FileSearchRecord>,
-    ) -> FileIndexImportService<FakeFileRepo> {
+    fn service_with_records(records: Vec<FileSearchRecord>) -> FileIndexImportService {
         let repo = FakeFileRepo {
             records: Arc::new(Mutex::new(records)),
         };
@@ -301,13 +294,13 @@ mod tests {
     #[tokio::test]
     async fn empty_ids_returns_error() {
         let service = service_with_records(vec![]);
-        let mut importer = FakeImporter {
+        let importer = FakeImporter {
             make_result: Box::new(|| Ok(vec![])),
         };
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let err = service
-            .import_from_fingerprints(&[], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidParameter(_)));
@@ -316,13 +309,13 @@ mod tests {
     #[tokio::test]
     async fn no_matching_records_returns_error() {
         let service = service_with_records(vec![]);
-        let mut importer = FakeImporter {
+        let importer = FakeImporter {
             make_result: Box::new(|| Ok(vec![])),
         };
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let err = service
-            .import_from_fingerprints(&[999], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[999], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidParameter(_)));
@@ -331,11 +324,11 @@ mod tests {
     #[tokio::test]
     async fn successful_movie_import() {
         let service = service_with_records(vec![sample_record(1)]);
-        let mut importer = movie_importer();
+        let importer = movie_importer();
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 
@@ -350,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn skipped_item_reports_skipped_status() {
         let service = service_with_records(vec![sample_record(1)]);
-        let mut importer = FakeImporter {
+        let importer = FakeImporter {
             make_result: Box::new(|| {
                 Ok(vec![ImportedMedia::Skipped {
                     count: 1,
@@ -361,7 +354,7 @@ mod tests {
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 
@@ -372,13 +365,13 @@ mod tests {
     #[tokio::test]
     async fn empty_import_result_reports_skipped() {
         let service = service_with_records(vec![sample_record(1)]);
-        let mut importer = FakeImporter {
+        let importer = FakeImporter {
             make_result: Box::new(|| Ok(vec![])),
         };
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 
@@ -390,13 +383,13 @@ mod tests {
     #[tokio::test]
     async fn transfer_error_reports_failed() {
         let service = service_with_records(vec![sample_record(1)]);
-        let mut importer = FakeImporter {
+        let importer = FakeImporter {
             make_result: Box::new(|| Err(AppError::Network("timeout".into(), true))),
         };
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 
@@ -409,11 +402,11 @@ mod tests {
     #[tokio::test]
     async fn batch_import_processes_multiple_fingerprints() {
         let service = service_with_records(vec![sample_record(1), sample_record(2)]);
-        let mut importer = movie_importer();
+        let importer = movie_importer();
         let recorded = RecordedImportService::new(FakeImportRepo::default());
 
         let results = service
-            .import_from_fingerprints(&[1, 2], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1, 2], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 
@@ -425,12 +418,12 @@ mod tests {
     #[tokio::test]
     async fn creates_import_record_per_fingerprint() {
         let service = service_with_records(vec![sample_record(1), sample_record(2)]);
-        let mut importer = movie_importer();
+        let importer = movie_importer();
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo.clone());
 
         service
-            .import_from_fingerprints(&[1, 2], &mut FakeIdentifier, &mut importer, &recorded)
+            .import_from_fingerprints(&[1, 2], &FakeIdentifier, &importer, &recorded)
             .await
             .unwrap();
 

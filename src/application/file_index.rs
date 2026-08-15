@@ -5,7 +5,8 @@ use tracing::info;
 
 use crate::{
     application::ports::{
-        FileIndexRecordInput, FileIndexRepository, FileLocationRecord, FileSearchRecord,
+        FileIndexRecordInput, FileIndexRepo, FileIndexRepository, FileLocationRecord,
+        FileSearchRecord,
     },
     domain::media::{FileType, Metadata},
     domain::share::{FileHash, RawFile},
@@ -13,20 +14,19 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct FileIndexService<R> {
-    repo: R,
+pub struct FileIndexService {
+    repo: FileIndexRepo,
 }
 
-impl<R> FileIndexService<R> {
-    pub fn new(repo: R) -> Self {
-        Self { repo }
+impl FileIndexService {
+    pub fn new(repo: impl FileIndexRepository + Send + Sync + 'static) -> Self {
+        Self {
+            repo: std::sync::Arc::new(repo),
+        }
     }
 }
 
-impl<R> FileIndexService<R>
-where
-    R: FileIndexRepository,
-{
+impl FileIndexService {
     pub async fn record_raw_files(
         &self,
         files: Vec<RawFile>,

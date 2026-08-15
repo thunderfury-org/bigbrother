@@ -1,6 +1,5 @@
 use crate::{
     application::import::{MetadataLookup, ParsedMediaInfo},
-    application::ports::ShareResolver,
     application::recorded_import::RecordedImportService,
     error::{self, AppResult},
 };
@@ -24,9 +23,9 @@ pub(crate) async fn run_import_share_url(
 
     let ctx = CliContext::new(data_dir)?;
     let share_resolver = ctx.share_resolver();
-    let mut import_service = ctx.import_service().await?;
-    let mut identify_service = ctx.identify_service().await?;
-    let mut metadata_lookup = MetadataLookup::default();
+    let import_service = ctx.import_service().await?;
+    let identify_service = ctx.identify_service().await?;
+    let metadata_lookup = MetadataLookup::default();
     let file_index_service = ctx.file_index_service().await?;
     let recorded = RecordedImportService::new(ctx.import_record_repository().await?);
 
@@ -88,7 +87,7 @@ pub(crate) async fn run_share_parse(
 ) -> AppResult<()> {
     let ctx = CliContext::new(data_dir)?;
     let share_resolver = ctx.share_resolver();
-    let mut parse_service = ctx.parse_service().await?;
+    let parse_service = ctx.parse_service().await?;
 
     let raw_files = resolve_share_url_raw_files(&share_resolver, url).await?;
     let descriptions: Vec<String> = description.into_iter().collect();
@@ -381,8 +380,8 @@ fn display_share_path(path: &str) -> &str {
     if path.is_empty() { "/" } else { path }
 }
 
-async fn resolve_share_url_raw_files<R: ShareResolver>(
-    resolver: &R,
+async fn resolve_share_url_raw_files(
+    resolver: &dyn crate::application::ports::erase::DynShareResolver,
     url: &str,
 ) -> AppResult<Vec<crate::domain::share::RawFile>> {
     resolver.raw_files_from_url(url).await?.ok_or_else(|| {

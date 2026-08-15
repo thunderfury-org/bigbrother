@@ -1,6 +1,6 @@
-use crate::application::ports::MetadataCatalog;
 use crate::application::ports::{
-    SubscriptionCreateInput, SubscriptionRecord, SubscriptionRepository,
+    MetadataCatalog, MetadataCatalogHandle, SubscriptionCreateInput, SubscriptionRecord,
+    SubscriptionRepo, SubscriptionRepository,
 };
 use crate::domain::subscription::SubscriptionMediaType;
 use crate::error::{AppError, AppResult};
@@ -14,20 +14,19 @@ pub(crate) struct SubscriptionCandidate {
 }
 
 #[derive(Clone)]
-pub(crate) struct ManageSubscriptionsService<R, M> {
-    repo: R,
-    metadata_catalog: M,
+pub(crate) struct ManageSubscriptionsService {
+    repo: SubscriptionRepo,
+    metadata_catalog: MetadataCatalogHandle,
 }
 
-impl<R, M> ManageSubscriptionsService<R, M>
-where
-    R: SubscriptionRepository,
-    M: MetadataCatalog,
-{
-    pub(crate) fn new(repo: R, metadata_catalog: M) -> Self {
+impl ManageSubscriptionsService {
+    pub(crate) fn new(
+        repo: impl SubscriptionRepository + Send + Sync + 'static,
+        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            repo,
-            metadata_catalog,
+            repo: std::sync::Arc::new(repo),
+            metadata_catalog: std::sync::Arc::new(metadata_catalog),
         }
     }
 

@@ -39,14 +39,21 @@ pub struct Pan189ShareService<S> {
 }
 
 pub(crate) trait Pan189ShareSource: Clone {
-    async fn get_share_info(&self, share_code: &str) -> AppResult<pan189::ShareInfo>;
-    async fn list_share_files(
+    fn get_share_info(
+        &self,
+        share_code: &str,
+    ) -> impl std::future::Future<Output = AppResult<pan189::ShareInfo>> + Send;
+    fn list_share_files(
         &self,
         share_id: i64,
         share_mode: i32,
         parent_id: &str,
-    ) -> AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)>;
-    async fn download_share_file(&self, share_id: i64, file: &pan189::File) -> AppResult<Vec<u8>>;
+    ) -> impl std::future::Future<Output = AppResult<(Vec<pan189::Folder>, Vec<pan189::File>)>> + Send;
+    fn download_share_file(
+        &self,
+        share_id: i64,
+        file: &pan189::File,
+    ) -> impl std::future::Future<Output = AppResult<Vec<u8>>> + Send;
 }
 
 impl Pan189ShareSource for pan189::Client {

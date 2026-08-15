@@ -1,31 +1,22 @@
 use crate::application::file_index::FileIndexService;
 use crate::application::file_index_import::ImportFileResult;
 use crate::application::import::MetadataLookup;
-use crate::application::import::{MediaIdentifier, MediaImporter};
-use crate::application::ports::{
-    FileIndexRepository, ImportRecordRepository, SubscriptionRepository,
-};
+use crate::application::import::{DynMediaIdentifier, DynMediaImporter};
+use crate::application::ports::erase::DynSubscriptionRepository;
 use crate::application::recorded_import::RecordedImportService;
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
 use crate::error::AppResult;
 
 use super::import_filter::filter_by_subscription;
 
-pub(crate) async fn rescan_subscription<R, FI, I, D, RecordRepo>(
+pub(crate) async fn rescan_subscription(
     subscription_id: i64,
-    sub_repo: &R,
-    file_index: &FileIndexService<FI>,
-    identifier: &mut D,
-    importer: &mut I,
-    recorded: &RecordedImportService<RecordRepo>,
-) -> AppResult<Vec<ImportFileResult>>
-where
-    R: SubscriptionRepository,
-    FI: FileIndexRepository,
-    I: MediaImporter,
-    D: MediaIdentifier,
-    RecordRepo: ImportRecordRepository,
-{
+    sub_repo: &dyn DynSubscriptionRepository,
+    file_index: &FileIndexService,
+    identifier: &dyn DynMediaIdentifier,
+    importer: &dyn DynMediaImporter,
+    recorded: &RecordedImportService,
+) -> AppResult<Vec<ImportFileResult>> {
     let subscription = sub_repo.get_by_id(subscription_id).await?.ok_or_else(|| {
         crate::error::AppError::NotFound(format!("subscription {subscription_id} not found"))
     })?;
@@ -86,7 +77,7 @@ where
 
             let outcome = recorded
                 .execute(source, || async {
-                    let mut metadata_lookup = MetadataLookup::default();
+                    let metadata_lookup = MetadataLookup::default();
                     let media_files =
                         metadata_lookup.build_media_files(raw_files.clone(), descriptions);
                     let identified = identifier.identify(media_files).await?;
@@ -125,9 +116,10 @@ mod tests {
         import::identify::IdentifyOutcome,
         import::{MediaIdentifier, MediaImporter},
         ports::{
-            FileIndexRecordInput, FileLocationRecord, FileSearchRecord, ImportRecordCreate,
-            ImportRecordFilter, ImportRecordFinalize, ImportRecordPage, ImportRecordPaging,
-            ImportRecordView, SubscriptionCreateInput, SubscriptionRecord,
+            FileIndexRecordInput, FileIndexRepository, FileLocationRecord, FileSearchRecord,
+            ImportRecordCreate, ImportRecordFilter, ImportRecordFinalize, ImportRecordPage,
+            ImportRecordPaging, ImportRecordRepository, ImportRecordView, SubscriptionCreateInput,
+            SubscriptionRecord, SubscriptionRepository,
         },
     };
     use crate::domain::{import::inner::MediaFile, subscription::SubscriptionMediaType};
@@ -246,7 +238,7 @@ mod tests {
     struct FakeIdentifier;
 
     impl MediaIdentifier for FakeIdentifier {
-        async fn identify(&mut self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+        async fn identify(&self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
                 groups: vec![],
                 unmatched: vec![],
@@ -255,12 +247,12 @@ mod tests {
     }
 
     struct FakeImporter {
-        make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send>,
+        make_result: Box<dyn Fn() -> AppResult<Vec<ImportedMedia>> + Send + Sync>,
     }
 
     impl MediaImporter for FakeImporter {
         async fn import_groups(
-            &mut self,
+            &self,
             _groups: Vec<crate::domain::import::inner::Media>,
             _unmatched: Vec<crate::application::import::identify::UnmatchedFile>,
         ) -> AppResult<Vec<ImportedMedia>> {
@@ -303,8 +295,8 @@ mod tests {
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
-        let mut identifier = FakeIdentifier;
-        let mut importer = FakeImporter {
+        let identifier = FakeIdentifier;
+        let importer = FakeImporter {
             make_result: Box::new(|| Ok(vec![])),
         };
 
@@ -312,8 +304,8 @@ mod tests {
             999,
             &sub_repo,
             &file_index,
-            &mut identifier,
-            &mut importer,
+            &identifier,
+            &importer,
             &recorded,
         )
         .await
@@ -325,35 +317,31 @@ mod tests {
     #[tokio::test]
     async fn no_files_found_returns_empty() {
         let sub_repo = FakeSubRepo::default();
-        sub_repo
-            .create(&SubscriptionCreateInput {
+        SubscriptionRepository::create(
+            &sub_repo,
+            &SubscriptionCreateInput {
                 tmdb_id: 27205,
                 media_type: SubscriptionMediaType::Movie,
                 title_zh: None,
                 title_en: Some("Inception".into()),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         let file_repo = FakeFileRepo::default();
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
-        let mut identifier = FakeIdentifier;
-        let mut importer = FakeImporter {
+        let identifier = FakeIdentifier;
+        let importer = FakeImporter {
             make_result: Box::new(|| Ok(vec![])),
         };
 
-        let results = rescan_subscription(
-            1,
-            &sub_repo,
-            &file_index,
-            &mut identifier,
-            &mut importer,
-            &recorded,
-        )
-        .await
-        .unwrap();
+        let results =
+            rescan_subscription(1, &sub_repo, &file_index, &identifier, &importer, &recorded)
+                .await
+                .unwrap();
 
         assert!(results.is_empty());
     }
@@ -361,15 +349,17 @@ mod tests {
     #[tokio::test]
     async fn happy_path_returns_import_results() {
         let sub_repo = FakeSubRepo::default();
-        sub_repo
-            .create(&SubscriptionCreateInput {
+        SubscriptionRepository::create(
+            &sub_repo,
+            &SubscriptionCreateInput {
                 tmdb_id: 27205,
                 media_type: SubscriptionMediaType::Movie,
                 title_zh: None,
                 title_en: Some("Inception".into()),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         let file_repo = FakeFileRepo {
             records: Arc::new(Mutex::new(vec![sample_record(1)])),
@@ -377,19 +367,13 @@ mod tests {
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
-        let mut identifier = FakeIdentifier;
-        let mut importer = movie_importer();
+        let identifier = FakeIdentifier;
+        let importer = movie_importer();
 
-        let results = rescan_subscription(
-            1,
-            &sub_repo,
-            &file_index,
-            &mut identifier,
-            &mut importer,
-            &recorded,
-        )
-        .await
-        .unwrap();
+        let results =
+            rescan_subscription(1, &sub_repo, &file_index, &identifier, &importer, &recorded)
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, "succeeded");

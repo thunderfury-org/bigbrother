@@ -3,12 +3,8 @@ use crate::domain::media::Metadata;
 use super::MetadataLookup;
 
 impl MetadataLookup {
-    pub(super) fn parse_metadata_from_path(
-        &mut self,
-        parent_path: &str,
-        is_tv: bool,
-    ) -> Box<Metadata> {
-        if let Some(meta) = self.cache.get(parent_path) {
+    pub(super) fn parse_metadata_from_path(&self, parent_path: &str, is_tv: bool) -> Box<Metadata> {
+        if let Some(meta) = self.cache.lock().expect("metadata cache").get(parent_path) {
             return meta.clone();
         }
 
@@ -25,14 +21,20 @@ impl MetadataLookup {
             if !is_tv {
                 meta.clear_tv_context();
             }
-            self.cache.insert(parent_path.to_string(), meta.clone());
+            self.cache
+                .lock()
+                .expect("metadata cache")
+                .insert(parent_path.to_string(), meta.clone());
             return meta;
         }
 
         let path_meta = Metadata::parse(parts[parts.len() - 2]);
         meta.merge_metadata(&path_meta);
 
-        self.cache.insert(parent_path.to_string(), meta.clone());
+        self.cache
+            .lock()
+            .expect("metadata cache")
+            .insert(parent_path.to_string(), meta.clone());
         meta
     }
 }

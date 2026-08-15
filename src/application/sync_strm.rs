@@ -11,7 +11,7 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-use super::ports::{FileStore, LibraryRemote};
+use super::ports::{FileStore, FileStoreHandle, LibraryRemote, LibraryRemoteHandle};
 
 #[derive(Debug, Clone)]
 pub struct SyncStrmConfig {
@@ -21,27 +21,27 @@ pub struct SyncStrmConfig {
 }
 
 #[derive(Clone)]
-pub struct SyncStrmService<R, F> {
-    remote: R,
-    file_store: F,
+pub struct SyncStrmService {
+    remote: LibraryRemoteHandle,
+    file_store: FileStoreHandle,
     config: SyncStrmConfig,
 }
 
-impl<R, F> SyncStrmService<R, F> {
-    pub fn new(remote: R, file_store: F, config: SyncStrmConfig) -> Self {
+impl SyncStrmService {
+    pub fn new(
+        remote: impl LibraryRemote + Send + Sync + 'static,
+        file_store: impl FileStore + Send + Sync + 'static,
+        config: SyncStrmConfig,
+    ) -> Self {
         Self {
-            remote,
-            file_store,
+            remote: std::sync::Arc::new(remote),
+            file_store: std::sync::Arc::new(file_store),
             config,
         }
     }
 }
 
-impl<R, F> SyncStrmService<R, F>
-where
-    R: LibraryRemote,
-    F: FileStore,
-{
+impl SyncStrmService {
     pub async fn execute(&self) -> AppResult<()> {
         let remote_path = self.config.remote_path.clone();
         let root_id = self

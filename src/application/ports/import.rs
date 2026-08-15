@@ -8,7 +8,7 @@ use crate::{
     error::AppResult,
 };
 
-pub trait LibraryGateway: Clone {
+pub trait LibraryGateway {
     fn list_library_files(
         &self,
         dir_id: i64,
@@ -55,7 +55,7 @@ pub trait LibraryGateway: Clone {
     ) -> impl std::future::Future<Output = AppResult<()>> + Send;
 }
 
-pub trait MetadataCatalog: Clone {
+pub trait MetadataCatalog {
     fn search_movie(
         &self,
         title: &str,
@@ -76,14 +76,14 @@ pub trait MetadataCatalog: Clone {
     ) -> impl std::future::Future<Output = AppResult<Option<TvDetail>>> + Send;
 }
 
-pub trait TitleExtractor: Clone {
+pub trait TitleExtractor {
     fn extract_title(
         &self,
         description: &str,
     ) -> impl std::future::Future<Output = AppResult<Option<Title>>> + Send;
 }
 
-pub trait ImportLocalStore: Clone {
+pub trait ImportLocalStore {
     fn remote_library_path(&self) -> &str;
     fn local_path_for_remote(&self, remote_path: &str) -> String;
     fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String;

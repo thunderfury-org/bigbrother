@@ -3,18 +3,13 @@ use std::collections::HashMap;
 use crate::domain::import::inner::MediaFile;
 
 use super::{TransferWorkflow, transfer_support::existing_season_dir_id};
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::TvDetail;
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn resolve_season_target(
-        &mut self,
+        &self,
         detail: &TvDetail,
         season_number: &u32,
         tv_dir_id: i64,

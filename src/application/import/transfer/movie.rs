@@ -6,17 +6,12 @@ use crate::domain::import::{
 use tracing::info;
 
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::MovieDetail;
 use crate::{error::AppResult, log_time};
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn transfer_movie(
-        &mut self,
+        &self,
         detail: &MovieDetail,
         media_files: &[&MediaFile],
     ) -> AppResult<Option<ImportedMedia>> {

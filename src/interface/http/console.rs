@@ -16,16 +16,15 @@ use crate::{
         file_index::FileIndexService,
         file_index_import::{FileIndexImportService, ImportFileResult},
         ports::{
-            FileIndexRepository, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
-            ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
+            FileLocationRecord, FileSearchRecord, ImportRecordFilter, ImportRecordPage,
+            ImportRecordPaging, ImportRecordRepository, ImportRecordView,
         },
         recorded_import::RecordedImportService,
     },
     domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
     error::AppError,
     infrastructure::repo::{
-        file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
-        subscription::SeaOrmSubscriptionRepository,
+        import_record::SeaOrmImportRecordRepository, subscription::SeaOrmSubscriptionRepository,
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
     interface::runtime::{IdentifyService, ImportService, SubscriptionService},
@@ -49,10 +48,10 @@ fn embedded_lookup(path: &str) -> Option<AssetFile> {
 #[derive(Clone)]
 pub(crate) struct ConsoleContext {
     pub(super) repo: Arc<SeaOrmImportRecordRepository>,
-    pub(super) file_index_service: Arc<FileIndexService<SeaOrmFileIndexRepository>>,
+    pub(super) file_index_service: Arc<FileIndexService>,
     pub(super) import_service: Option<Arc<ImportService>>,
     pub(super) identify_service: Option<Arc<IdentifyService>>,
-    pub(super) recorded_import: Option<Arc<RecordedImportService<SeaOrmImportRecordRepository>>>,
+    pub(super) recorded_import: Option<Arc<RecordedImportService>>,
     pub(super) subscription_service: Option<Arc<SubscriptionService>>,
     pub(super) subscription_repo: Option<Arc<SeaOrmSubscriptionRepository>>,
 }
@@ -60,7 +59,7 @@ pub(crate) struct ConsoleContext {
 impl ConsoleContext {
     pub(crate) fn new(
         repo: SeaOrmImportRecordRepository,
-        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        file_index_service: FileIndexService,
         import_service: ImportService,
         identify_service: IdentifyService,
         subscription_service: SubscriptionService,
@@ -82,7 +81,7 @@ impl ConsoleContext {
     #[cfg(test)]
     fn new_without_import(
         repo: SeaOrmImportRecordRepository,
-        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        file_index_service: FileIndexService,
     ) -> Self {
         Self {
             repo: Arc::new(repo),
@@ -98,7 +97,7 @@ impl ConsoleContext {
     #[cfg(test)]
     fn new_with_subscription(
         repo: SeaOrmImportRecordRepository,
-        file_index_service: FileIndexService<SeaOrmFileIndexRepository>,
+        file_index_service: FileIndexService,
         subscription_service: SubscriptionService,
         subscription_repo: SeaOrmSubscriptionRepository,
     ) -> Self {
@@ -196,10 +195,7 @@ async fn search_files(
     search_files_with_service(ctx.file_index_service.as_ref(), query).await
 }
 
-async fn search_files_with_service<R: FileIndexRepository>(
-    service: &FileIndexService<R>,
-    query: SearchQuery,
-) -> Response {
+async fn search_files_with_service(service: &FileIndexService, query: SearchQuery) -> Response {
     let keyword = query.q.unwrap_or_default();
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
 
@@ -419,11 +415,11 @@ async fn import_files(
     }
 
     let service = FileIndexImportService::new(ctx.file_index_service.as_ref().clone());
-    let mut identifier = identify_service.as_ref().clone();
-    let mut importer = import_service.as_ref().clone();
+    let identifier = identify_service.as_ref().clone();
+    let importer = import_service.as_ref().clone();
 
     let results = match service
-        .import_from_fingerprints(&body.ids, &mut identifier, &mut importer, recorded_import)
+        .import_from_fingerprints(&body.ids, &identifier, &importer, recorded_import)
         .await
     {
         Ok(results) => results,
@@ -469,7 +465,9 @@ mod tests {
     use crate::{
         application::{
             file_index::FileIndexService,
-            ports::{FileIndexRecordInput, ImportRecordCreate, ImportRecordFinalize},
+            ports::{
+                FileIndexRecordInput, FileIndexRepository, ImportRecordCreate, ImportRecordFinalize,
+            },
         },
         infrastructure::repo::file_index::SeaOrmFileIndexRepository,
     };

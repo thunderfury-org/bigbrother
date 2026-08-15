@@ -184,15 +184,15 @@ pub(super) async fn rescan_subscription(
             .into_response();
     };
 
-    let mut identifier = identify_service.as_ref().clone();
-    let mut importer = import_service.as_ref().clone();
+    let identifier = identify_service.as_ref().clone();
+    let importer = import_service.as_ref().clone();
 
     match crate::application::subscription::rescan::rescan_subscription(
         id,
         sub_repo.as_ref(),
         ctx.file_index_service.as_ref(),
-        &mut identifier,
-        &mut importer,
+        &identifier,
+        &importer,
         recorded_import,
     )
     .await

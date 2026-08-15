@@ -1,6 +1,7 @@
 use crate::{
     application::ports::{
-        ImportLocalStore, LibraryGateway, MediaDirectoryRecord, MediaSearchSource,
+        ImportLocalStore, ImportLocalStoreHandle, LibraryGateway, LibraryGatewayHandle,
+        MediaDirectoryRecord, MediaSearchHandle, MediaSearchSource,
     },
     error::{AppError, AppResult},
 };
@@ -14,30 +15,30 @@ pub struct MediaDeleteCandidate {
 }
 
 #[derive(Clone)]
-pub struct DeleteMediaService<S, G, L> {
-    search: S,
-    library: G,
-    local: L,
+pub struct DeleteMediaService {
+    search: MediaSearchHandle,
+    library: LibraryGatewayHandle,
+    local: ImportLocalStoreHandle,
     root_path: String,
 }
 
-impl<S, G, L> DeleteMediaService<S, G, L> {
-    pub fn new(search: S, library: G, local: L, root_path: String) -> Self {
+impl DeleteMediaService {
+    pub fn new(
+        search: impl MediaSearchSource + Send + Sync + 'static,
+        library: impl LibraryGateway + Send + Sync + 'static,
+        local: impl ImportLocalStore + Send + Sync + 'static,
+        root_path: String,
+    ) -> Self {
         Self {
-            search,
-            library,
-            local,
+            search: std::sync::Arc::new(search),
+            library: std::sync::Arc::new(library),
+            local: std::sync::Arc::new(local),
             root_path,
         }
     }
 }
 
-impl<S, G, L> DeleteMediaService<S, G, L>
-where
-    S: MediaSearchSource,
-    G: LibraryGateway,
-    L: ImportLocalStore,
-{
+impl DeleteMediaService {
     pub async fn search_candidates(&self, keyword: &str) -> AppResult<Vec<MediaDeleteCandidate>> {
         let keyword = keyword.trim();
         if keyword.is_empty() {

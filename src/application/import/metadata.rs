@@ -1,18 +1,27 @@
 mod path;
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::domain::import::{inner::MediaFile, policy::group_video_and_subtitle_files};
 use crate::domain::media::Metadata;
 use crate::domain::share::RawFile;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct MetadataLookup {
-    cache: HashMap<String, Box<Metadata>>,
+    cache: Mutex<HashMap<String, Box<Metadata>>>,
+}
+
+impl Clone for MetadataLookup {
+    fn clone(&self) -> Self {
+        Self {
+            cache: Mutex::new(self.cache.lock().expect("metadata cache").clone()),
+        }
+    }
 }
 
 impl MetadataLookup {
-    fn parse_media_metadata(&mut self, name: &str, parent_path: &str) -> Box<Metadata> {
+    fn parse_media_metadata(&self, name: &str, parent_path: &str) -> Box<Metadata> {
         let mut meta = Metadata::parse(name);
         if parent_path.is_empty() {
             return meta;
@@ -24,7 +33,7 @@ impl MetadataLookup {
     }
 
     pub(crate) fn build_media_files(
-        &mut self,
+        &self,
         raw_files: Vec<RawFile>,
         descriptions: Vec<String>,
     ) -> Vec<MediaFile> {

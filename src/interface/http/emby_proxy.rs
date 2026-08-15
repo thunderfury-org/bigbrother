@@ -18,7 +18,7 @@ use crate::{
     interface::runtime::MediaDownloadUrlService,
 };
 
-pub(crate) trait DownloadUrlResolver: Clone + Send + Sync + 'static {
+pub(crate) trait DownloadUrlResolver: Send + Sync {
     fn resolve_download_url(&self, file_id: i64) -> BoxFuture<'static, AppResult<String>>;
 }
 
@@ -30,24 +30,21 @@ impl DownloadUrlResolver for MediaDownloadUrlService {
 }
 
 #[derive(Clone)]
-pub(crate) struct EmbyProxyContext<R> {
+pub(crate) struct EmbyProxyContext {
     upstream_base_url: Url,
     api_key: Option<String>,
     client: reqwest::Client,
     matcher: BigbrotherStrmMatcher,
-    resolver: Arc<R>,
+    resolver: Arc<dyn DownloadUrlResolver>,
 }
 
-impl<R> EmbyProxyContext<R>
-where
-    R: DownloadUrlResolver,
-{
+impl EmbyProxyContext {
     pub(crate) fn new(
         upstream_base_url: String,
         api_key: Option<String>,
         advertise_base_url: String,
         strm_path_prefix: String,
-        resolver: R,
+        resolver: impl DownloadUrlResolver + 'static,
     ) -> AppResult<Self> {
         let upstream_base_url =
             Url::parse(upstream_base_url.trim_end_matches('/')).map_err(|err| {
@@ -73,52 +70,40 @@ where
     }
 }
 
-pub(crate) fn new_router<R>(ctx: EmbyProxyContext<R>) -> Router
-where
-    R: DownloadUrlResolver,
-{
+pub(crate) fn new_router(ctx: EmbyProxyContext) -> Router {
     Router::new()
-        .route("/{*path}", any(proxy_handler::<R>))
-        .route("/", any(proxy_root_handler::<R>))
+        .route("/{*path}", any(proxy_handler))
+        .route("/", any(proxy_root_handler))
         .with_state(ctx)
 }
 
-async fn proxy_root_handler<R>(
-    State(ctx): State<EmbyProxyContext<R>>,
+async fn proxy_root_handler(
+    State(ctx): State<EmbyProxyContext>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     proxy_request_fallback(&ctx, method, headers, uri, body).await
 }
 
-async fn proxy_handler<R>(
-    State(ctx): State<EmbyProxyContext<R>>,
+async fn proxy_handler(
+    State(ctx): State<EmbyProxyContext>,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     proxy_request(&ctx, method, headers, uri, body).await
 }
 
-async fn proxy_request<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn proxy_request(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     if is_video_stream_route(&method, uri.path()) {
         return proxy_video_stream(ctx, method, headers, uri, body).await;
     }
@@ -130,16 +115,13 @@ where
     proxy_request_fallback(ctx, method, headers, uri, body).await
 }
 
-async fn proxy_request_fallback<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn proxy_request_fallback(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     match forward(ctx, method, headers, uri, body).await {
         Ok(response) => response,
         Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
@@ -186,16 +168,13 @@ fn request_emby_auth_query(uri: &Uri, headers: &HeaderMap) -> Option<(String, St
         .map(|value| ("X-Emby-Token".to_string(), value.to_string()))
 }
 
-async fn proxy_video_stream<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn proxy_video_stream(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     let Some(media_source_id) = query_param(&uri, "MediaSourceId") else {
         return proxy_request_fallback(ctx, method, headers, uri, body).await;
     };
@@ -239,14 +218,11 @@ where
     }
 }
 
-async fn fetch_item_media_sources<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn fetch_item_media_sources(
+    ctx: &EmbyProxyContext,
     item_id: &str,
     request_auth_query: Option<(&str, &str)>,
-) -> AppResult<serde_json::Value>
-where
-    R: DownloadUrlResolver,
-{
+) -> AppResult<serde_json::Value> {
     let mut url = ctx.upstream_base_url.clone();
     url.set_path("/Items");
     url.set_query(None);
@@ -276,16 +252,13 @@ where
         })
 }
 
-async fn proxy_playback_info<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn proxy_playback_info(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> Response
-where
-    R: DownloadUrlResolver,
-{
+) -> Response {
     match forward_raw(ctx, method, headers, uri.clone(), body).await {
         Ok((status, response_headers, response_body)) => {
             if !status.is_success() {
@@ -329,30 +302,24 @@ where
     }
 }
 
-async fn forward<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn forward(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<Response>
-where
-    R: DownloadUrlResolver,
-{
+) -> AppResult<Response> {
     let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
     response_from_reqwest(upstream_response).await
 }
 
-async fn forward_raw<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn forward_raw(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<(StatusCode, HeaderMap, Bytes)>
-where
-    R: DownloadUrlResolver,
-{
+) -> AppResult<(StatusCode, HeaderMap, Bytes)> {
     let upstream_response = send_upstream_request(ctx, method, headers, uri, body).await?;
     let status = upstream_response.status();
     let headers = upstream_response.headers().clone();
@@ -363,16 +330,13 @@ where
     Ok((status, headers, body))
 }
 
-async fn send_upstream_request<R>(
-    ctx: &EmbyProxyContext<R>,
+async fn send_upstream_request(
+    ctx: &EmbyProxyContext,
     method: Method,
     headers: HeaderMap,
     uri: Uri,
     body: Bytes,
-) -> AppResult<reqwest::Response>
-where
-    R: DownloadUrlResolver,
-{
+) -> AppResult<reqwest::Response> {
     let upstream = build_upstream_url(&ctx.upstream_base_url, &uri)?;
 
     let mut request = ctx.client.request(method, upstream);

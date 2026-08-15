@@ -9,7 +9,10 @@ use tracing::{debug, error, warn};
 
 use crate::error::{AppError, AppResult};
 
-use super::ports::{DownloadUrlCache, DownloadUrlError, DownloadUrlSource};
+use super::ports::{
+    DownloadUrlCache, DownloadUrlCacheHandle, DownloadUrlError, DownloadUrlSource,
+    DownloadUrlSourceHandle,
+};
 
 type SharedResolveResult = AppResult<String>;
 
@@ -48,27 +51,26 @@ impl InflightResolve {
 }
 
 #[derive(Clone)]
-pub struct ResolveDownloadUrlService<C, S> {
-    cache: C,
-    source: S,
+pub struct ResolveDownloadUrlService {
+    cache: DownloadUrlCacheHandle,
+    source: DownloadUrlSourceHandle,
     inflight: Arc<Mutex<HashMap<i64, Arc<InflightResolve>>>>,
 }
 
-impl<C, S> ResolveDownloadUrlService<C, S> {
-    pub fn new(cache: C, source: S) -> Self {
+impl ResolveDownloadUrlService {
+    pub fn new(
+        cache: impl DownloadUrlCache + Send + Sync + 'static,
+        source: impl DownloadUrlSource + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            cache,
-            source,
+            cache: Arc::new(cache),
+            source: Arc::new(source),
             inflight: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
-impl<C, S> ResolveDownloadUrlService<C, S>
-where
-    C: DownloadUrlCache,
-    S: DownloadUrlSource,
-{
+impl ResolveDownloadUrlService {
     /// Resolve a download URL for the given file_id.
     ///
     /// Returns `Ok(url)` on success, or an `AppError`:

@@ -80,7 +80,7 @@ impl MetadataCatalog for FakeMetadataCatalog {
 #[tokio::test]
 async fn get_movie_info_skips_invalid_tmdb_id_without_panicking() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "not-a-number".into(),
         ..Default::default()
@@ -95,7 +95,7 @@ async fn get_movie_info_skips_invalid_tmdb_id_without_panicking() {
 #[tokio::test]
 async fn get_tv_info_skips_invalid_tmdb_id_without_panicking() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "bad-tv-id".into(),
         ..Default::default()
@@ -110,7 +110,7 @@ async fn get_tv_info_skips_invalid_tmdb_id_without_panicking() {
 #[tokio::test]
 async fn get_movie_info_falls_back_to_title_search_after_invalid_tmdb_id() {
     let catalog = FakeMetadataCatalog::default();
-    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         tmdb_id: "oops".into(),
         titles: vec![Title {
@@ -175,7 +175,7 @@ async fn get_movie_info_matches_normalized_title_and_year_from_multiple_candidat
         ),
     ]);
 
-    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         titles: vec![Title {
             title: "The Lord of the Rings： The Two Towers".into(),
@@ -222,7 +222,7 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
         },
     );
 
-    let mut lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
     let meta = Metadata {
         titles: vec![
             Title {
@@ -295,7 +295,7 @@ async fn get_movie_info_falls_back_to_llm_title_when_regex_titles_fail() {
             language: "zh".into(),
         }),
     };
-    let mut lookup = TmdbLookup::new(catalog.clone(), title_extractor);
+    let lookup = TmdbLookup::new(catalog.clone(), title_extractor);
     let meta = Metadata {
         titles: vec![],
         year: "2024".into(),
@@ -327,7 +327,7 @@ async fn get_movie_info_skips_empty_descriptions_in_llm_fallback() {
             language: "en".into(),
         }),
     };
-    let mut lookup = TmdbLookup::new(catalog.clone(), title_extractor);
+    let lookup = TmdbLookup::new(catalog.clone(), title_extractor);
     let meta = Metadata {
         titles: vec![],
         ..Default::default()

@@ -1,14 +1,9 @@
 use super::TransferWorkflow;
 use crate::application::import::transfer_support::{log_file_saved, remote_child_path};
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 use tracing::info;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn create_strm_file(
         &self,
         remote_file_path: &str,

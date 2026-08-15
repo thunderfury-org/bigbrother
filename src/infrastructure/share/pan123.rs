@@ -40,12 +40,12 @@ pub struct Pan123ShareService<S> {
 }
 
 pub(crate) trait Pan123ShareSource: Clone {
-    async fn list_share_files(
+    fn list_share_files(
         &self,
         share_key: &str,
         share_password: &str,
         parent_id: i64,
-    ) -> AppResult<Vec<pan123::File>>;
+    ) -> impl std::future::Future<Output = AppResult<Vec<pan123::File>>> + Send;
 }
 
 impl Pan123ShareSource for pan123::Client {
