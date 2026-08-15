@@ -3,6 +3,7 @@ pub mod emby_proxy;
 pub mod file_index;
 pub mod file_index_import;
 pub mod import;
+pub mod import_local_store;
 pub mod media_source_observation;
 pub mod ports;
 pub mod recorded_import;

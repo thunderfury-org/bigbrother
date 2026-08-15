@@ -57,18 +57,8 @@ impl TransferWorkflow {
 
     pub(super) async fn get_or_create_dir_in_library(&self, path: &str) -> AppResult<i64> {
         info!("Checking if dir {} exists in library", path);
-        let file_id = self
-            .library_gateway
-            .get_library_dir_id_by_path(path)
-            .await?;
-        match file_id {
-            Some(id) => Ok(id),
-            None => {
-                info!("Dir {} not found in library", path);
-                let id = self.library_gateway.mkdir_library_path(path).await?;
-                info!("Dir {} created in library, id: {}", path, id);
-                Ok(id)
-            }
-        }
+        let id = self.library_gateway.ensure_dir(path).await?;
+        info!("Dir {} ready in library, id: {}", path, id);
+        Ok(id)
     }
 }

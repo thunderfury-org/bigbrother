@@ -43,7 +43,7 @@ impl ProcessObservationService {
         recorded_import: RecordedImportService,
         identify: impl MediaIdentifier + 'static,
         import: impl MediaImporter + 'static,
-        subscriptions: impl SubscriptionRepository + Send + Sync + 'static,
+        subscriptions: impl SubscriptionRepository + 'static,
     ) -> Self {
         Self {
             file_index,
@@ -139,7 +139,7 @@ impl ProcessObservationService {
 }
 
 async fn should_import(
-    subscription_repo: &dyn crate::application::ports::erase::DynSubscriptionRepository,
+    subscription_repo: &dyn crate::application::ports::SubscriptionRepository,
     channel_post: bool,
     description: &Option<String>,
 ) -> bool {
@@ -177,6 +177,7 @@ mod tests {
         fail: bool,
     }
 
+    #[async_trait::async_trait]
     impl FileIndexRepository for FakeFileRepo {
         async fn record_files(&self, inputs: &[FileIndexRecordInput]) -> AppResult<()> {
             if self.fail {
@@ -204,6 +205,7 @@ mod tests {
         created: Arc<Mutex<Vec<ImportRecordCreate>>>,
     }
 
+    #[async_trait::async_trait]
     impl ImportRecordRepository for FakeImportRepo {
         async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64> {
             let mut created = self.created.lock().unwrap();
@@ -231,6 +233,7 @@ mod tests {
     #[derive(Clone)]
     struct FakeIdentifier;
 
+    #[async_trait::async_trait]
     impl MediaIdentifier for FakeIdentifier {
         async fn identify(&self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
@@ -255,6 +258,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl MediaImporter for FakeImporter {
         async fn import_groups(
             &self,
@@ -287,6 +291,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl SubscriptionRepository for FakeSubscriptionRepo {
         async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>> {
             Ok(self.records.lock().unwrap().clone())

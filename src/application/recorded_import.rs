@@ -17,7 +17,7 @@ pub struct RecordedImportService {
 }
 
 impl RecordedImportService {
-    pub fn new(repo: impl ImportRecordRepository + Send + Sync + 'static) -> Self {
+    pub fn new(repo: impl ImportRecordRepository + 'static) -> Self {
         Self {
             repo: std::sync::Arc::new(repo),
         }
@@ -154,6 +154,7 @@ mod tests {
         finalized: Arc<Mutex<Vec<(i64, ImportRecordFinalize)>>>,
     }
 
+    #[async_trait::async_trait]
     impl ImportRecordRepository for FakeRepo {
         async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64> {
             let mut created = self.created.lock().unwrap();

@@ -22,6 +22,7 @@ struct FakeCatalog {
     tv_search_results: Arc<Mutex<HashMap<SearchKey, Vec<SearchTvResult>>>>,
 }
 
+#[async_trait::async_trait]
 impl MetadataCatalog for FakeCatalog {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
         Ok(self
@@ -55,6 +56,7 @@ impl MetadataCatalog for FakeCatalog {
 #[derive(Clone)]
 struct NoOpTitleExtractor;
 
+#[async_trait::async_trait]
 impl TitleExtractor for NoOpTitleExtractor {
     async fn extract_title(&self, _description: &str) -> AppResult<Option<Title>> {
         Ok(None)

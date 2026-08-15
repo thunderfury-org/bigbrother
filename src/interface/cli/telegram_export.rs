@@ -34,9 +34,9 @@ pub struct TelegramExportIndexRunner {
 
 impl TelegramExportIndexRunner {
     pub fn new(
-        share_resolver: impl ShareResolver + Send + Sync + 'static,
-        file_repo: impl FileIndexRepository + Send + Sync + 'static,
-        state_repo: impl TelegramExportStateRepository + Send + Sync + 'static,
+        share_resolver: impl ShareResolver + 'static,
+        file_repo: impl FileIndexRepository + 'static,
+        state_repo: impl TelegramExportStateRepository + 'static,
     ) -> Self {
         Self {
             share_resolver: std::sync::Arc::new(share_resolver),
@@ -259,6 +259,7 @@ mod tests {
         files_by_url: HashMap<String, Vec<RawFile>>,
     }
 
+    #[async_trait::async_trait]
     impl ShareResolver for FakeResolver {
         async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>> {
             Ok(self.files_by_url.get(url).cloned())
@@ -270,6 +271,7 @@ mod tests {
         recorded: Arc<Mutex<Vec<FileIndexRecordInput>>>,
     }
 
+    #[async_trait::async_trait]
     impl FileIndexRepository for SpyFileRepo {
         async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
             self.recorded.lock().unwrap().extend_from_slice(files);
@@ -294,6 +296,7 @@ mod tests {
         records: Arc<Mutex<HashMap<String, TelegramExportStateRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl TelegramExportStateRepository for SpyStateRepo {
         async fn get(
             &self,

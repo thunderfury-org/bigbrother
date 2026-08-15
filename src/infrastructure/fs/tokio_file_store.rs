@@ -8,6 +8,7 @@ use crate::{
 #[derive(Clone, Copy, Default)]
 pub struct TokioFileStore;
 
+#[async_trait::async_trait]
 impl FileStore for TokioFileStore {
     async fn read_to_string_if_exists(&self, path: &str) -> AppResult<Option<String>> {
         match tokio::fs::read_to_string(path).await {
@@ -64,5 +65,21 @@ impl FileStore for TokioFileStore {
     async fn remove_dir_all(&self, path: &str) -> AppResult<()> {
         tokio::fs::remove_dir_all(Path::new(path)).await?;
         Ok(())
+    }
+
+    async fn remove_file_if_exists(&self, path: &str) -> AppResult<()> {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()> {
+        match tokio::fs::remove_dir_all(Path::new(path)).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
     }
 }

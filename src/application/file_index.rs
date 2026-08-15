@@ -19,7 +19,7 @@ pub struct FileIndexService {
 }
 
 impl FileIndexService {
-    pub fn new(repo: impl FileIndexRepository + Send + Sync + 'static) -> Self {
+    pub fn new(repo: impl FileIndexRepository + 'static) -> Self {
         Self {
             repo: std::sync::Arc::new(repo),
         }
@@ -202,6 +202,7 @@ mod tests {
         records_by_id: Arc<Mutex<Vec<FileSearchRecord>>>,
     }
 
+    #[async_trait::async_trait]
     impl FileIndexRepository for FakeRepo {
         async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()> {
             self.recorded.lock().unwrap().extend_from_slice(files);

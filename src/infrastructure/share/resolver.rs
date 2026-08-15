@@ -31,6 +31,7 @@ impl<P123, P189, P115> ShareResolverService<P123, P189, P115> {
     }
 }
 
+#[async_trait::async_trait]
 impl<P123, P189, P115> ShareResolver for ShareResolverService<P123, P189, P115>
 where
     P123: Pan123ShareSource + Send + Sync,

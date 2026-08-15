@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    application::ports::{
-        ImportLocalStore, ImportLocalStoreHandle, LibraryGateway, LibraryGatewayHandle,
-        erase::{DynImportLocalStore, DynLibraryGateway},
+    application::{
+        import_local_store::ImportLocalStore,
+        ports::{LibraryGateway, LibraryGatewayHandle},
     },
     domain::import::inner::Media,
     error::AppResult,
@@ -12,64 +12,47 @@ use crate::{
 use super::ImportedMedia;
 use super::identify::UnmatchedFile;
 use super::metadata::MetadataLookup;
-use futures::future::BoxFuture;
 
-pub trait MediaImporter: Send + Sync + 'static {
-    fn import_groups(
+#[async_trait::async_trait]
+pub trait MediaImporter: Send + Sync {
+    async fn import_groups(
         &self,
         groups: Vec<Media>,
         unmatched: Vec<UnmatchedFile>,
-    ) -> impl std::future::Future<Output = AppResult<Vec<ImportedMedia>>> + Send;
+    ) -> AppResult<Vec<ImportedMedia>>;
 }
 
-pub trait DynMediaImporter: Send + Sync {
-    fn import_groups(
-        &self,
-        groups: Vec<Media>,
-        unmatched: Vec<UnmatchedFile>,
-    ) -> BoxFuture<'_, AppResult<Vec<ImportedMedia>>>;
-}
-
-impl<T: MediaImporter> DynMediaImporter for T {
-    fn import_groups(
-        &self,
-        groups: Vec<Media>,
-        unmatched: Vec<UnmatchedFile>,
-    ) -> BoxFuture<'_, AppResult<Vec<ImportedMedia>>> {
-        Box::pin(MediaImporter::import_groups(self, groups, unmatched))
-    }
-}
-
-pub type MediaImporterHandle = Arc<dyn DynMediaImporter>;
+pub type MediaImporterHandle = Arc<dyn MediaImporter>;
 
 #[derive(Clone)]
 pub(crate) struct TransferWorkflow {
     pub(super) library_gateway: LibraryGatewayHandle,
-    pub(super) local: ImportLocalStoreHandle,
+    pub(super) local: ImportLocalStore,
     pub(super) metadata_lookup: MetadataLookup,
 }
 
 impl TransferWorkflow {
     pub(crate) fn new(
-        library_gateway: impl LibraryGateway + Send + Sync + 'static,
-        local: impl ImportLocalStore + Send + Sync + 'static,
+        library_gateway: impl LibraryGateway + 'static,
+        local: ImportLocalStore,
     ) -> Self {
         Self {
             library_gateway: Arc::new(library_gateway),
-            local: Arc::new(local),
+            local,
             metadata_lookup: MetadataLookup::default(),
         }
     }
 
-    pub(super) fn local(&self) -> &dyn DynImportLocalStore {
-        self.local.as_ref()
+    pub(super) fn local(&self) -> &ImportLocalStore {
+        &self.local
     }
 
-    pub(super) fn library_gateway(&self) -> &dyn DynLibraryGateway {
+    pub(super) fn library_gateway(&self) -> &dyn LibraryGateway {
         self.library_gateway.as_ref()
     }
 }
 
+#[async_trait::async_trait]
 impl MediaImporter for TransferWorkflow {
     async fn import_groups(
         &self,

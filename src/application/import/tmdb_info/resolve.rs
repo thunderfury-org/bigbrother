@@ -1,7 +1,7 @@
 use tracing::info;
 
 use crate::{
-    application::ports::erase::DynMetadataCatalog,
+    application::ports::MetadataCatalog,
     domain::import::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
     error::AppResult,
 };
@@ -10,7 +10,7 @@ pub(super) async fn resolve_movie_candidate(
     title: &str,
     year: &str,
     movies: Vec<SearchMovieResult>,
-    metadata_catalog: &dyn DynMetadataCatalog,
+    metadata_catalog: &dyn MetadataCatalog,
 ) -> AppResult<Option<MovieDetail>> {
     let normalized_title = normalize_title(title);
 
@@ -69,7 +69,7 @@ pub(super) async fn resolve_tv_candidate(
     title: &str,
     year: &str,
     tvs: Vec<SearchTvResult>,
-    metadata_catalog: &dyn DynMetadataCatalog,
+    metadata_catalog: &dyn MetadataCatalog,
 ) -> AppResult<Option<TvDetail>> {
     let normalized_title = normalize_title(title);
 

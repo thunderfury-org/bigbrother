@@ -5,6 +5,7 @@ use tracing::{error, info};
 use crate::{
     application::{
         delete_media::DeleteMediaService,
+        import_local_store::ImportLocalStore,
         media_source_observation::ProcessObservationService,
         recorded_import::RecordedImportService,
         sync_strm::{SyncStrmConfig, SyncStrmService},
@@ -16,10 +17,7 @@ use crate::{
         event::publisher::EventBusPublisher,
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
-        import::{
-            gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
-            local_store::FilesystemImportLocalStore,
-        },
+        import::gateway::PanLibraryGateway,
     },
     interface::{
         http,
@@ -113,14 +111,14 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         user_id,
         notify_service: EventBusPublisher::new(event_bus.clone()),
         sync_service: SyncStrmService::new(
-            Pan123LibraryRemote::new(pan123.clone()),
+            PanLibraryGateway::new(pan123.clone()),
             TokioFileStore,
             library.clone(),
         ),
         delete_media_service: DeleteMediaService::new(
-            Pan123MediaSearchGateway::new(pan123.clone()),
             PanLibraryGateway::new(pan123.clone()),
-            FilesystemImportLocalStore::new(
+            ImportLocalStore::new(
+                TokioFileStore,
                 library.remote_path.clone(),
                 library.local_path.clone(),
                 library.strm_download_url.clone(),

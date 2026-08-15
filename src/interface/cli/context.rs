@@ -3,13 +3,12 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 
 use crate::{
+    application::import_local_store::ImportLocalStore,
     error::AppResult,
     infrastructure::{
         client,
-        import::{
-            gateway::{PanLibraryGateway, TmdbMetadataGateway},
-            local_store::FilesystemImportLocalStore,
-        },
+        fs::tokio_file_store::TokioFileStore,
+        import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
             subscription::SeaOrmSubscriptionRepository,
@@ -102,7 +101,8 @@ impl CliContext {
     pub(super) async fn import_service(&self) -> AppResult<ImportService> {
         Ok(ImportService::new(
             PanLibraryGateway::new(self.pan123()),
-            FilesystemImportLocalStore::new(
+            ImportLocalStore::new(
+                TokioFileStore,
                 self.config.get_library_config().remote_path.clone(),
                 self.config.get_library_config().local_path.clone(),
                 self.config
