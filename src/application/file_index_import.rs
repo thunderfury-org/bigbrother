@@ -3,15 +3,11 @@ use std::collections::HashSet;
 use crate::{
     application::{
         file_index::FileIndexService,
-        import::{ImportedMedia, MetadataLookup, identify::IdentifyOutcome},
-        import_ports::{MediaIdentifier, MediaImporter},
+        import::{ImportedMedia, MediaIdentifier, MediaImporter, MetadataLookup},
         ports::{FileIndexRepository, ImportRecordRepository},
         recorded_import::RecordedImportService,
     },
-    domain::{
-        import::inner::MediaFile,
-        import_record::{ImportSource, ImportSourceKind},
-    },
+    domain::import_record::{ImportSource, ImportSourceKind},
     error::{AppError, AppResult},
 };
 
@@ -165,19 +161,10 @@ impl<R: FileIndexRepository> FileIndexImportService<R> {
     }
 }
 
-impl<M, T> MediaIdentifier for crate::application::import::identify::MediaIdentifyService<M, T>
-where
-    M: crate::application::import_ports::MetadataCatalog + Send + Sync + 'static,
-    T: crate::application::import_ports::TitleExtractor + Send + Sync + 'static,
-{
-    async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
-        self.identify(files).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::import::identify::IdentifyOutcome;
     use crate::application::{
         import::ImportedMedia,
         ports::{

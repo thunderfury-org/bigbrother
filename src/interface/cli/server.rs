@@ -20,12 +20,12 @@ use crate::{
             gateway::{Pan123MediaSearchGateway, PanLibraryGateway},
             local_store::FilesystemImportLocalStore,
         },
-        services::MediaDownloadUrlService,
     },
     interface::{
         http,
         http::console::{self, ConsoleContext},
         http::media::{self, MediaServerContext},
+        runtime::MediaDownloadUrlService,
         telegram::{
             self,
             delivery::TelegramDeliveryContext,

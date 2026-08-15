@@ -1,5 +1,5 @@
 use crate::{
-    application::notify::{Message, MessageSender},
+    application::ports::{Message, MessageSender},
     error::AppResult,
     infrastructure::event_bus::EventBus,
 };

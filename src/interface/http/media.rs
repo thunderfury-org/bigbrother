@@ -11,7 +11,7 @@ use tracing::error;
 
 use crate::{
     application::resolve_download_url::ResolveDownloadUrlService, error::AppError,
-    infrastructure::services::MediaDownloadUrlService,
+    interface::runtime::MediaDownloadUrlService,
 };
 
 #[derive(Clone)]

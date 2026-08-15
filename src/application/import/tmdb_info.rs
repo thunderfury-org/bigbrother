@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tracing::info;
 
 use crate::{
-    application::import_ports::{MetadataCatalog, TitleExtractor},
+    application::ports::{MetadataCatalog, TitleExtractor},
     domain::{
         import::{MovieDetail, TvDetail},
         media::Metadata,

@@ -111,7 +111,7 @@ mod tests {
 
     use crate::migration::{Migrator, MigratorTrait};
     use crate::{
-        application::notify::{Message, MessageSender},
+        application::ports::{Message, MessageSender},
         infrastructure::event::publisher::EventBusPublisher,
     };
 
@@ -151,7 +151,7 @@ mod tests {
         let bus = test_bus().await;
         let received = Arc::new(Mutex::new(Vec::new()));
 
-        bus.subscribe::<Arc<Mutex<Vec<String>>>, crate::application::notify::Message, _, _>(
+        bus.subscribe::<Arc<Mutex<Vec<String>>>, crate::application::ports::Message, _, _>(
             received.clone(),
             |received, payload| async move {
                 received.lock().unwrap().push(payload.message);

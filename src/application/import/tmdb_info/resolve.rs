@@ -1,7 +1,7 @@
 use tracing::info;
 
 use crate::{
-    application::import_ports::MetadataCatalog,
+    application::ports::MetadataCatalog,
     domain::import::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
     error::AppResult,
 };

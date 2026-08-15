@@ -7,7 +7,7 @@ use url::Url;
 
 use crate::{
     application::import::ImportedMedia,
-    application::notify::{Message as OutboundMessage, MessageSender},
+    application::ports::{Message as OutboundMessage, MessageSender},
     error::AppError,
     infrastructure::share::file_parser::ShareFileParser,
     infrastructure::{event_bus::Event, share::is_supported_share_url},

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::application::import_ports::{MetadataCatalog, TitleExtractor};
+use crate::application::ports::{MetadataCatalog, TitleExtractor};
 use crate::domain::import::inner::{Media, MediaFile};
 use crate::domain::import::policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot};
 use crate::error::AppResult;
@@ -30,6 +30,13 @@ impl From<MediaFile> for UnmatchedFile {
             file_path: file.video.path,
         }
     }
+}
+
+pub(crate) trait MediaIdentifier: Send + 'static {
+    fn identify(
+        &mut self,
+        files: Vec<MediaFile>,
+    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
 }
 
 impl<M, T> MediaIdentifyService<M, T>
@@ -103,6 +110,16 @@ where
             }
             None => Ok(Some(file)),
         }
+    }
+}
+
+impl<M, T> MediaIdentifier for MediaIdentifyService<M, T>
+where
+    M: MetadataCatalog + Send + Sync + 'static,
+    T: TitleExtractor + Send + Sync + 'static,
+{
+    async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+        MediaIdentifyService::identify(self, files).await
     }
 }
 

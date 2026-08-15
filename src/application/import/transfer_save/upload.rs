@@ -1,7 +1,7 @@
 use crate::domain::share::FileHash;
 
 use super::TransferWorkflow;
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 use tracing::error;
 

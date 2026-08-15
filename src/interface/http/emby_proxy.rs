@@ -15,7 +15,7 @@ use tracing::error;
 use crate::{
     application::emby_proxy::BigbrotherStrmMatcher,
     error::{AppError, AppResult},
-    infrastructure::services::MediaDownloadUrlService,
+    interface::runtime::MediaDownloadUrlService,
 };
 
 pub(crate) trait DownloadUrlResolver: Clone + Send + Sync + 'static {

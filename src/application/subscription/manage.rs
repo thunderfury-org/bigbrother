@@ -1,4 +1,4 @@
-use crate::application::import_ports::MetadataCatalog;
+use crate::application::ports::MetadataCatalog;
 use crate::application::ports::{
     SubscriptionCreateInput, SubscriptionRecord, SubscriptionRepository,
 };

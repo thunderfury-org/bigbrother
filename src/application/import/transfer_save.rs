@@ -8,7 +8,7 @@ use super::{
     TransferWorkflow,
     transfer_support::{build_subtitle_transfer_plan, log_file_not_saved},
 };
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 
 impl<L, F> TransferWorkflow<L, F>

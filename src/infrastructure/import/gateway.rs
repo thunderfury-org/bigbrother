@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    application::import::{
-        Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
+    application::ports::{
+        LibraryGateway, MediaDirectoryRecord, MediaSearchSource, MetadataCatalog,
     },
-    application::{
-        import_ports::{LibraryGateway, MetadataCatalog},
-        ports::{MediaDirectoryRecord, MediaSearchSource},
+    domain::import::{
+        Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
     error::AppResult,
     infrastructure::client::{pan123, tmdb},

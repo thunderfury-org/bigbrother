@@ -6,8 +6,8 @@ use crate::domain::import::{
 use tracing::info;
 
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::import::MovieDetail;
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
+use crate::domain::import::MovieDetail;
 use crate::{error::AppResult, log_time};
 
 impl<L, F> TransferWorkflow<L, F>

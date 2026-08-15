@@ -1,4 +1,4 @@
-use crate::{application::notify::Message, infrastructure::event_bus::Event};
+use crate::{application::ports::Message, infrastructure::event_bus::Event};
 
 pub mod publisher;
 pub mod store;

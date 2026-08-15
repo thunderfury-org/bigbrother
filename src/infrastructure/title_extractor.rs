@@ -1,7 +1,7 @@
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::{
-    application::{file_index::description_hash, import_ports::TitleExtractor},
+    application::{file_index::description_hash, ports::TitleExtractor},
     domain::media::{LANGUAGE_CHINESE, LANGUAGE_ENGLISH, LANGUAGE_JAPANESE, Title},
     error::AppResult,
     infrastructure::{

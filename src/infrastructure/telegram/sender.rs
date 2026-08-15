@@ -5,7 +5,7 @@ use teloxide::{
 };
 
 use crate::{
-    application::notify::{Message, MessageSender},
+    application::ports::{Message, MessageSender},
     error::AppResult,
 };
 

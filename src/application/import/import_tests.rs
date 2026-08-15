@@ -11,8 +11,11 @@ use std::{
 
 use super::identify::MediaIdentifyService;
 use super::*;
-use crate::application::import_ports::{
+use crate::application::ports::{
     ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+};
+use crate::domain::import::{
+    LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
 };
 use crate::domain::media::Title;
 use crate::domain::share::{FileHash, RawFile};
@@ -238,7 +241,7 @@ impl MetadataCatalog for FakeMetadataCatalog {
             original_language: "en".into(),
             original_name: "Breaking Bad".into(),
             genres: Vec::new(),
-            seasons: vec![crate::application::import::Season {
+            seasons: vec![crate::domain::import::Season {
                 id: 1,
                 name: "Season 1".into(),
                 episode_count: 7,

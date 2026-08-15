@@ -11,7 +11,7 @@ use crate::domain::import::inner::{Media, MediaFile};
 
 use super::identify::UnmatchedFile;
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::import_ports::{ImportLocalStore, LibraryGateway};
+use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 
 impl<L, F> TransferWorkflow<L, F>

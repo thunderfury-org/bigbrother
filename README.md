@@ -8,7 +8,7 @@ BigBrother is a Rust app for importing media from cloud shares into a local libr
 - Parses and normalizes media names before saving library data
 - Syncs a remote Pan123 library into a local `.strm` library tree
 - Serves redirect URLs for `.strm` playback through a local HTTP server
-- Stores keywords, cache entries, and events in SQLite with SeaORM migrations
+- Stores subscriptions, cache entries, and events in SQLite with SeaORM migrations
 
 ## Project layout
 
@@ -19,7 +19,7 @@ BigBrother is a Rust app for importing media from cloud shares into a local libr
 - `src/migration/`: SeaORM migrations
 - `config/config.yaml`: sample configuration
 - `tools/`: helper scripts for entity generation
-- `doc/`: architecture notes and reference material
+- `docs/`: architecture notes and reference material
 
 ## Requirements
 
@@ -87,14 +87,11 @@ On startup, BigBrother:
 
 ## Telegram bot usage
 
-The bot accepts direct commands from the configured `telegram.user_id` and can also monitor channel posts by matching stored keywords.
+The bot accepts direct commands from the configured `telegram.user_id` and can also monitor channel posts against stored subscriptions.
 
 Supported commands:
 
 - `/help`
-- `/list_keywords`
-- `/add_keyword <keyword>`
-- `/delete_keyword <keyword>`
 - `/sync_strm`
 
 Supported message inputs:
@@ -115,21 +112,13 @@ When a player opens that URL, BigBrother resolves the current Pan123 download UR
 
 ## Architecture snapshot
 
-The current runtime is split into a small bootstrap layer plus use-case services:
+The crate is organized as a single hexagonal layout:
 
-- `src/main.rs` parses CLI input, starts the server command, and owns long-running background tasks.
-- `src/bootstrap/app.rs` builds the bootstrap-only `AppContext`, while `src/bootstrap/mod.rs` converts it into an `AppRuntime` made of dedicated bot, server, cache, and event-bus contexts.
-- `src/domain/` holds extracted pure logic such as media parsing and library path/sync rules.
-- `src/application/` contains use-case services such as `SyncStrmService`, `ManageKeywordsService`, `ImportMediaService`, and `ResolveDownloadUrlService`.
-- `src/interface/telegram/` and `src/interface/http/` consume focused runtime/context objects; `src/bot/` and `src/server/` are now thin compatibility shims that re-export those entrypoints for `main.rs`.
-- `src/library/import/` still uses an `ImportContext` bundle, so the import flow is the main remaining wide-dependency area called out in the refactor blueprint.
-- `doc/architecture-refactor-blueprint.md` records the refactor plan, current status, review findings, and remaining cleanup opportunities.
-
-## Current refactor hotspots
-
-- `src/bootstrap/mod.rs`: composition root still wires concrete infrastructure adapters directly into application services.
-- `src/library/import/`: import flow still depends on the bundled `ImportContext`, so it is the broadest remaining dependency surface.
-- `src/bot/mod.rs` and `src/server/mod.rs`: compatibility shims remain in place so `main.rs` can keep a stable entrypoint while the directory migration settles.
+- `src/domain/` holds policy such as media parsing, import rules, and library path/sync planning.
+- `src/application/` contains use-case services. External ports live in `src/application/ports/`.
+- `src/infrastructure/` implements those ports as adapters for storage, remote APIs, and delivery.
+- `src/interface/` is the composition root: CLI, Telegram, and HTTP assemble adapters into use-case services.
+- `src/main.rs` parses CLI input and delegates to `interface`.
 
 ## Development
 

@@ -1,12 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    application::import::{
-        ImportedMedia, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
-        identify::{IdentifyOutcome, UnmatchedFile},
-    },
     domain::{
-        import::inner::{Media, MediaFile},
+        import::{LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
         media::Title,
     },
     error::AppResult,
@@ -105,19 +101,4 @@ pub trait ImportLocalStore: Clone {
         &self,
         path: &str,
     ) -> impl std::future::Future<Output = AppResult<()>> + Send;
-}
-
-pub trait MediaImporter: Send + 'static {
-    fn import_groups(
-        &mut self,
-        groups: Vec<Media>,
-        unmatched: Vec<UnmatchedFile>,
-    ) -> impl std::future::Future<Output = AppResult<Vec<ImportedMedia>>> + Send;
-}
-
-pub(crate) trait MediaIdentifier: Send + 'static {
-    fn identify(
-        &mut self,
-        files: Vec<MediaFile>,
-    ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
 }
