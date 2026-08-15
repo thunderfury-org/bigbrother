@@ -106,6 +106,17 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         ),
     ));
 
+    let delete_media_service = DeleteMediaService::new(
+        PanLibraryGateway::new(pan123.clone()),
+        ImportLocalStore::new(
+            TokioFileStore,
+            library.remote_path.clone(),
+            library.local_path.clone(),
+            library.strm_download_url.clone(),
+        ),
+        library.remote_path.clone(),
+    );
+
     // Telegram bot runtime
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
@@ -115,16 +126,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
             TokioFileStore,
             library.clone(),
         ),
-        delete_media_service: DeleteMediaService::new(
-            PanLibraryGateway::new(pan123.clone()),
-            ImportLocalStore::new(
-                TokioFileStore,
-                library.remote_path.clone(),
-                library.local_path.clone(),
-                library.strm_download_url.clone(),
-            ),
-            library.remote_path.clone(),
-        ),
+        delete_media_service: delete_media_service.clone(),
         event_bus: event_bus.clone(),
     });
 
@@ -182,6 +184,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 identify_service,
                 subscription_service,
                 subscription_repo,
+                delete_media_service,
             ))),
         )
     } else {

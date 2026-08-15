@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ApiError, getImport, listImports, searchFiles } from './api';
+import { ApiError, deleteMediaDirs, getImport, listImports, listMediaDirs, searchFiles, searchMediaDirs } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -98,6 +98,67 @@ describe('searchFiles', () => {
 
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/files?q=movie+2024+BD&limit=100');
+  });
+});
+
+describe('listMediaDirs', () => {
+  test('calls /api/media-dirs with no query when parent is omitted', async () => {
+    const fetchMock = stubFetchOnce({ items: [] });
+
+    await listMediaDirs();
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/media-dirs');
+  });
+
+  test('serializes parent_id', async () => {
+    const fetchMock = stubFetchOnce({ items: [] });
+
+    await listMediaDirs(12);
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/media-dirs?parent_id=12');
+  });
+});
+
+describe('searchMediaDirs', () => {
+  test('serializes keyword', async () => {
+    const fetchMock = stubFetchOnce({ items: [] });
+
+    await searchMediaDirs('bad 2024');
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/media-dirs?q=bad+2024');
+  });
+});
+
+describe('deleteMediaDirs', () => {
+  test('posts items to /api/media-dirs/delete', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteMediaDirs([
+      { dir_id: 21, relative_path: '电影/Inception (2010) {tmdb-27205}' },
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/media-dirs/delete');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      items: [{ dir_id: 21, relative_path: '电影/Inception (2010) {tmdb-27205}' }],
+    });
+  });
+
+  test('rejects non-2xx with ApiError', async () => {
+    stubFetchPlainOnce('not a media directory', { status: 400 });
+
+    await expect(
+      deleteMediaDirs([{ dir_id: 2, relative_path: '电影' }]),
+    ).rejects.toMatchObject({
+      status: 400,
+      body: 'not a media directory',
+    });
   });
 });
 

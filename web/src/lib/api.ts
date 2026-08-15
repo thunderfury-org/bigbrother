@@ -202,3 +202,45 @@ export async function rescanSubscription(id: number): Promise<ImportFileResult[]
   }
   return (await res.json()) as ImportFileResult[];
 }
+
+// ── Media dirs ──
+
+export interface MediaDirItem {
+  dir_id: number;
+  display_name: string;
+  deletable: boolean;
+  relative_path?: string;
+}
+
+export interface MediaDirPage {
+  items: MediaDirItem[];
+}
+
+export interface MediaDirDeleteItem {
+  dir_id: number;
+  relative_path: string;
+}
+
+export async function listMediaDirs(parentId?: number | null): Promise<MediaDirPage> {
+  const params = new URLSearchParams();
+  if (parentId != null) params.set('parent_id', String(parentId));
+  const qs = params.toString();
+  return fetchJson<MediaDirPage>(qs ? `/api/media-dirs?${qs}` : '/api/media-dirs');
+}
+
+export async function searchMediaDirs(keyword: string): Promise<MediaDirPage> {
+  const params = new URLSearchParams({ q: keyword });
+  return fetchJson<MediaDirPage>(`/api/media-dirs?${params.toString()}`);
+}
+
+export async function deleteMediaDirs(items: MediaDirDeleteItem[]): Promise<void> {
+  const res = await fetch('/api/media-dirs/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+}
