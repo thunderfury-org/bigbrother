@@ -1,7 +1,7 @@
 use crate::{
-    application::ports::{
-        ImportLocalStore, ImportLocalStoreHandle, LibraryGateway, LibraryGatewayHandle,
-        MediaDirectoryRecord, MediaSearchHandle, MediaSearchSource,
+    application::{
+        import_local_store::ImportLocalStore,
+        ports::{LibraryGateway, LibraryGatewayHandle, MediaDirectoryRecord},
     },
     error::{AppError, AppResult},
 };
@@ -16,23 +16,20 @@ pub struct MediaDeleteCandidate {
 
 #[derive(Clone)]
 pub struct DeleteMediaService {
-    search: MediaSearchHandle,
     library: LibraryGatewayHandle,
-    local: ImportLocalStoreHandle,
+    local: ImportLocalStore,
     root_path: String,
 }
 
 impl DeleteMediaService {
     pub fn new(
-        search: impl MediaSearchSource + 'static,
         library: impl LibraryGateway + 'static,
-        local: impl ImportLocalStore + 'static,
+        local: ImportLocalStore,
         root_path: String,
     ) -> Self {
         Self {
-            search: std::sync::Arc::new(search),
             library: std::sync::Arc::new(library),
-            local: std::sync::Arc::new(local),
+            local,
             root_path,
         }
     }
@@ -47,7 +44,7 @@ impl DeleteMediaService {
 
         let root = normalize_root_path(self.root_path.as_str());
         let mut candidates = self
-            .search
+            .library
             .search_media_dirs(keyword)
             .await?
             .into_iter()
@@ -118,25 +115,12 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::application::{
-        ports::ImportLocalStore,
-        ports::{MediaDirectoryRecord, MediaSearchSource},
-    };
-
-    #[derive(Clone)]
-    struct FakeSearchSource {
-        records: Arc<Vec<MediaDirectoryRecord>>,
-    }
-
-    #[async_trait::async_trait]
-    impl MediaSearchSource for FakeSearchSource {
-        async fn search_media_dirs(&self, _keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
-            Ok(self.records.as_ref().clone())
-        }
-    }
+    use crate::application::ports::{FileStore, LocalEntry, MediaDirectoryRecord};
+    use crate::domain::share::FileHash;
 
     #[derive(Clone, Default)]
     struct FakeLibraryGateway {
+        records: Arc<Vec<MediaDirectoryRecord>>,
         trashed: Arc<Mutex<Vec<Vec<i64>>>>,
     }
 
@@ -153,7 +137,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn mkdir_library_path(&self, _path: &str) -> AppResult<i64> {
+        async fn ensure_dir(&self, _path: &str) -> AppResult<i64> {
             unimplemented!()
         }
 
@@ -177,21 +161,11 @@ mod tests {
             Ok(())
         }
 
-        async fn fast_upload_md5(
+        async fn upload(
             &self,
             _parent_dir_id: i64,
             _file_name: &str,
-            _etag: &str,
-            _size: u64,
-        ) -> AppResult<Option<i64>> {
-            unimplemented!()
-        }
-
-        async fn fast_upload_sha1(
-            &self,
-            _parent_dir_id: i64,
-            _file_name: &str,
-            _sha1: &str,
+            _hash: &FileHash,
             _size: u64,
         ) -> AppResult<Option<i64>> {
             unimplemented!()
@@ -200,50 +174,62 @@ mod tests {
         async fn download_library_file(&self, _file_id: i64, _local_path: &str) -> AppResult<()> {
             unimplemented!()
         }
+
+        async fn search_media_dirs(&self, _keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
+            Ok(self.records.as_ref().clone())
+        }
     }
 
     #[derive(Clone, Default)]
-    struct FakeLocalStore {
+    struct RecordingFileStore {
         removed_dirs: Arc<Mutex<Vec<String>>>,
     }
 
     #[async_trait::async_trait]
-    impl ImportLocalStore for FakeLocalStore {
-        fn remote_library_path(&self) -> &str {
-            "/remote"
+    impl FileStore for RecordingFileStore {
+        async fn read_to_string_if_exists(&self, _path: &str) -> AppResult<Option<String>> {
+            Ok(None)
         }
-
-        fn local_path_for_remote(&self, remote_path: &str) -> String {
-            format!("/local{}", remote_path.trim_start_matches("/remote"))
+        async fn metadata_len_if_exists(&self, _path: &str) -> AppResult<Option<u64>> {
+            Ok(None)
         }
-
-        fn local_strm_path(&self, _remote_file_path: &str, _extension: &str) -> String {
-            unimplemented!()
+        async fn ensure_parent_dir(&self, _path: &str) -> AppResult<()> {
+            Ok(())
         }
-
-        async fn write_strm_file(
-            &self,
-            _remote_file_path: &str,
-            _extension: &str,
-            _file_id: i64,
-        ) -> AppResult<()> {
-            unimplemented!()
+        async fn write(&self, _path: &str, _content: &[u8]) -> AppResult<()> {
+            Ok(())
         }
-
-        async fn remove_local_file_if_exists(&self, _path: &str) -> AppResult<()> {
-            unimplemented!()
+        async fn read_dir(&self, _path: &str) -> AppResult<Vec<LocalEntry>> {
+            Ok(Vec::new())
         }
-
-        async fn remove_local_dir_if_exists(&self, path: &str) -> AppResult<()> {
+        async fn remove_file(&self, _path: &str) -> AppResult<()> {
+            Ok(())
+        }
+        async fn remove_dir_all(&self, _path: &str) -> AppResult<()> {
+            Ok(())
+        }
+        async fn remove_file_if_exists(&self, _path: &str) -> AppResult<()> {
+            Ok(())
+        }
+        async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()> {
             self.removed_dirs.lock().unwrap().push(path.to_owned());
             Ok(())
         }
     }
 
+    fn local_store(file_store: RecordingFileStore) -> ImportLocalStore {
+        ImportLocalStore::new(
+            file_store,
+            "/remote".into(),
+            "/local".into(),
+            "http://d".into(),
+        )
+    }
+
     #[tokio::test]
     async fn search_candidates_keeps_tmdb_dirs_under_root() {
         let service = DeleteMediaService::new(
-            FakeSearchSource {
+            FakeLibraryGateway {
                 records: Arc::new(vec![
                     MediaDirectoryRecord {
                         dir_id: 1,
@@ -262,9 +248,9 @@ mod tests {
                         remote_path: "/other/电影/欧美/Alien (1979) {tmdb-348}".to_string(),
                     },
                 ]),
+                ..FakeLibraryGateway::default()
             },
-            FakeLibraryGateway::default(),
-            FakeLocalStore::default(),
+            local_store(RecordingFileStore::default()),
             "/remote".to_string(),
         );
 
@@ -281,16 +267,16 @@ mod tests {
     #[tokio::test]
     async fn search_candidates_rejects_paths_outside_root_with_same_text_prefix() {
         let service = DeleteMediaService::new(
-            FakeSearchSource {
+            FakeLibraryGateway {
                 records: Arc::new(vec![MediaDirectoryRecord {
                     dir_id: 1,
                     display_name: "Breaking Bad (2008) {tmdb-1396}".to_string(),
                     remote_path: "/remote_backup/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}"
                         .to_string(),
                 }]),
+                ..FakeLibraryGateway::default()
             },
-            FakeLibraryGateway::default(),
-            FakeLocalStore::default(),
+            local_store(RecordingFileStore::default()),
             "/remote".to_string(),
         );
 
@@ -302,13 +288,10 @@ mod tests {
     #[tokio::test]
     async fn delete_candidate_trashes_remote_dir_and_local_dir() {
         let library = FakeLibraryGateway::default();
-        let local = FakeLocalStore::default();
+        let file_store = RecordingFileStore::default();
         let service = DeleteMediaService::new(
-            FakeSearchSource {
-                records: Arc::new(Vec::new()),
-            },
             library.clone(),
-            local.clone(),
+            local_store(file_store.clone()),
             "/remote".to_string(),
         );
         let candidate = MediaDeleteCandidate {
@@ -322,7 +305,7 @@ mod tests {
 
         assert_eq!(library.trashed.lock().unwrap().as_slice(), &[vec![77]]);
         assert_eq!(
-            local.removed_dirs.lock().unwrap().as_slice(),
+            file_store.removed_dirs.lock().unwrap().as_slice(),
             &[String::from(
                 "/local/电影/欧美/Inception (2010) {tmdb-27205}"
             )]

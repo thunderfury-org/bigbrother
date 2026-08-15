@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    application::ports::{
-        ImportLocalStore, ImportLocalStoreHandle, LibraryGateway, LibraryGatewayHandle,
+    application::{
+        import_local_store::ImportLocalStore,
+        ports::{LibraryGateway, LibraryGatewayHandle},
     },
     domain::import::inner::Media,
     error::AppResult,
@@ -26,24 +27,24 @@ pub type MediaImporterHandle = Arc<dyn MediaImporter>;
 #[derive(Clone)]
 pub(crate) struct TransferWorkflow {
     pub(super) library_gateway: LibraryGatewayHandle,
-    pub(super) local: ImportLocalStoreHandle,
+    pub(super) local: ImportLocalStore,
     pub(super) metadata_lookup: MetadataLookup,
 }
 
 impl TransferWorkflow {
     pub(crate) fn new(
         library_gateway: impl LibraryGateway + 'static,
-        local: impl ImportLocalStore + 'static,
+        local: ImportLocalStore,
     ) -> Self {
         Self {
             library_gateway: Arc::new(library_gateway),
-            local: Arc::new(local),
+            local,
             metadata_lookup: MetadataLookup::default(),
         }
     }
 
-    pub(super) fn local(&self) -> &dyn ImportLocalStore {
-        self.local.as_ref()
+    pub(super) fn local(&self) -> &ImportLocalStore {
+        &self.local
     }
 
     pub(super) fn library_gateway(&self) -> &dyn LibraryGateway {

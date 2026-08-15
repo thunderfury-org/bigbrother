@@ -11,7 +11,7 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-use super::ports::{FileStore, FileStoreHandle, LibraryRemote, LibraryRemoteHandle};
+use super::ports::{FileStore, FileStoreHandle, LibraryGateway, LibraryGatewayHandle};
 
 #[derive(Debug, Clone)]
 pub struct SyncStrmConfig {
@@ -22,14 +22,14 @@ pub struct SyncStrmConfig {
 
 #[derive(Clone)]
 pub struct SyncStrmService {
-    remote: LibraryRemoteHandle,
+    remote: LibraryGatewayHandle,
     file_store: FileStoreHandle,
     config: SyncStrmConfig,
 }
 
 impl SyncStrmService {
     pub fn new(
-        remote: impl LibraryRemote + 'static,
+        remote: impl LibraryGateway + 'static,
         file_store: impl FileStore + 'static,
         config: SyncStrmConfig,
     ) -> Self {
@@ -46,7 +46,7 @@ impl SyncStrmService {
         let remote_path = self.config.remote_path.clone();
         let root_id = self
             .remote
-            .get_file_id_by_path(&remote_path)
+            .get_library_dir_id_by_path(&remote_path)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("remote path not found: {remote_path}")))?;
         let mapper = SyncPathMapper::new(
@@ -80,7 +80,7 @@ impl SyncStrmService {
 
         while let Some((current_path, current_dir_id)) = stack.pop() {
             directories.push(mapper.remote_to_local_path(current_path.as_str()));
-            let files = self.remote.list_dir(current_dir_id).await?;
+            let files = self.remote.list_library_files(current_dir_id).await?;
             for file in files {
                 let file_path = format!("{current_path}/{}", file.file_name);
                 let meta = Metadata::parse(&file.file_name);
@@ -204,13 +204,17 @@ impl SyncStrmService {
             if size == remote_size {
                 return Ok(());
             }
-            self.remote.download_file(file_id, local_path).await?;
+            self.remote
+                .download_library_file(file_id, local_path)
+                .await?;
             info!("Subtitle file updated: {local_path}");
             return Ok(());
         }
 
         self.file_store.ensure_parent_dir(local_path).await?;
-        self.remote.download_file(file_id, local_path).await?;
+        self.remote
+            .download_library_file(file_id, local_path)
+            .await?;
         info!("Subtitle file created: {local_path}");
         Ok(())
     }
@@ -228,25 +232,27 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use crate::application::ports::{LocalEntry, RemoteEntry};
+    use crate::application::ports::{LocalEntry, MediaDirectoryRecord};
+    use crate::domain::import::LibraryFile;
+    use crate::domain::share::FileHash;
 
     use super::*;
 
     #[derive(Clone, Default)]
     struct FakeRemote {
         root_ids: Arc<Mutex<HashMap<String, i64>>>,
-        dirs: Arc<Mutex<HashMap<i64, Vec<RemoteEntry>>>>,
+        dirs: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
         downloads: Arc<Mutex<Vec<(i64, String)>>>,
         fail_download: Arc<Mutex<bool>>,
     }
 
     #[async_trait::async_trait]
-    impl LibraryRemote for FakeRemote {
-        async fn get_file_id_by_path(&self, path: &str) -> AppResult<Option<i64>> {
+    impl LibraryGateway for FakeRemote {
+        async fn get_library_dir_id_by_path(&self, path: &str) -> AppResult<Option<i64>> {
             Ok(self.root_ids.lock().unwrap().get(path).copied())
         }
 
-        async fn list_dir(&self, dir_id: i64) -> AppResult<Vec<RemoteEntry>> {
+        async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
             Ok(self
                 .dirs
                 .lock()
@@ -256,7 +262,40 @@ mod tests {
                 .unwrap_or_default())
         }
 
-        async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
+        async fn ensure_dir(&self, _path: &str) -> AppResult<i64> {
+            unimplemented!()
+        }
+
+        async fn list_library_dir_ids(
+            &self,
+            _dir_id: i64,
+        ) -> AppResult<std::collections::HashMap<String, i64>> {
+            unimplemented!()
+        }
+
+        async fn mkdir_library_dir(
+            &self,
+            _parent_dir_id: i64,
+            _folder_name: &str,
+        ) -> AppResult<i64> {
+            unimplemented!()
+        }
+
+        async fn trash_library_files(&self, _file_ids: &[i64]) -> AppResult<()> {
+            unimplemented!()
+        }
+
+        async fn upload(
+            &self,
+            _parent_dir_id: i64,
+            _file_name: &str,
+            _hash: &FileHash,
+            _size: u64,
+        ) -> AppResult<Option<i64>> {
+            unimplemented!()
+        }
+
+        async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
             if *self.fail_download.lock().unwrap() {
                 return Err(AppError::ExternalService(
                     "download failed".to_string(),
@@ -268,6 +307,10 @@ mod tests {
                 .unwrap()
                 .push((file_id, local_path.to_string()));
             Ok(())
+        }
+
+        async fn search_media_dirs(&self, _keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
+            unimplemented!()
         }
     }
 
@@ -334,6 +377,14 @@ mod tests {
             self.removed_dirs.lock().unwrap().push(path.to_string());
             Ok(())
         }
+
+        async fn remove_file_if_exists(&self, path: &str) -> AppResult<()> {
+            self.remove_file(path).await
+        }
+
+        async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()> {
+            self.remove_dir_all(path).await
+        }
     }
 
     #[tokio::test]
@@ -347,28 +398,31 @@ mod tests {
         remote.dirs.lock().unwrap().insert(
             1,
             vec![
-                RemoteEntry {
+                LibraryFile {
                     file_id: 2,
                     file_name: "show".to_string(),
                     is_dir: true,
                     size: 0,
+                    hash: String::new(),
                 },
-                RemoteEntry {
+                LibraryFile {
                     file_id: 3,
                     file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
                     is_dir: false,
                     size: 100,
+                    hash: String::new(),
                 },
             ],
         );
         remote.dirs.lock().unwrap().insert(
             2,
-            vec![RemoteEntry {
+            vec![LibraryFile {
                 file_id: 4,
                 file_name: "《LV1魔王與獨居廢勇者》#7 (簡中字幕)【Ani-One Asia】.zh-Hans.srt"
                     .to_string(),
                 is_dir: false,
                 size: 8,
+                hash: String::new(),
             }],
         );
 
@@ -474,17 +528,19 @@ mod tests {
         remote.dirs.lock().unwrap().insert(
             1,
             vec![
-                RemoteEntry {
+                LibraryFile {
                     file_id: 3,
                     file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
                     is_dir: false,
                     size: 100,
+                    hash: String::new(),
                 },
-                RemoteEntry {
+                LibraryFile {
                     file_id: 4,
                     file_name: "Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
                     is_dir: false,
                     size: 8,
+                    hash: String::new(),
                 },
             ],
         );
@@ -527,11 +583,12 @@ mod tests {
             .insert("/remote".to_string(), 1);
         remote.dirs.lock().unwrap().insert(
             1,
-            vec![RemoteEntry {
+            vec![LibraryFile {
                 file_id: 4,
                 file_name: "Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
                 is_dir: false,
                 size: 8,
+                hash: String::new(),
             }],
         );
         *remote.fail_download.lock().unwrap() = true;
@@ -563,11 +620,12 @@ mod tests {
             .insert("/remote".to_string(), 1);
         remote.dirs.lock().unwrap().insert(
             1,
-            vec![RemoteEntry {
+            vec![LibraryFile {
                 file_id: 3,
                 file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
                 is_dir: false,
                 size: 100,
+                hash: String::new(),
             }],
         );
 

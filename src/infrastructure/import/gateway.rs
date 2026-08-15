@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    application::ports::{
-        LibraryGateway, MediaDirectoryRecord, MediaSearchSource, MetadataCatalog,
-    },
+    application::ports::{LibraryGateway, MediaDirectoryRecord, MetadataCatalog},
     domain::import::{
         Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
+    domain::share::FileHash,
     error::AppResult,
     infrastructure::client::{pan123, tmdb},
 };
@@ -21,11 +20,6 @@ pub struct TmdbMetadataGateway {
     tmdb: tmdb::Client,
 }
 
-#[derive(Clone)]
-pub struct Pan123MediaSearchGateway {
-    pan123: pan123::Client,
-}
-
 impl PanLibraryGateway {
     pub fn new(pan123: pan123::Client) -> Self {
         Self { pan123 }
@@ -35,12 +29,6 @@ impl PanLibraryGateway {
 impl TmdbMetadataGateway {
     pub fn new(tmdb: tmdb::Client) -> Self {
         Self { tmdb }
-    }
-}
-
-impl Pan123MediaSearchGateway {
-    pub fn new(pan123: pan123::Client) -> Self {
-        Self { pan123 }
     }
 }
 
@@ -145,7 +133,10 @@ impl LibraryGateway for PanLibraryGateway {
         Ok(self.pan123.get_file_id_by_path(path).await?)
     }
 
-    async fn mkdir_library_path(&self, path: &str) -> AppResult<i64> {
+    async fn ensure_dir(&self, path: &str) -> AppResult<i64> {
+        if let Some(id) = self.pan123.get_file_id_by_path(path).await? {
+            return Ok(id);
+        }
         Ok(self.pan123.mkdir_by_path(path).await?)
     }
 
@@ -161,39 +152,29 @@ impl LibraryGateway for PanLibraryGateway {
         Ok(self.pan123.trash_files(file_ids).await?)
     }
 
-    async fn fast_upload_md5(
+    async fn upload(
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        hash: &str,
+        hash: &FileHash,
         size: u64,
     ) -> AppResult<Option<i64>> {
-        Ok(self
-            .pan123
-            .fast_upload(parent_dir_id, file_name, hash, size)
-            .await?)
-    }
-
-    async fn fast_upload_sha1(
-        &self,
-        parent_dir_id: i64,
-        file_name: &str,
-        sha1: &str,
-        size: u64,
-    ) -> AppResult<Option<i64>> {
-        Ok(self
-            .pan123
-            .fast_upload_with_sha1(parent_dir_id, file_name, sha1, size)
-            .await?)
+        match hash {
+            FileHash::Md5(value) => Ok(self
+                .pan123
+                .fast_upload(parent_dir_id, file_name, value, size)
+                .await?),
+            FileHash::Sha1(value) => Ok(self
+                .pan123
+                .fast_upload_with_sha1(parent_dir_id, file_name, value, size)
+                .await?),
+        }
     }
 
     async fn download_library_file(&self, file_id: i64, local_path: &str) -> AppResult<()> {
         Ok(self.pan123.download_file(file_id, local_path).await?)
     }
-}
 
-#[async_trait::async_trait]
-impl MediaSearchSource for Pan123MediaSearchGateway {
     async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>> {
         Ok(self
             .pan123

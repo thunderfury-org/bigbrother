@@ -12,18 +12,9 @@ impl TransferWorkflow {
         size: u64,
         hash: &FileHash,
     ) -> AppResult<Option<i64>> {
-        Ok(match &hash {
-            FileHash::Md5(hash) => {
-                self.library_gateway
-                    .fast_upload_md5(parent_dir_id, file_name, hash, size)
-                    .await?
-            }
-            FileHash::Sha1(sha1) => {
-                self.library_gateway
-                    .fast_upload_sha1(parent_dir_id, file_name, sha1, size)
-                    .await?
-            }
-        })
+        self.library_gateway
+            .upload(parent_dir_id, file_name, hash, size)
+            .await
     }
 
     pub(super) async fn transfer_raw_file_with_logging(

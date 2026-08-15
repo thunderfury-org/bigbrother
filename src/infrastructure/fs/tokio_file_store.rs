@@ -66,4 +66,20 @@ impl FileStore for TokioFileStore {
         tokio::fs::remove_dir_all(Path::new(path)).await?;
         Ok(())
     }
+
+    async fn remove_file_if_exists(&self, path: &str) -> AppResult<()> {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()> {
+        match tokio::fs::remove_dir_all(Path::new(path)).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
 }

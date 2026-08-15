@@ -11,8 +11,9 @@ use std::{
 
 use super::identify::MediaIdentifyService;
 use super::*;
-use crate::application::ports::{
-    ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor,
+use crate::application::{
+    import_local_store::ImportLocalStore,
+    ports::{FileStore, LibraryGateway, LocalEntry, MetadataCatalog, TitleExtractor},
 };
 use crate::domain::import::{
     LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
@@ -31,7 +32,7 @@ impl TestImportService {
     pub fn new(
         library_gateway: impl LibraryGateway + 'static,
         metadata_catalog: impl MetadataCatalog + 'static,
-        local_store: impl ImportLocalStore + 'static,
+        local_store: ImportLocalStore,
     ) -> Self {
         Self {
             transfer: TransferWorkflow::new(library_gateway, local_store),
@@ -87,10 +88,7 @@ impl TitleExtractor for FakeTitleExtractor {
 }
 
 #[derive(Clone)]
-struct FakeLocalStore {
-    remote_path: String,
-    local_root: PathBuf,
-    strm_download_url: String,
+struct TempFileStore {
     fail_remove: bool,
 }
 
@@ -115,7 +113,17 @@ impl LibraryGateway for FakeLibraryGateway {
             .get(path)
             .copied())
     }
-    async fn mkdir_library_path(&self, path: &str) -> AppResult<i64> {
+    async fn ensure_dir(&self, path: &str) -> AppResult<i64> {
+        if let Some(id) = self
+            .state
+            .lock()
+            .unwrap()
+            .dir_ids_by_path
+            .get(path)
+            .copied()
+        {
+            return Ok(id);
+        }
         if self.state.lock().unwrap().fail_mkdir_path {
             return Err(AppError::ExternalService("mkdir path failed".into(), false));
         }
@@ -158,41 +166,32 @@ impl LibraryGateway for FakeLibraryGateway {
             .push(file_ids.to_vec());
         Ok(())
     }
-    async fn fast_upload_md5(
+    async fn upload(
         &self,
         parent_dir_id: i64,
         file_name: &str,
-        hash: &str,
+        hash: &FileHash,
         size: u64,
     ) -> AppResult<Option<i64>> {
-        if self.state.lock().unwrap().md5_upload_returns_none {
+        if matches!(hash, FileHash::Md5(_)) && self.state.lock().unwrap().md5_upload_returns_none {
             return Ok(None);
         }
         self.state.lock().unwrap().fast_uploads.push((
             parent_dir_id,
             file_name.to_string(),
-            hash.to_string(),
-            size,
-        ));
-        Ok(Some(42))
-    }
-    async fn fast_upload_sha1(
-        &self,
-        parent_dir_id: i64,
-        file_name: &str,
-        sha1: &str,
-        size: u64,
-    ) -> AppResult<Option<i64>> {
-        self.state.lock().unwrap().fast_uploads.push((
-            parent_dir_id,
-            file_name.to_string(),
-            sha1.to_string(),
+            hash.hash_value().to_string(),
             size,
         ));
         Ok(Some(42))
     }
     async fn download_library_file(&self, _file_id: i64, _local_path: &str) -> AppResult<()> {
         Ok(())
+    }
+    async fn search_media_dirs(
+        &self,
+        _keyword: &str,
+    ) -> AppResult<Vec<crate::application::ports::MediaDirectoryRecord>> {
+        Ok(Vec::new())
     }
 }
 
@@ -253,84 +252,73 @@ impl MetadataCatalog for FakeMetadataCatalog {
     }
 }
 
-impl FakeLocalStore {
-    fn new(local_root: PathBuf) -> Self {
-        Self {
-            remote_path: "/remote".into(),
-            local_root,
-            strm_download_url: "http://localhost/d".into(),
-            fail_remove: false,
-        }
-    }
-}
-
 #[async_trait::async_trait]
-impl ImportLocalStore for FakeLocalStore {
-    fn remote_library_path(&self) -> &str {
-        self.remote_path.as_str()
-    }
-
-    fn local_path_for_remote(&self, remote_path: &str) -> String {
-        let relative = remote_path
-            .trim_start_matches(self.remote_path.as_str())
-            .trim_start_matches('/');
-        self.local_root
-            .join(relative)
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    fn local_strm_path(&self, remote_file_path: &str, extension: &str) -> String {
-        let local_file_path = self.local_path_for_remote(remote_file_path);
-        if let Some(stripped) = local_file_path.strip_suffix(extension) {
-            format!("{stripped}.strm")
-        } else {
-            format!("{local_file_path}.strm")
+impl FileStore for TempFileStore {
+    async fn read_to_string_if_exists(&self, path: &str) -> AppResult<Option<String>> {
+        match tokio::fs::read_to_string(path).await {
+            Ok(content) => Ok(Some(content)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err.into()),
         }
     }
 
-    async fn write_strm_file(
-        &self,
-        remote_file_path: &str,
-        extension: &str,
-        file_id: i64,
-    ) -> AppResult<()> {
-        let local_file_path = self.local_strm_path(remote_file_path, extension);
-        let content = format!(
-            "{}{}?file_id={}",
-            self.strm_download_url, remote_file_path, file_id
-        );
-        tokio::fs::create_dir_all(PathBuf::from(&local_file_path).parent().unwrap()).await?;
-        tokio::fs::write(local_file_path, content).await?;
+    async fn metadata_len_if_exists(&self, path: &str) -> AppResult<Option<u64>> {
+        match tokio::fs::metadata(path).await {
+            Ok(metadata) => Ok(Some(metadata.len())),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    async fn ensure_parent_dir(&self, path: &str) -> AppResult<()> {
+        let parent = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
+        tokio::fs::create_dir_all(parent).await?;
         Ok(())
     }
 
-    async fn remove_local_file_if_exists(&self, path: &str) -> AppResult<()> {
+    async fn write(&self, path: &str, content: &[u8]) -> AppResult<()> {
+        tokio::fs::write(path, content).await?;
+        Ok(())
+    }
+
+    async fn read_dir(&self, _path: &str) -> AppResult<Vec<LocalEntry>> {
+        Ok(Vec::new())
+    }
+
+    async fn remove_file(&self, path: &str) -> AppResult<()> {
+        tokio::fs::remove_file(path).await?;
+        Ok(())
+    }
+
+    async fn remove_dir_all(&self, path: &str) -> AppResult<()> {
+        tokio::fs::remove_dir_all(path).await?;
+        Ok(())
+    }
+
+    async fn remove_file_if_exists(&self, path: &str) -> AppResult<()> {
         if self.fail_remove {
             return Err(AppError::Internal("remove local file failed".into()));
         }
-        if let Err(err) = tokio::fs::remove_file(path).await
-            && err.kind() != std::io::ErrorKind::NotFound
-        {
-            return Err(AppError::Internal(format!(
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(AppError::Internal(format!(
                 "remove local file failed, {err}"
-            )));
+            ))),
         }
-        Ok(())
     }
 
-    async fn remove_local_dir_if_exists(&self, path: &str) -> AppResult<()> {
+    async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()> {
         if self.fail_remove {
             return Err(AppError::Internal("remove local dir failed".into()));
         }
-        if let Err(err) = tokio::fs::remove_dir_all(path).await
-            && err.kind() != std::io::ErrorKind::NotFound
-        {
-            return Err(AppError::Internal(format!(
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(AppError::Internal(format!(
                 "remove local dir failed, {err}"
-            )));
+            ))),
         }
-        Ok(())
     }
 }
 
@@ -348,8 +336,13 @@ fn unique_temp_dir() -> PathBuf {
     ))
 }
 
-fn local_store_for(local_dir: &Path) -> FakeLocalStore {
-    FakeLocalStore::new(local_dir.to_path_buf())
+fn local_store_for(local_dir: &Path) -> ImportLocalStore {
+    ImportLocalStore::new(
+        TempFileStore { fail_remove: false },
+        "/remote".into(),
+        local_dir.to_string_lossy().into_owned(),
+        "http://localhost/d".into(),
+    )
 }
 fn raw_file(path: &str, hash: &str, size: u64) -> RawFile {
     let path = Path::new(path);
@@ -938,8 +931,12 @@ async fn import_from_raw_files_returns_error_when_local_cleanup_fails_on_overwri
     fs::create_dir_all(&old_local_dir).unwrap();
     fs::write(old_local_dir.join("Inception.2010.720p.strm"), "old").unwrap();
 
-    let mut local_store = FakeLocalStore::new(local_dir.clone());
-    local_store.fail_remove = true;
+    let local_store = ImportLocalStore::new(
+        TempFileStore { fail_remove: true },
+        "/remote".into(),
+        local_dir.to_string_lossy().into_owned(),
+        "http://localhost/d".into(),
+    );
     let service = TestImportService::new(gateway, FakeMetadataCatalog, local_store);
     let error = service
         .import_from_raw_files(vec![raw_file(

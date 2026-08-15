@@ -3,8 +3,8 @@ pub mod notify;
 pub mod share;
 
 pub use import::{
-    ImportLocalStore, ImportLocalStoreHandle, LibraryGateway, LibraryGatewayHandle,
-    MetadataCatalog, MetadataCatalogHandle, TitleExtractor, TitleExtractorHandle,
+    LibraryGateway, LibraryGatewayHandle, MetadataCatalog, MetadataCatalogHandle, TitleExtractor,
+    TitleExtractorHandle,
 };
 pub use notify::{Message, MessageSender};
 pub use share::{ShareResolver, ShareResolverHandle};
@@ -27,13 +27,6 @@ pub struct MediaDirectoryRecord {
     pub display_name: String,
     pub remote_path: String,
 }
-
-#[async_trait::async_trait]
-pub trait MediaSearchSource: Send + Sync {
-    async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>>;
-}
-
-pub type MediaSearchHandle = Arc<dyn MediaSearchSource>;
 
 #[async_trait::async_trait]
 pub trait DownloadUrlCache: Send + Sync {
@@ -65,23 +58,6 @@ pub trait DownloadUrlSource: Send + Sync {
 pub type DownloadUrlSourceHandle = Arc<dyn DownloadUrlSource>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteEntry {
-    pub file_id: i64,
-    pub file_name: String,
-    pub is_dir: bool,
-    pub size: u64,
-}
-
-#[async_trait::async_trait]
-pub trait LibraryRemote: Send + Sync {
-    async fn get_file_id_by_path(&self, path: &str) -> AppResult<Option<i64>>;
-    async fn list_dir(&self, dir_id: i64) -> AppResult<Vec<RemoteEntry>>;
-    async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()>;
-}
-
-pub type LibraryRemoteHandle = Arc<dyn LibraryRemote>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalEntry {
     pub path: String,
     pub is_dir: bool,
@@ -96,6 +72,8 @@ pub trait FileStore: Send + Sync {
     async fn read_dir(&self, path: &str) -> AppResult<Vec<LocalEntry>>;
     async fn remove_file(&self, path: &str) -> AppResult<()>;
     async fn remove_dir_all(&self, path: &str) -> AppResult<()>;
+    async fn remove_file_if_exists(&self, path: &str) -> AppResult<()>;
+    async fn remove_dir_all_if_exists(&self, path: &str) -> AppResult<()>;
 }
 
 pub type FileStoreHandle = Arc<dyn FileStore>;
