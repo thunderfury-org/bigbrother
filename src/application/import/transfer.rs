@@ -11,16 +11,11 @@ use crate::domain::import::inner::{Media, MediaFile};
 
 use super::identify::UnmatchedFile;
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(crate) async fn import_groups(
-        &mut self,
+        &self,
         groups: Vec<Media>,
         unmatched: Vec<UnmatchedFile>,
     ) -> AppResult<Vec<ImportedMedia>> {
@@ -44,7 +39,7 @@ where
         Ok(results)
     }
 
-    async fn execute_import_plan(&mut self, medias: &[Media]) -> AppResult<Vec<ImportedMedia>> {
+    async fn execute_import_plan(&self, medias: &[Media]) -> AppResult<Vec<ImportedMedia>> {
         let mut results = Vec::with_capacity(medias.len());
         for media in medias {
             match media {

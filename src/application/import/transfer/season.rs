@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::application::import::transfer_support::build_imported_tv_result;
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::{
     inner::{MediaFile, TransferEpisodeArgs},
     paths::get_tv_base_name,
@@ -14,13 +13,9 @@ use crate::application::import::transfer_support::{
 };
 use crate::domain::import::TvDetail;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn transfer_season(
-        &mut self,
+        &self,
         detail: &TvDetail,
         season_number: &u32,
         season_files: &BTreeMap<u32, Vec<&MediaFile>>,

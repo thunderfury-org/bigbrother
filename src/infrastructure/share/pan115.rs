@@ -36,12 +36,12 @@ pub struct Pan115ShareService<S> {
 }
 
 pub(crate) trait Pan115ShareSource: Clone {
-    async fn list_share_files(
+    fn list_share_files(
         &self,
         share_code: &str,
         receive_code: &str,
         cid: &str,
-    ) -> AppResult<Vec<pan115::FileEntry>>;
+    ) -> impl std::future::Future<Output = AppResult<Vec<pan115::FileEntry>>> + Send;
 }
 
 impl Pan115ShareSource for pan115::Client {

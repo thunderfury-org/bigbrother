@@ -66,7 +66,7 @@ fn raw_file(name: &str, path: &str) -> RawFile {
 
 #[tokio::test]
 async fn parse_movie_with_tmdb_match() {
-    let mut service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
+    let service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
     let results = service
         .parse_media_files(
             vec![raw_file("Test.Movie.2024.1080p.mkv", "/share")],
@@ -93,7 +93,7 @@ async fn parse_movie_with_tmdb_match() {
 
 #[tokio::test]
 async fn parse_tv_episode_with_tmdb_match() {
-    let mut service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
+    let service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
     let results = service
         .parse_media_files(
             vec![raw_file("Test.Show.S01E02.720p.mkv", "/share")],
@@ -120,7 +120,7 @@ async fn parse_tv_episode_with_tmdb_match() {
 
 #[tokio::test]
 async fn parse_unmatched_file() {
-    let mut service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
+    let service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
     // A file with no recognizable title should produce Unmatched
     let results = service
         .parse_media_files(vec![raw_file("random_file.txt", "/share")], Vec::new())
@@ -133,7 +133,7 @@ async fn parse_unmatched_file() {
 
 #[tokio::test]
 async fn parse_includes_path_in_output() {
-    let mut service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
+    let service = ParseService::new(StubMetadataCatalog, FakeTitleExtractor);
     let results = service
         .parse_media_files(
             vec![raw_file("Movie.2024.mkv", "/subpath/to/dir")],

@@ -1,15 +1,10 @@
 use crate::domain::share::FileHash;
 
 use super::TransferWorkflow;
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::error::AppResult;
 use tracing::error;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn transfer_raw_file(
         &self,
         parent_dir_id: i64,

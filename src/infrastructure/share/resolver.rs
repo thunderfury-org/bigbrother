@@ -31,8 +31,11 @@ impl<P123, P189, P115> ShareResolverService<P123, P189, P115> {
     }
 }
 
-impl<P123: Pan123ShareSource, P189: Pan189ShareSource, P115: Pan115ShareSource> ShareResolver
-    for ShareResolverService<P123, P189, P115>
+impl<P123, P189, P115> ShareResolver for ShareResolverService<P123, P189, P115>
+where
+    P123: Pan123ShareSource + Send + Sync,
+    P189: Pan189ShareSource + Send + Sync,
+    P115: Pan115ShareSource + Send + Sync,
 {
     async fn raw_files_from_url(&self, url: &str) -> AppResult<Option<Vec<RawFile>>> {
         let url = url::Url::parse(url).map_err(|err| {

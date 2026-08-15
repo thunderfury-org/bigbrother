@@ -2,7 +2,7 @@ use tracing::{info, warn};
 
 use crate::{
     application::media_source_observation::{MediaSourceObservation, ObservationNotice},
-    application::ports::{MessageSender, ShareResolver},
+    application::ports::MessageSender,
     domain::import_record::ImportSource,
     domain::share::RawFile,
     error::{AppError, AppResult},
@@ -107,8 +107,8 @@ fn error_prefix(source: &MediaSource) -> &'static str {
     }
 }
 
-async fn fetch_raw_files<R: ShareResolver>(
-    resolver: &R,
+async fn fetch_raw_files(
+    resolver: &dyn crate::application::ports::erase::DynShareResolver,
     bot: &teloxide::Bot,
     source: &MediaSource,
 ) -> AppResult<Vec<RawFile>> {
@@ -121,8 +121,8 @@ async fn fetch_raw_files<R: ShareResolver>(
     }
 }
 
-async fn resolve_share_url_raw_files<R: ShareResolver>(
-    resolver: &R,
+async fn resolve_share_url_raw_files(
+    resolver: &dyn crate::application::ports::erase::DynShareResolver,
     raw_url: &str,
 ) -> AppResult<Vec<RawFile>> {
     resolver

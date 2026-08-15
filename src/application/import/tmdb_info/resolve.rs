@@ -1,20 +1,17 @@
 use tracing::info;
 
 use crate::{
-    application::ports::MetadataCatalog,
+    application::ports::erase::DynMetadataCatalog,
     domain::import::{MovieDetail, SearchMovieResult, SearchTvResult, TvDetail},
     error::AppResult,
 };
 
-pub(super) async fn resolve_movie_candidate<M>(
+pub(super) async fn resolve_movie_candidate(
     title: &str,
     year: &str,
     movies: Vec<SearchMovieResult>,
-    metadata_catalog: &M,
-) -> AppResult<Option<MovieDetail>>
-where
-    M: MetadataCatalog,
-{
+    metadata_catalog: &dyn DynMetadataCatalog,
+) -> AppResult<Option<MovieDetail>> {
     let normalized_title = normalize_title(title);
 
     match movies.len() {
@@ -68,15 +65,12 @@ where
     }
 }
 
-pub(super) async fn resolve_tv_candidate<M>(
+pub(super) async fn resolve_tv_candidate(
     title: &str,
     year: &str,
     tvs: Vec<SearchTvResult>,
-    metadata_catalog: &M,
-) -> AppResult<Option<TvDetail>>
-where
-    M: MetadataCatalog,
-{
+    metadata_catalog: &dyn DynMetadataCatalog,
+) -> AppResult<Option<TvDetail>> {
     let normalized_title = normalize_title(title);
 
     match tvs.len() {

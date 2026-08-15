@@ -1,8 +1,8 @@
-use crate::application::ports::SubscriptionRepository;
+use crate::application::ports::erase::DynSubscriptionRepository;
 use crate::domain::{import::inner::Media, subscription::SubscriptionMediaType};
 
-pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
-    repo: &R,
+pub(crate) async fn description_matches_subscription(
+    repo: &dyn DynSubscriptionRepository,
     description: &str,
 ) -> bool {
     let subscriptions = match repo.list_all().await {
@@ -25,8 +25,8 @@ pub(crate) async fn description_matches_subscription<R: SubscriptionRepository>(
     })
 }
 
-pub(crate) async fn filter_by_subscription<R: SubscriptionRepository>(
-    repo: &R,
+pub(crate) async fn filter_by_subscription(
+    repo: &dyn DynSubscriptionRepository,
     groups: Vec<Media>,
 ) -> Vec<Media> {
     let mut filtered = Vec::new();
@@ -49,7 +49,9 @@ pub(crate) async fn filter_by_subscription<R: SubscriptionRepository>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{SubscriptionCreateInput, SubscriptionRecord};
+    use crate::application::ports::{
+        SubscriptionCreateInput, SubscriptionRecord, SubscriptionRepository,
+    };
     use crate::domain::share::RawFile;
     use chrono::Utc;
     use std::sync::{Arc, Mutex};
@@ -154,12 +156,15 @@ mod tests {
     #[tokio::test]
     async fn description_matches_returns_true_when_title_zh_matches() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 1,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: Some("盗梦空间".into()),
+                title_en: Some("Inception".into()),
+            },
+        )
         .await
         .unwrap();
 
@@ -169,12 +174,15 @@ mod tests {
     #[tokio::test]
     async fn description_matches_returns_true_when_title_en_matches() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 1,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: Some("盗梦空间".into()),
+                title_en: Some("Inception".into()),
+            },
+        )
         .await
         .unwrap();
 
@@ -184,12 +192,15 @@ mod tests {
     #[tokio::test]
     async fn description_matches_returns_false_when_no_match() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: Some("盗梦空间".into()),
-            title_en: Some("Inception".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 1,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: Some("盗梦空间".into()),
+                title_en: Some("Inception".into()),
+            },
+        )
         .await
         .unwrap();
 
@@ -205,12 +216,15 @@ mod tests {
     #[tokio::test]
     async fn filter_keeps_matching_movie() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 27205,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: None,
-            title_en: Some("Inception".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 27205,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: None,
+                title_en: Some("Inception".into()),
+            },
+        )
         .await
         .unwrap();
 
@@ -226,12 +240,15 @@ mod tests {
     #[tokio::test]
     async fn filter_keeps_matching_tv() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1396,
-            media_type: SubscriptionMediaType::Tv,
-            title_zh: None,
-            title_en: Some("Breaking Bad".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 1396,
+                media_type: SubscriptionMediaType::Tv,
+                title_zh: None,
+                title_en: Some("Breaking Bad".into()),
+            },
+        )
         .await
         .unwrap();
 
@@ -247,12 +264,15 @@ mod tests {
     #[tokio::test]
     async fn filter_returns_empty_when_no_match() {
         let repo = FakeSubscriptionRepo::default();
-        repo.create(&SubscriptionCreateInput {
-            tmdb_id: 1,
-            media_type: SubscriptionMediaType::Movie,
-            title_zh: None,
-            title_en: Some("Other".into()),
-        })
+        SubscriptionRepository::create(
+            &repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 1,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: None,
+                title_en: Some("Other".into()),
+            },
+        )
         .await
         .unwrap();
 

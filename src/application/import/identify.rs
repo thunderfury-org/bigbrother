@@ -4,12 +4,14 @@ use crate::application::ports::{MetadataCatalog, TitleExtractor};
 use crate::domain::import::inner::{Media, MediaFile};
 use crate::domain::import::policy::{insert_movie_media, insert_tv_media, resolve_tv_episode_slot};
 use crate::error::AppResult;
+use futures::future::BoxFuture;
+use std::sync::Arc;
 
 use super::tmdb_info::TmdbLookup;
 
 #[derive(Clone)]
-pub(crate) struct MediaIdentifyService<M, T> {
-    tmdb_lookup: TmdbLookup<M, T>,
+pub(crate) struct MediaIdentifyService {
+    tmdb_lookup: TmdbLookup,
 }
 
 pub(crate) struct IdentifyOutcome {
@@ -32,25 +34,36 @@ impl From<MediaFile> for UnmatchedFile {
     }
 }
 
-pub(crate) trait MediaIdentifier: Send + 'static {
+pub(crate) trait MediaIdentifier: Send + Sync + 'static {
     fn identify(
-        &mut self,
+        &self,
         files: Vec<MediaFile>,
     ) -> impl std::future::Future<Output = AppResult<IdentifyOutcome>> + Send;
 }
 
-impl<M, T> MediaIdentifyService<M, T>
-where
-    M: MetadataCatalog,
-    T: TitleExtractor,
-{
-    pub fn new(metadata_catalog: M, title_extractor: T) -> Self {
+pub(crate) trait DynMediaIdentifier: Send + Sync {
+    fn identify(&self, files: Vec<MediaFile>) -> BoxFuture<'_, AppResult<IdentifyOutcome>>;
+}
+
+impl<T: MediaIdentifier> DynMediaIdentifier for T {
+    fn identify(&self, files: Vec<MediaFile>) -> BoxFuture<'_, AppResult<IdentifyOutcome>> {
+        Box::pin(MediaIdentifier::identify(self, files))
+    }
+}
+
+pub(crate) type MediaIdentifierHandle = Arc<dyn DynMediaIdentifier>;
+
+impl MediaIdentifyService {
+    pub fn new(
+        metadata_catalog: impl MetadataCatalog + Send + Sync + 'static,
+        title_extractor: impl TitleExtractor + Send + Sync + 'static,
+    ) -> Self {
         Self {
             tmdb_lookup: TmdbLookup::new(metadata_catalog, title_extractor),
         }
     }
 
-    pub async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+    pub async fn identify(&self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
         let mut grouped: HashMap<u32, Media> = HashMap::new();
         let mut unmatched = Vec::new();
 
@@ -72,7 +85,7 @@ where
     }
 
     async fn identify_tv(
-        &mut self,
+        &self,
         file: MediaFile,
         grouped: &mut HashMap<u32, Media>,
     ) -> AppResult<Option<MediaFile>> {
@@ -95,7 +108,7 @@ where
     }
 
     async fn identify_movie(
-        &mut self,
+        &self,
         file: MediaFile,
         grouped: &mut HashMap<u32, Media>,
     ) -> AppResult<Option<MediaFile>> {
@@ -113,12 +126,8 @@ where
     }
 }
 
-impl<M, T> MediaIdentifier for MediaIdentifyService<M, T>
-where
-    M: MetadataCatalog + Send + Sync + 'static,
-    T: TitleExtractor + Send + Sync + 'static,
-{
-    async fn identify(&mut self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+impl MediaIdentifier for MediaIdentifyService {
+    async fn identify(&self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
         MediaIdentifyService::identify(self, files).await
     }
 }

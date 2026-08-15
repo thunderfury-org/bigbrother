@@ -163,7 +163,7 @@ async fn identify_buckets_movie_into_media_movie() {
         .lock()
         .unwrap()
         .insert(27205, movie_detail(27205, "Inception", "2010"));
-    let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
+    let svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let files = vec![movie_media_file("Inception.2010.mkv", "Inception", "2010")];
 
     let outcome = svc.identify(files).await.unwrap();
@@ -196,7 +196,7 @@ async fn identify_groups_tv_files_by_tmdb_id() {
         .lock()
         .unwrap()
         .insert(1396, tv_detail(1396, "Breaking Bad", 5));
-    let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
+    let svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let files = vec![
         tv_media_file("Breaking.Bad.S01E05.mkv", "Breaking Bad", "2008", 1, 5),
         tv_media_file("Breaking.Bad.S01E06.mkv", "Breaking Bad", "2008", 1, 6),
@@ -229,7 +229,7 @@ async fn identify_groups_tv_files_by_tmdb_id() {
 #[tokio::test]
 async fn identify_returns_unmatched_when_tmdb_returns_none() {
     let catalog = FakeCatalog::default();
-    let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
+    let svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let files = vec![movie_media_file("Unknown.2020.mkv", "Unknown", "2020")];
 
     let outcome = svc.identify(files).await.unwrap();
@@ -256,7 +256,7 @@ async fn identify_returns_unmatched_when_episode_slot_unresolved() {
         .lock()
         .unwrap()
         .insert(1396, tv_detail(1396, "Breaking Bad", 5));
-    let mut svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
+    let svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
     let bad_file = MediaFile {
         metadata: Box::new(Metadata {
             media_kind: MediaKind::TvEpisode,

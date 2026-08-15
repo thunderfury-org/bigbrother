@@ -6,17 +6,12 @@ use crate::domain::import::{
 };
 
 use super::{ImportedMedia, TransferWorkflow};
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::import::TvDetail;
 use crate::{error::AppResult, log_time};
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn transfer_tv(
-        &mut self,
+        &self,
         detail: &TvDetail,
         files: &BTreeMap<u32, BTreeMap<u32, Vec<&MediaFile>>>,
     ) -> AppResult<Vec<ImportedMedia>> {

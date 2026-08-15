@@ -3,23 +3,24 @@ use chrono::Utc;
 use crate::{
     application::{
         import::ImportedMedia,
-        ports::{ImportRecordCreate, ImportRecordFinalize, ImportRecordRepository},
+        ports::{
+            ImportRecordCreate, ImportRecordFinalize, ImportRecordRepo, ImportRecordRepository,
+        },
     },
     domain::import_record::{ImportOutcome, ImportSource, ImportStatus, summarize},
     error::{AppError, AppResult},
 };
 
 #[derive(Clone)]
-pub struct RecordedImportService<R> {
-    repo: R,
+pub struct RecordedImportService {
+    repo: ImportRecordRepo,
 }
 
-impl<R> RecordedImportService<R>
-where
-    R: ImportRecordRepository,
-{
-    pub fn new(repo: R) -> Self {
-        Self { repo }
+impl RecordedImportService {
+    pub fn new(repo: impl ImportRecordRepository + Send + Sync + 'static) -> Self {
+        Self {
+            repo: std::sync::Arc::new(repo),
+        }
     }
 
     pub async fn execute<F, Fut>(

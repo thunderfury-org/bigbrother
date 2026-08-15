@@ -44,15 +44,11 @@ async fn redirect(
     redirect_with_resolver(ctx.resolver.as_ref(), path, params).await
 }
 
-async fn redirect_with_resolver<C, S>(
-    resolver: &ResolveDownloadUrlService<C, S>,
+async fn redirect_with_resolver(
+    resolver: &ResolveDownloadUrlService,
     path: String,
     params: HashMap<String, String>,
-) -> Response
-where
-    C: crate::application::ports::DownloadUrlCache,
-    S: crate::application::ports::DownloadUrlSource,
-{
+) -> Response {
     let Some(file_id) = params.get("file_id") else {
         return (StatusCode::BAD_REQUEST, "file_id is required").into_response();
     };
@@ -164,7 +160,7 @@ mod tests {
         }
     }
 
-    fn resolver(result: FakeSourceResult) -> ResolveDownloadUrlService<FakeCache, FakeSource> {
+    fn resolver(result: FakeSourceResult) -> ResolveDownloadUrlService {
         ResolveDownloadUrlService::new(FakeCache::default(), FakeSource { result })
     }
 

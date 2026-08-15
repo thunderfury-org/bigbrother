@@ -2,19 +2,14 @@ use std::collections::HashMap;
 
 use tracing::info;
 
-use crate::application::ports::{ImportLocalStore, LibraryGateway};
 use crate::domain::{import::inner::MediaFile, share::RawFile};
 use crate::error::AppResult;
 
 use super::TransferWorkflow;
 
-impl<L, F> TransferWorkflow<L, F>
-where
-    L: LibraryGateway,
-    F: ImportLocalStore,
-{
+impl TransferWorkflow {
     pub(super) async fn list_episode_files_in_library(
-        &mut self,
+        &self,
         season_dir_id: i64,
     ) -> AppResult<HashMap<u32, Vec<MediaFile>>> {
         let media_files = self.list_media_files_in_library(season_dir_id).await?;
@@ -31,13 +26,13 @@ where
     }
 
     pub(super) async fn list_movie_files_in_library(
-        &mut self,
+        &self,
         movie_dir_id: i64,
     ) -> AppResult<Vec<MediaFile>> {
         self.list_media_files_in_library(movie_dir_id).await
     }
 
-    async fn list_media_files_in_library(&mut self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
+    async fn list_media_files_in_library(&self, dir_id: i64) -> AppResult<Vec<MediaFile>> {
         let files = self.library_gateway.list_library_files(dir_id).await?;
 
         let mut raw_files = Vec::new();

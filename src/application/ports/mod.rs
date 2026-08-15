@@ -1,7 +1,14 @@
+pub mod erase;
 pub mod import;
 pub mod notify;
 pub mod share;
 
+pub use erase::{
+    DownloadUrlCacheHandle, DownloadUrlSourceHandle, FileIndexRepo, FileStoreHandle,
+    ImportLocalStoreHandle, ImportRecordRepo, LibraryGatewayHandle, LibraryRemoteHandle,
+    MediaSearchHandle, MetadataCatalogHandle, ShareResolverHandle, SubscriptionRepo,
+    TelegramExportStateRepo, TitleExtractorHandle,
+};
 pub use import::{ImportLocalStore, LibraryGateway, MetadataCatalog, TitleExtractor};
 pub use notify::{Message, MessageSender};
 pub use share::ShareResolver;
@@ -26,12 +33,23 @@ pub struct MediaDirectoryRecord {
 }
 
 pub trait MediaSearchSource {
-    async fn search_media_dirs(&self, keyword: &str) -> AppResult<Vec<MediaDirectoryRecord>>;
+    fn search_media_dirs(
+        &self,
+        keyword: &str,
+    ) -> impl std::future::Future<Output = AppResult<Vec<MediaDirectoryRecord>>> + Send;
 }
 
 pub trait DownloadUrlCache {
-    async fn get_download_url(&self, key: &str) -> AppResult<Option<String>>;
-    async fn set_download_url(&self, key: &str, url: &str, ttl: Duration) -> AppResult<()>;
+    fn get_download_url(
+        &self,
+        key: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<String>>> + Send;
+    fn set_download_url(
+        &self,
+        key: &str,
+        url: &str,
+        ttl: Duration,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -49,7 +67,10 @@ pub enum DownloadUrlError {
 pub type DownloadUrlResult<T> = std::result::Result<T, DownloadUrlError>;
 
 pub trait DownloadUrlSource {
-    async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String>;
+    fn get_download_url(
+        &self,
+        file_id: i64,
+    ) -> impl std::future::Future<Output = DownloadUrlResult<String>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,9 +82,19 @@ pub struct RemoteEntry {
 }
 
 pub trait LibraryRemote {
-    async fn get_file_id_by_path(&self, path: &str) -> AppResult<Option<i64>>;
-    async fn list_dir(&self, dir_id: i64) -> AppResult<Vec<RemoteEntry>>;
-    async fn download_file(&self, file_id: i64, local_path: &str) -> AppResult<()>;
+    fn get_file_id_by_path(
+        &self,
+        path: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<i64>>> + Send;
+    fn list_dir(
+        &self,
+        dir_id: i64,
+    ) -> impl std::future::Future<Output = AppResult<Vec<RemoteEntry>>> + Send;
+    fn download_file(
+        &self,
+        file_id: i64,
+        local_path: &str,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,13 +104,30 @@ pub struct LocalEntry {
 }
 
 pub trait FileStore {
-    async fn read_to_string_if_exists(&self, path: &str) -> AppResult<Option<String>>;
-    async fn metadata_len_if_exists(&self, path: &str) -> AppResult<Option<u64>>;
-    async fn ensure_parent_dir(&self, path: &str) -> AppResult<()>;
-    async fn write(&self, path: &str, content: &[u8]) -> AppResult<()>;
-    async fn read_dir(&self, path: &str) -> AppResult<Vec<LocalEntry>>;
-    async fn remove_file(&self, path: &str) -> AppResult<()>;
-    async fn remove_dir_all(&self, path: &str) -> AppResult<()>;
+    fn read_to_string_if_exists(
+        &self,
+        path: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<String>>> + Send;
+    fn metadata_len_if_exists(
+        &self,
+        path: &str,
+    ) -> impl std::future::Future<Output = AppResult<Option<u64>>> + Send;
+    fn ensure_parent_dir(
+        &self,
+        path: &str,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
+    fn write(
+        &self,
+        path: &str,
+        content: &[u8],
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
+    fn read_dir(
+        &self,
+        path: &str,
+    ) -> impl std::future::Future<Output = AppResult<Vec<LocalEntry>>> + Send;
+    fn remove_file(&self, path: &str) -> impl std::future::Future<Output = AppResult<()>> + Send;
+    fn remove_dir_all(&self, path: &str)
+    -> impl std::future::Future<Output = AppResult<()>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,10 +156,20 @@ pub struct FileSearchRecord {
     pub locations: Vec<FileLocationRecord>,
 }
 
-pub trait FileIndexRepository: Clone {
-    async fn record_files(&self, files: &[FileIndexRecordInput]) -> AppResult<()>;
-    async fn search_files(&self, keyword: &str, limit: u64) -> AppResult<Vec<FileSearchRecord>>;
-    async fn get_records_by_ids(&self, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>>;
+pub trait FileIndexRepository {
+    fn record_files(
+        &self,
+        files: &[FileIndexRecordInput],
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
+    fn search_files(
+        &self,
+        keyword: &str,
+        limit: u64,
+    ) -> impl std::future::Future<Output = AppResult<Vec<FileSearchRecord>>> + Send;
+    fn get_records_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> impl std::future::Future<Output = AppResult<Vec<FileSearchRecord>>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,13 +184,16 @@ pub struct TelegramExportStateRecord {
     pub last_attempt_at: String,
 }
 
-pub trait TelegramExportStateRepository: Clone {
-    async fn get(
+pub trait TelegramExportStateRepository {
+    fn get(
         &self,
         source_type: &str,
         source_value: &str,
-    ) -> AppResult<Option<TelegramExportStateRecord>>;
-    async fn upsert(&self, record: &TelegramExportStateRecord) -> AppResult<()>;
+    ) -> impl std::future::Future<Output = AppResult<Option<TelegramExportStateRecord>>> + Send;
+    fn upsert(
+        &self,
+        record: &TelegramExportStateRecord,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,15 +246,25 @@ pub struct ImportRecordPage {
     pub next_cursor: Option<i64>,
 }
 
-pub trait ImportRecordRepository: Clone {
-    async fn create(&self, input: &ImportRecordCreate) -> AppResult<i64>;
-    async fn finalize(&self, id: i64, update: &ImportRecordFinalize) -> AppResult<()>;
-    async fn get(&self, id: i64) -> AppResult<Option<ImportRecordView>>;
-    async fn list(
+pub trait ImportRecordRepository {
+    fn create(
+        &self,
+        input: &ImportRecordCreate,
+    ) -> impl std::future::Future<Output = AppResult<i64>> + Send;
+    fn finalize(
+        &self,
+        id: i64,
+        update: &ImportRecordFinalize,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send;
+    fn get(
+        &self,
+        id: i64,
+    ) -> impl std::future::Future<Output = AppResult<Option<ImportRecordView>>> + Send;
+    fn list(
         &self,
         filter: &ImportRecordFilter,
         paging: ImportRecordPaging,
-    ) -> AppResult<ImportRecordPage>;
+    ) -> impl std::future::Future<Output = AppResult<ImportRecordPage>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,14 +286,22 @@ pub struct SubscriptionCreateInput {
     pub title_en: Option<String>,
 }
 
-pub trait SubscriptionRepository: Clone {
-    async fn list_all(&self) -> AppResult<Vec<SubscriptionRecord>>;
-    async fn get_by_id(&self, id: i64) -> AppResult<Option<SubscriptionRecord>>;
-    async fn find_by_tmdb_id(
+pub trait SubscriptionRepository {
+    fn list_all(
+        &self,
+    ) -> impl std::future::Future<Output = AppResult<Vec<SubscriptionRecord>>> + Send;
+    fn get_by_id(
+        &self,
+        id: i64,
+    ) -> impl std::future::Future<Output = AppResult<Option<SubscriptionRecord>>> + Send;
+    fn find_by_tmdb_id(
         &self,
         tmdb_id: u32,
         media_type: &SubscriptionMediaType,
-    ) -> AppResult<Option<SubscriptionRecord>>;
-    async fn create(&self, input: &SubscriptionCreateInput) -> AppResult<i64>;
-    async fn delete(&self, id: i64) -> AppResult<()>;
+    ) -> impl std::future::Future<Output = AppResult<Option<SubscriptionRecord>>> + Send;
+    fn create(
+        &self,
+        input: &SubscriptionCreateInput,
+    ) -> impl std::future::Future<Output = AppResult<i64>> + Send;
+    fn delete(&self, id: i64) -> impl std::future::Future<Output = AppResult<()>> + Send;
 }

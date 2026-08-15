@@ -11,27 +11,14 @@ use crate::{
         TelegramExportStateRepository,
     },
     error::{AppError, AppResult},
-    infrastructure::{
-        repo::{
-            file_index::SeaOrmFileIndexRepository,
-            telegram_export_state::SeaOrmTelegramExportStateRepository,
-        },
-        share::file_parser::ShareFileParser,
-    },
-    interface::{
-        runtime::ShareResolverRuntimeService,
-        telegram::{
-            export::{ExportRoot, extract_media_sources, message_description},
-            file_index::MediaSource,
-        },
+    infrastructure::share::file_parser::ShareFileParser,
+    interface::telegram::{
+        export::{ExportRoot, extract_media_sources, message_description},
+        file_index::MediaSource,
     },
 };
 
-pub type TelegramExportIndexRuntimeRunner = TelegramExportIndexRunner<
-    ShareResolverRuntimeService,
-    SeaOrmFileIndexRepository,
-    SeaOrmTelegramExportStateRepository,
->;
+pub type TelegramExportIndexRuntimeRunner = TelegramExportIndexRunner;
 
 const STATUS_PENDING: &str = "pending";
 const STATUS_SUCCEEDED: &str = "succeeded";
@@ -39,28 +26,27 @@ const STATUS_FAILED: &str = "failed";
 const STATUS_PERMANENT_FAILED: &str = "permanent_failed";
 
 #[derive(Clone)]
-pub struct TelegramExportIndexRunner<R, FileRepo, StateRepo> {
-    share_resolver: R,
-    file_index_service: FileIndexService<FileRepo>,
-    state_repo: StateRepo,
+pub struct TelegramExportIndexRunner {
+    share_resolver: crate::application::ports::ShareResolverHandle,
+    file_index_service: FileIndexService,
+    state_repo: crate::application::ports::TelegramExportStateRepo,
 }
 
-impl<R, FileRepo, StateRepo> TelegramExportIndexRunner<R, FileRepo, StateRepo> {
-    pub fn new(share_resolver: R, file_repo: FileRepo, state_repo: StateRepo) -> Self {
+impl TelegramExportIndexRunner {
+    pub fn new(
+        share_resolver: impl ShareResolver + Send + Sync + 'static,
+        file_repo: impl FileIndexRepository + Send + Sync + 'static,
+        state_repo: impl TelegramExportStateRepository + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            share_resolver,
+            share_resolver: std::sync::Arc::new(share_resolver),
             file_index_service: FileIndexService::new(file_repo),
-            state_repo,
+            state_repo: std::sync::Arc::new(state_repo),
         }
     }
 }
 
-impl<R, FileRepo, StateRepo> TelegramExportIndexRunner<R, FileRepo, StateRepo>
-where
-    R: ShareResolver,
-    FileRepo: FileIndexRepository,
-    StateRepo: TelegramExportStateRepository,
-{
+impl TelegramExportIndexRunner {
     pub async fn run(&self, input: &str, delay_ms: u64, retry_all: bool) -> AppResult<()> {
         info!(input = %input, delay_ms, retry_all, "starting telegram export file-index run");
 

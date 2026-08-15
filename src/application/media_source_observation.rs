@@ -5,8 +5,8 @@ use crate::{
         file_index::FileIndexService,
         import::ImportedMedia,
         import::MetadataLookup,
-        import::{MediaIdentifier, MediaImporter},
-        ports::{FileIndexRepository, ImportRecordRepository, SubscriptionRepository},
+        import::{MediaIdentifier, MediaIdentifierHandle, MediaImporter, MediaImporterHandle},
+        ports::{SubscriptionRepo, SubscriptionRepository},
         recorded_import::RecordedImportService,
         subscription::import_filter,
     },
@@ -29,40 +29,33 @@ pub enum ObservationNotice {
 }
 
 #[derive(Clone)]
-pub struct ProcessObservationService<F, R, I, M, S> {
-    file_index: FileIndexService<F>,
-    recorded_import: RecordedImportService<R>,
-    identify: I,
-    import: M,
-    subscriptions: S,
+pub struct ProcessObservationService {
+    file_index: FileIndexService,
+    recorded_import: RecordedImportService,
+    identify: MediaIdentifierHandle,
+    import: MediaImporterHandle,
+    subscriptions: SubscriptionRepo,
 }
 
-impl<F, R, I, M, S> ProcessObservationService<F, R, I, M, S> {
+impl ProcessObservationService {
     pub fn new(
-        file_index: FileIndexService<F>,
-        recorded_import: RecordedImportService<R>,
-        identify: I,
-        import: M,
-        subscriptions: S,
+        file_index: FileIndexService,
+        recorded_import: RecordedImportService,
+        identify: impl MediaIdentifier + 'static,
+        import: impl MediaImporter + 'static,
+        subscriptions: impl SubscriptionRepository + Send + Sync + 'static,
     ) -> Self {
         Self {
             file_index,
             recorded_import,
-            identify,
-            import,
-            subscriptions,
+            identify: std::sync::Arc::new(identify),
+            import: std::sync::Arc::new(import),
+            subscriptions: std::sync::Arc::new(subscriptions),
         }
     }
 }
 
-impl<F, R, I, M, S> ProcessObservationService<F, R, I, M, S>
-where
-    F: FileIndexRepository,
-    R: ImportRecordRepository,
-    I: MediaIdentifier + Clone,
-    M: MediaImporter + Clone,
-    S: SubscriptionRepository,
-{
+impl ProcessObservationService {
     pub async fn process(
         &self,
         observation: MediaSourceObservation,
@@ -86,7 +79,7 @@ where
         }
 
         let should_import = should_import(
-            &self.subscriptions,
+            self.subscriptions.as_ref(),
             observation.channel_post,
             &observation.description,
         )
@@ -111,15 +104,16 @@ where
         );
 
         let is_channel_post = observation.channel_post;
-        let mut identify = self.identify.clone();
-        let mut import = self.import.clone();
+        let identify = self.identify.clone();
+        let import = self.import.clone();
         let subscriptions = self.subscriptions.clone();
         let outcome = self
             .recorded_import
             .execute(observation.import_source, move || async move {
                 let identified = identify.identify(media_files).await?;
                 let groups = if is_channel_post {
-                    import_filter::filter_by_subscription(&subscriptions, identified.groups).await
+                    import_filter::filter_by_subscription(subscriptions.as_ref(), identified.groups)
+                        .await
                 } else {
                     identified.groups
                 };
@@ -144,8 +138,8 @@ where
     }
 }
 
-async fn should_import<R: SubscriptionRepository>(
-    subscription_repo: &R,
+async fn should_import(
+    subscription_repo: &dyn crate::application::ports::erase::DynSubscriptionRepository,
     channel_post: bool,
     description: &Option<String>,
 ) -> bool {
@@ -162,9 +156,10 @@ mod tests {
     use crate::application::{
         import::identify::{IdentifyOutcome, UnmatchedFile},
         ports::{
-            FileIndexRecordInput, FileSearchRecord, ImportRecordCreate, ImportRecordFilter,
-            ImportRecordFinalize, ImportRecordPage, ImportRecordPaging, ImportRecordView,
-            SubscriptionCreateInput, SubscriptionRecord,
+            FileIndexRecordInput, FileIndexRepository, FileSearchRecord, ImportRecordCreate,
+            ImportRecordFilter, ImportRecordFinalize, ImportRecordPage, ImportRecordPaging,
+            ImportRecordRepository, ImportRecordView, SubscriptionCreateInput, SubscriptionRecord,
+            SubscriptionRepository,
         },
     };
     use crate::domain::import::inner::{Media, MediaFile};
@@ -237,7 +232,7 @@ mod tests {
     struct FakeIdentifier;
 
     impl MediaIdentifier for FakeIdentifier {
-        async fn identify(&mut self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+        async fn identify(&self, _files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
             Ok(IdentifyOutcome {
                 groups: Vec::new(),
                 unmatched: Vec::new(),
@@ -262,7 +257,7 @@ mod tests {
 
     impl MediaImporter for FakeImporter {
         async fn import_groups(
-            &mut self,
+            &self,
             _groups: Vec<Media>,
             _unmatched: Vec<UnmatchedFile>,
         ) -> AppResult<Vec<ImportedMedia>> {
@@ -367,13 +362,7 @@ mod tests {
         import_repo: FakeImportRepo,
         importer: FakeImporter,
         subscriptions: FakeSubscriptionRepo,
-    ) -> ProcessObservationService<
-        FakeFileRepo,
-        FakeImportRepo,
-        FakeIdentifier,
-        FakeImporter,
-        FakeSubscriptionRepo,
-    > {
+    ) -> ProcessObservationService {
         ProcessObservationService::new(
             FileIndexService::new(file_index),
             RecordedImportService::new(import_repo),
