@@ -134,6 +134,9 @@ export interface SubscriptionItem {
   media_type: string;
   title_zh: string | null;
   title_en: string | null;
+  year: string | null;
+  poster_path: string | null;
+  overview: string | null;
   create_time: string;
   update_time: string;
 }
@@ -147,6 +150,9 @@ export interface CandidateItem {
   media_type: string;
   title: string;
   original_title: string;
+  year: string | null;
+  poster_path: string | null;
+  overview: string | null;
 }
 
 export interface CandidatesResponse {
@@ -158,6 +164,9 @@ export interface CreateSubscriptionInput {
   media_type: string;
   title_zh?: string;
   title_en?: string;
+  year?: string;
+  poster_path?: string;
+  overview?: string;
 }
 
 export async function listSubscriptions(): Promise<SubscriptionListResponse> {

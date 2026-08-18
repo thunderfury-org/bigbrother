@@ -918,6 +918,9 @@ mod tests {
                 media_type: SubscriptionMediaType::Movie,
                 title_zh: Some("盗梦空间".into()),
                 title_en: Some("Inception".into()),
+                year: Some("2010".into()),
+                poster_path: Some("/inception.jpg".into()),
+                overview: Some("A thief who steals corporate secrets.".into()),
             })
             .await
             .unwrap();
@@ -942,6 +945,58 @@ mod tests {
         assert_eq!(items[0]["tmdb_id"].as_u64().unwrap(), 27205);
         assert_eq!(items[0]["media_type"].as_str().unwrap(), "movie");
         assert_eq!(items[0]["title_en"].as_str().unwrap(), "Inception");
+        assert_eq!(items[0]["year"].as_str().unwrap(), "2010");
+        assert_eq!(items[0]["poster_path"].as_str().unwrap(), "/inception.jpg");
+        assert_eq!(
+            items[0]["overview"].as_str().unwrap(),
+            "A thief who steals corporate secrets."
+        );
+    }
+
+    #[tokio::test]
+    async fn subscription_create_then_list_returns_display_fields() {
+        let db = fresh_db().await;
+        let repo = SeaOrmImportRecordRepository::new(db.clone());
+        let file_service = FileIndexService::new(SeaOrmFileIndexRepository::new(db.clone()));
+        let sub_repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let tmdb =
+            TmdbMetadataGateway::new(crate::infrastructure::client::tmdb::Client::new("test"));
+        let sub_service = ManageSubscriptionsService::new(sub_repo.clone(), tmdb);
+        let router = new_router(ConsoleContext::new_with_subscription(
+            repo,
+            file_service,
+            sub_service,
+            sub_repo,
+        ));
+        let create = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        r#"{"tmdb_id":1396,"media_type":"tv","title_zh":"绝命毒师","title_en":"Breaking Bad","year":"2008","poster_path":"/breaking-bad.jpg","overview":"A chemistry teacher turned meth maker."}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create.status(), StatusCode::CREATED);
+
+        let response = router.oneshot(request("/api/subscriptions")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 65536).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let item = &json["items"][0];
+        assert_eq!(item["tmdb_id"].as_u64().unwrap(), 1396);
+        assert_eq!(item["media_type"].as_str().unwrap(), "tv");
+        assert_eq!(item["year"].as_str().unwrap(), "2008");
+        assert_eq!(item["poster_path"].as_str().unwrap(), "/breaking-bad.jpg");
+        assert_eq!(
+            item["overview"].as_str().unwrap(),
+            "A chemistry teacher turned meth maker."
+        );
     }
 
     #[tokio::test]

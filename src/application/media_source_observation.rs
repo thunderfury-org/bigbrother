@@ -286,6 +286,9 @@ mod tests {
                 title_en: Some(title_en.into()),
                 create_time: Utc::now(),
                 update_time: Utc::now(),
+                year: None,
+                poster_path: None,
+                overview: None,
             });
             repo
         }
@@ -322,6 +325,16 @@ mod tests {
         }
 
         async fn create(&self, _input: &SubscriptionCreateInput) -> AppResult<i64> {
+            unimplemented!()
+        }
+
+        async fn update_display(
+            &self,
+            _id: i64,
+            _year: Option<String>,
+            _poster_path: Option<String>,
+            _overview: Option<String>,
+        ) -> AppResult<()> {
             unimplemented!()
         }
 

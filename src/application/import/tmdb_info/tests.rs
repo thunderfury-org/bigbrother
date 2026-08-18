@@ -38,6 +38,7 @@ impl MetadataCatalog for FakeMetadataCatalog {
             id: 7,
             title: title.to_string(),
             original_title: title.to_string(),
+            ..Default::default()
         }])
     }
 
@@ -140,11 +141,13 @@ async fn get_movie_info_matches_normalized_title_and_year_from_multiple_candidat
             id: 11,
             title: "The Lord of the Rings: The Two Towers".into(),
             original_title: "The Lord of the Rings: The Two Towers".into(),
+            ..Default::default()
         },
         SearchMovieResult {
             id: 12,
             title: "The Lord of the Rings: The Two Towers".into(),
             original_title: "The Lord of the Rings: The Two Towers".into(),
+            ..Default::default()
         },
     ]);
     catalog.movie_details.lock().unwrap().extend([
@@ -200,6 +203,7 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
             id: 278573,
             name: "21世纪大君夫人".into(),
             original_name: "21세기 대군부인".into(),
+            ..Default::default()
         }],
     );
     catalog.tv_details.lock().unwrap().insert(
@@ -289,6 +293,7 @@ async fn get_movie_info_falls_back_to_llm_title_when_regex_titles_fail() {
             id: 55005,
             title: "民调局异闻录".into(),
             original_title: "民调局异闻录".into(),
+            ..Default::default()
         });
 
     let title_extractor = StubTitleExtractor {

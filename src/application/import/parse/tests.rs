@@ -15,6 +15,7 @@ impl MetadataCatalog for StubMetadataCatalog {
             id: 100,
             title: title.to_string(),
             original_title: title.to_string(),
+            ..Default::default()
         }])
     }
 
@@ -36,6 +37,7 @@ impl MetadataCatalog for StubMetadataCatalog {
             id: 200,
             name: title.to_string(),
             original_name: title.to_string(),
+            ..Default::default()
         }])
     }
 

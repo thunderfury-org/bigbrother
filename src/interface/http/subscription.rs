@@ -23,6 +23,12 @@ pub(super) struct CreateSubscriptionRequest {
     media_type: String,
     title_zh: Option<String>,
     title_en: Option<String>,
+    #[serde(default)]
+    year: Option<String>,
+    #[serde(default)]
+    poster_path: Option<String>,
+    #[serde(default)]
+    overview: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -32,6 +38,9 @@ struct SubscriptionItem {
     media_type: String,
     title_zh: Option<String>,
     title_en: Option<String>,
+    year: Option<String>,
+    poster_path: Option<String>,
+    overview: Option<String>,
     create_time: String,
     update_time: String,
 }
@@ -42,6 +51,9 @@ struct CandidateItem {
     media_type: String,
     title: String,
     original_title: String,
+    year: Option<String>,
+    poster_path: Option<String>,
+    overview: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -77,6 +89,9 @@ pub(super) async fn list_subscriptions(State(ctx): State<ConsoleContext>) -> Res
                     media_type: r.media_type.as_str().to_owned(),
                     title_zh: r.title_zh,
                     title_en: r.title_en,
+                    year: r.year,
+                    poster_path: r.poster_path,
+                    overview: r.overview,
                     create_time: r.create_time.to_rfc3339(),
                     update_time: r.update_time.to_rfc3339(),
                 })
@@ -113,6 +128,9 @@ fn candidate_to_json(c: SubscriptionCandidate) -> CandidateItem {
         media_type: c.media_type.as_str().to_owned(),
         title: c.title,
         original_title: c.original_title,
+        year: c.year,
+        poster_path: c.poster_path,
+        overview: c.overview,
     }
 }
 
@@ -142,6 +160,9 @@ pub(super) async fn create_subscription(
         media_type,
         title_zh: body.title_zh,
         title_en: body.title_en,
+        year: body.year,
+        poster_path: body.poster_path,
+        overview: body.overview,
     };
     match svc.create(input).await {
         Ok(id) => json_response(StatusCode::CREATED, &CreateSubscriptionResponse { id }),
