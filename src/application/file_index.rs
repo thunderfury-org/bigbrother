@@ -94,7 +94,7 @@ fn fingerprint_to_raw_files(record: &FileSearchRecord) -> Option<(RawFile, Vec<S
     };
     let all_descriptions = collect_unique_descriptions(&record.locations);
     let raw = RawFile {
-        id: None,
+        id: Some(record.id),
         name: best.file_name.clone(),
         hash,
         size: record.size,
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(raw.name, "Movie.X.2024.1080p.BluRay.mkv");
         assert_eq!(raw.path, "/movies");
         assert_eq!(raw.size, 1000);
-        assert!(raw.id.is_none());
+        assert_eq!(raw.id, Some(42));
         assert!(matches!(&raw.hash, FileHash::Md5(v) if v == "abcdef"));
         assert_eq!(descriptions.len(), 2);
         assert!(descriptions.contains(&"some desc".into()));

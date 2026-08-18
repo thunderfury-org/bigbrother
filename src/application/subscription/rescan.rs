@@ -8,10 +8,10 @@ use crate::application::import::identify::{IdentifyOutcome, UnmatchedFile};
 use crate::application::import::{ImportedMedia, MediaIdentifier, MediaImporter};
 use crate::application::ports::{SubscriptionRecord, SubscriptionRepository};
 use crate::application::recorded_import::RecordedImportService;
+use crate::application::subscription::import_filter::media_matches_subscription;
 use crate::domain::import::inner::{Media, MediaFile};
+use crate::domain::import::policy::{insert_movie_media, insert_tv_media};
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
-use crate::domain::share::{FileHash, RawFile};
-use crate::domain::subscription::SubscriptionMediaType;
 use crate::error::{AppError, AppResult};
 
 pub(crate) async fn rescan_subscription(
@@ -57,27 +57,16 @@ pub(crate) async fn rescan_subscription(
         return Ok(Vec::new());
     }
 
-    let mut file_ids = Vec::new();
-    let mut pending = Vec::new();
-    for record in search_results {
-        let hash = match record.hash_type.as_str() {
-            "sha1" => FileHash::Sha1(record.hash_value.clone()),
-            _ => FileHash::Md5(record.hash_value.clone()),
-        };
-        for location in record.locations {
-            file_ids.push(record.id);
-            pending.push((
-                RawFile {
-                    id: Some(record.id),
-                    name: location.file_name,
-                    hash: hash.clone(),
-                    size: record.size,
-                    path: location.file_path,
-                },
-                location.descriptions,
-            ));
-        }
+    let search_ids: Vec<i64> = search_results.iter().map(|record| record.id).collect();
+    let ready_files = file_index.get_import_ready_files(&search_ids).await?;
+    if ready_files.is_empty() {
+        return Ok(Vec::new());
     }
+    let file_ids: Vec<i64> = ready_files.iter().map(|(id, _, _)| *id).collect();
+    let pending: Vec<_> = ready_files
+        .into_iter()
+        .map(|(_, raw_file, descriptions)| (raw_file, descriptions))
+        .collect();
 
     let source = ImportSource {
         kind: ImportSourceKind::FileIndex,
@@ -167,44 +156,23 @@ async fn identify_rescan_files(
 }
 
 fn merge_media_groups(groups: Vec<Media>) -> Vec<Media> {
-    let mut by_id: HashMap<u32, Media> = HashMap::new();
+    let mut by_id = HashMap::new();
     for group in groups {
         match group {
-            Media::Tv { detail, files } => match by_id.entry(detail.id) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if let Media::Tv {
-                        files: existing, ..
-                    } = entry.get_mut()
-                    {
-                        for (season, episodes) in files {
-                            for (episode, media_files) in episodes {
-                                existing
-                                    .entry(season)
-                                    .or_default()
-                                    .entry(episode)
-                                    .or_default()
-                                    .extend(media_files);
-                            }
+            Media::Tv { detail, files } => {
+                for (season, episodes) in files {
+                    for (episode, media_files) in episodes {
+                        for file in media_files {
+                            insert_tv_media(&mut by_id, detail.clone(), season, episode, file);
                         }
                     }
                 }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Media::Tv { detail, files });
+            }
+            Media::Movie { detail, files } => {
+                for file in files {
+                    insert_movie_media(&mut by_id, detail.clone(), file);
                 }
-            },
-            Media::Movie { detail, files } => match by_id.entry(detail.id) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if let Media::Movie {
-                        files: existing, ..
-                    } = entry.get_mut()
-                    {
-                        existing.extend(files);
-                    }
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Media::Movie { detail, files });
-                }
-            },
+            }
         }
     }
     by_id.into_values().collect()
@@ -226,15 +194,8 @@ fn subscription_rescan_source(subscription: &SubscriptionRecord) -> String {
 fn groups_for_subscription(subscription: &SubscriptionRecord, groups: Vec<Media>) -> Vec<Media> {
     groups
         .into_iter()
-        .filter(|media| match media {
-            Media::Movie { detail, .. } => {
-                detail.id == subscription.tmdb_id
-                    && subscription.media_type == SubscriptionMediaType::Movie
-            }
-            Media::Tv { detail, .. } => {
-                detail.id == subscription.tmdb_id
-                    && subscription.media_type == SubscriptionMediaType::Tv
-            }
+        .filter(|media| {
+            media_matches_subscription(media, subscription.tmdb_id, &subscription.media_type)
         })
         .collect()
 }
