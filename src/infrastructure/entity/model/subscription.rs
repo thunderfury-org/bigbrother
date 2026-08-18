@@ -11,6 +11,9 @@ pub struct Model {
     pub media_type: String,
     pub title_zh: Option<String>,
     pub title_en: Option<String>,
+    pub year: Option<String>,
+    pub poster_path: Option<String>,
+    pub overview: Option<String>,
     pub create_time: DateTimeUtc,
     pub update_time: DateTimeUtc,
 }

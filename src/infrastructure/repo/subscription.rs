@@ -56,10 +56,15 @@ impl SubscriptionRepository for SeaOrmSubscriptionRepository {
         })?;
         let id = entity::subscription::insert_new(
             &self.db,
-            tmdb_id,
-            input.media_type.as_str(),
-            input.title_zh.clone(),
-            input.title_en.clone(),
+            entity::subscription::NewSubscription {
+                tmdb_id,
+                media_type: input.media_type.as_str().to_owned(),
+                title_zh: input.title_zh.clone(),
+                title_en: input.title_en.clone(),
+                year: input.year.clone(),
+                poster_path: input.poster_path.clone(),
+                overview: input.overview.clone(),
+            },
         )
         .await
         .map_err(|e| {
@@ -76,6 +81,19 @@ impl SubscriptionRepository for SeaOrmSubscriptionRepository {
         Ok(id)
     }
 
+    async fn update_display(
+        &self,
+        id: i64,
+        year: Option<String>,
+        poster_path: Option<String>,
+        overview: Option<String>,
+    ) -> AppResult<()> {
+        entity::subscription::update_display(&self.db, id, year, poster_path, overview)
+            .await
+            .map_err(|e| AppError::Database(e.to_string(), false))?;
+        Ok(())
+    }
+
     async fn delete(&self, id: i64) -> AppResult<()> {
         entity::subscription::delete_by_id(&self.db, id).await?;
         Ok(())
@@ -89,6 +107,9 @@ fn to_record(model: entity::model::subscription::Model) -> Option<SubscriptionRe
         media_type: SubscriptionMediaType::from_str(&model.media_type)?,
         title_zh: model.title_zh,
         title_en: model.title_en,
+        year: model.year,
+        poster_path: model.poster_path,
+        overview: model.overview,
         create_time: model.create_time,
         update_time: model.update_time,
     })
@@ -117,6 +138,9 @@ mod tests {
             media_type: SubscriptionMediaType::Movie,
             title_zh: None,
             title_en: Some("Inception".into()),
+            year: None,
+            poster_path: None,
+            overview: None,
         };
         repo.create(&input).await.unwrap();
         let err = repo.create(&input).await.unwrap_err();
@@ -132,6 +156,9 @@ mod tests {
             media_type: SubscriptionMediaType::Movie,
             title_zh: Some("盗梦空间".into()),
             title_en: Some("Inception".into()),
+            year: Some("2010".into()),
+            poster_path: Some("/inception.jpg".into()),
+            overview: Some("A thief who steals corporate secrets.".into()),
         };
         let id = repo.create(&input).await.unwrap();
         assert!(id > 0);
@@ -139,6 +166,25 @@ mod tests {
         let all = repo.list_all().await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].tmdb_id, 27205);
+        assert_eq!(all[0].year.as_deref(), Some("2010"));
+        assert_eq!(all[0].poster_path.as_deref(), Some("/inception.jpg"));
+        assert_eq!(
+            all[0].overview.as_deref(),
+            Some("A thief who steals corporate secrets.")
+        );
+
+        repo.update_display(
+            id,
+            Some("2011".into()),
+            Some("/updated.jpg".into()),
+            Some("Updated overview.".into()),
+        )
+        .await
+        .unwrap();
+        let updated = repo.get_by_id(id).await.unwrap().unwrap();
+        assert_eq!(updated.year.as_deref(), Some("2011"));
+        assert_eq!(updated.poster_path.as_deref(), Some("/updated.jpg"));
+        assert_eq!(updated.overview.as_deref(), Some("Updated overview."));
 
         let found = repo
             .find_by_tmdb_id(27205, &SubscriptionMediaType::Movie)

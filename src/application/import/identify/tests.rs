@@ -158,6 +158,7 @@ async fn identify_buckets_movie_into_media_movie() {
             id: 27205,
             title: "Inception".into(),
             original_title: "Inception".into(),
+            ..Default::default()
         }],
     );
     catalog
@@ -191,6 +192,7 @@ async fn identify_groups_tv_files_by_tmdb_id() {
             id: 1396,
             name: "Breaking Bad".into(),
             original_name: "Breaking Bad".into(),
+            ..Default::default()
         }],
     );
     catalog
@@ -251,6 +253,7 @@ async fn identify_returns_unmatched_when_episode_slot_unresolved() {
             id: 1396,
             name: "Breaking Bad".into(),
             original_name: "Breaking Bad".into(),
+            ..Default::default()
         }],
     );
     catalog

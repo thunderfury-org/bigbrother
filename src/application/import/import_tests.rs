@@ -203,6 +203,7 @@ impl MetadataCatalog for FakeMetadataCatalog {
                 id: 27205,
                 title: "Inception".into(),
                 original_title: "Inception".into(),
+                ..Default::default()
             }])
         } else {
             Ok(Vec::new())
@@ -226,6 +227,7 @@ impl MetadataCatalog for FakeMetadataCatalog {
                 id: 1396,
                 name: "Breaking Bad".into(),
                 original_name: "Breaking Bad".into(),
+                ..Default::default()
             }])
         } else {
             Ok(Vec::new())

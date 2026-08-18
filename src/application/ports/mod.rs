@@ -208,6 +208,9 @@ pub struct SubscriptionRecord {
     pub media_type: SubscriptionMediaType,
     pub title_zh: Option<String>,
     pub title_en: Option<String>,
+    pub year: Option<String>,
+    pub poster_path: Option<String>,
+    pub overview: Option<String>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
 }
@@ -218,6 +221,9 @@ pub struct SubscriptionCreateInput {
     pub media_type: SubscriptionMediaType,
     pub title_zh: Option<String>,
     pub title_en: Option<String>,
+    pub year: Option<String>,
+    pub poster_path: Option<String>,
+    pub overview: Option<String>,
 }
 
 #[async_trait::async_trait]
@@ -230,6 +236,13 @@ pub trait SubscriptionRepository: Send + Sync {
         media_type: &SubscriptionMediaType,
     ) -> AppResult<Option<SubscriptionRecord>>;
     async fn create(&self, input: &SubscriptionCreateInput) -> AppResult<i64>;
+    async fn update_display(
+        &self,
+        id: i64,
+        year: Option<String>,
+        poster_path: Option<String>,
+        overview: Option<String>,
+    ) -> AppResult<()>;
     async fn delete(&self, id: i64) -> AppResult<()>;
 }
 

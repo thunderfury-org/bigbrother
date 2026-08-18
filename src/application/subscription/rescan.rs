@@ -169,11 +169,32 @@ mod tests {
                 media_type: input.media_type,
                 title_zh: input.title_zh.clone(),
                 title_en: input.title_en.clone(),
+                year: input.year.clone(),
+                poster_path: input.poster_path.clone(),
+                overview: input.overview.clone(),
                 create_time: Utc::now(),
                 update_time: Utc::now(),
             });
             Ok(id)
         }
+
+        async fn update_display(
+            &self,
+            id: i64,
+            year: Option<String>,
+            poster_path: Option<String>,
+            overview: Option<String>,
+        ) -> AppResult<()> {
+            let mut records = self.records.lock().unwrap();
+            if let Some(record) = records.iter_mut().find(|r| r.id == id) {
+                record.year = year;
+                record.poster_path = poster_path;
+                record.overview = overview;
+                record.update_time = Utc::now();
+            }
+            Ok(())
+        }
+
         async fn delete(&self, id: i64) -> AppResult<()> {
             self.records.lock().unwrap().retain(|r| r.id != id);
             Ok(())
@@ -329,6 +350,9 @@ mod tests {
                 media_type: SubscriptionMediaType::Movie,
                 title_zh: None,
                 title_en: Some("Inception".into()),
+                year: None,
+                poster_path: None,
+                overview: None,
             },
         )
         .await
@@ -361,6 +385,9 @@ mod tests {
                 media_type: SubscriptionMediaType::Movie,
                 title_zh: None,
                 title_en: Some("Inception".into()),
+                year: None,
+                poster_path: None,
+                overview: None,
             },
         )
         .await

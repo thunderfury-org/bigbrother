@@ -73,6 +73,9 @@ impl From<tmdb::SearchMovieResult> for SearchMovieResult {
             id: value.id,
             title: value.title,
             original_title: value.original_title,
+            release_date: value.release_date,
+            poster_path: value.poster_path,
+            overview: value.overview,
         }
     }
 }
@@ -100,6 +103,9 @@ impl From<tmdb::SearchTvResult> for SearchTvResult {
             id: value.id,
             name: value.name,
             original_name: value.original_name,
+            first_air_date: value.first_air_date,
+            poster_path: value.poster_path,
+            overview: value.overview,
         }
     }
 }

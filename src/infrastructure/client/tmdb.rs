@@ -24,10 +24,14 @@ pub struct MovieDetail {
     pub release_date: String,
 }
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct SearchMovieResult {
     pub id: u32,
     pub title: String,
     pub original_title: String,
+    pub release_date: String,
+    pub poster_path: Option<String>,
+    pub overview: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -64,11 +68,15 @@ struct SearchTvResponse {
     pub results: Vec<SearchTvResult>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct SearchTvResult {
     pub id: u32,
     pub name: String,
     pub original_name: String,
+    pub first_air_date: String,
+    pub poster_path: Option<String>,
+    pub overview: String,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -175,7 +183,10 @@ mod tests {
                 "results": [{
                     "id": 27205,
                     "title": "Inception",
-                    "original_title": "Inception"
+                    "original_title": "Inception",
+                    "release_date": "2010-07-16",
+                    "poster_path": "/inception.jpg",
+                    "overview": "A thief who steals corporate secrets."
                 }]
             })))
             .mount(&server)
@@ -189,6 +200,9 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 27205);
         assert_eq!(result[0].title, "Inception");
+        assert_eq!(result[0].release_date, "2010-07-16");
+        assert_eq!(result[0].poster_path.as_deref(), Some("/inception.jpg"));
+        assert_eq!(result[0].overview, "A thief who steals corporate secrets.");
     }
 
     #[tokio::test]
@@ -251,7 +265,10 @@ mod tests {
                 "results": [{
                     "id": 1396,
                     "name": "Breaking Bad",
-                    "original_name": "Breaking Bad"
+                    "original_name": "Breaking Bad",
+                    "first_air_date": "2008-01-20",
+                    "poster_path": "/breaking-bad.jpg",
+                    "overview": "A chemistry teacher turned meth maker."
                 }]
             })))
             .mount(&server)
@@ -265,6 +282,9 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, 1396);
         assert_eq!(result[0].name, "Breaking Bad");
+        assert_eq!(result[0].first_air_date, "2008-01-20");
+        assert_eq!(result[0].poster_path.as_deref(), Some("/breaking-bad.jpg"));
+        assert_eq!(result[0].overview, "A chemistry teacher turned meth maker.");
     }
 
     #[tokio::test]

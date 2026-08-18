@@ -21,6 +21,9 @@ pub struct SearchMovieResult {
     pub id: u32,
     pub title: String,
     pub original_title: String,
+    pub release_date: String,
+    pub poster_path: Option<String>,
+    pub overview: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -50,6 +53,9 @@ pub struct SearchTvResult {
     pub id: u32,
     pub name: String,
     pub original_name: String,
+    pub first_air_date: String,
+    pub poster_path: Option<String>,
+    pub overview: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
