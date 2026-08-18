@@ -47,7 +47,7 @@ teloxide = { version = "0.17.0", default-features = false, features = [
 ] }
 futures = "0.3"
 async-trait = "0.1"
-sea-orm = { version = "2.0.0-rc", features = [
+sea-orm = { version = "2.0.0", features = [
   "sqlx-sqlite",
   "runtime-tokio-rustls",
   "macros",
