@@ -25,16 +25,28 @@ pub(crate) async fn description_matches_subscription(
     })
 }
 
+pub(crate) fn media_subscription_key(media: &Media) -> (u32, SubscriptionMediaType) {
+    match media {
+        Media::Movie { detail, .. } => (detail.id, SubscriptionMediaType::Movie),
+        Media::Tv { detail, .. } => (detail.id, SubscriptionMediaType::Tv),
+    }
+}
+
+pub(crate) fn media_matches_subscription(
+    media: &Media,
+    tmdb_id: u32,
+    media_type: &SubscriptionMediaType,
+) -> bool {
+    media_subscription_key(media) == (tmdb_id, *media_type)
+}
+
 pub(crate) async fn filter_by_subscription(
     repo: &dyn SubscriptionRepository,
     groups: Vec<Media>,
 ) -> Vec<Media> {
     let mut filtered = Vec::new();
     for media in groups {
-        let (tmdb_id, media_type) = match &media {
-            Media::Movie { detail, .. } => (detail.id, SubscriptionMediaType::Movie),
-            Media::Tv { detail, .. } => (detail.id, SubscriptionMediaType::Tv),
-        };
+        let (tmdb_id, media_type) = media_subscription_key(&media);
         match repo.find_by_tmdb_id(tmdb_id, &media_type).await {
             Ok(Some(_)) => filtered.push(media),
             Ok(None) => {}
@@ -319,5 +331,36 @@ mod tests {
         let groups = vec![make_movie(99999)];
         let filtered = filter_by_subscription(&repo, groups).await;
         assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn media_matches_subscription_requires_tmdb_id_and_type() {
+        let movie = make_movie(27205);
+        let tv = make_tv(1396);
+        assert!(media_matches_subscription(
+            &movie,
+            27205,
+            &SubscriptionMediaType::Movie
+        ));
+        assert!(!media_matches_subscription(
+            &movie,
+            27205,
+            &SubscriptionMediaType::Tv
+        ));
+        assert!(!media_matches_subscription(
+            &movie,
+            1,
+            &SubscriptionMediaType::Movie
+        ));
+        assert!(media_matches_subscription(
+            &tv,
+            1396,
+            &SubscriptionMediaType::Tv
+        ));
+        assert!(!media_matches_subscription(
+            &tv,
+            1396,
+            &SubscriptionMediaType::Movie
+        ));
     }
 }

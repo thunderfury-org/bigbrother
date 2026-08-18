@@ -35,7 +35,9 @@ When the subscription table is empty, all channel posts are filtered out at Laye
 
 ### Manual rescan
 
-Rescan searches the File Index by subscription title text (both `title_zh` and `title_en`), identifies candidates via TMDB lookup, then filters by subscription `tmdb_id`. Known limitation: files with obfuscated names that do not match any subscription title are missed.
+Rescan searches the File Index by subscription title text (both `title_zh` and `title_en`), identifies candidates via TMDB lookup, then keeps only groups whose resolved `tmdb_id` matches the Subscription being rescanned. Known limitation: files with obfuscated names that do not match any subscription title are missed.
+
+A rescan is one processing unit. All File Index hits are identified and imported together so TV episodes group under one title, and the run writes one ImportRecord. Per-fingerprint import (the #121 loop) was rejected because it is slow, floods import history, and makes a single episode look like `S01 1/N` with the rest of the season marked missing. Concurrency without grouping was rejected for the same history problem.
 
 ### Keyword system removal
 
