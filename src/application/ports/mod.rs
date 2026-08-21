@@ -36,23 +36,9 @@ pub trait DownloadUrlCache: Send + Sync {
 
 pub type DownloadUrlCacheHandle = Arc<dyn DownloadUrlCache>;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DownloadUrlError {
-    #[error("unauthorized")]
-    Unauthorized,
-
-    #[error("not found, {0}")]
-    NotFound(String),
-
-    #[error("error, {0}")]
-    Error(String),
-}
-
-pub type DownloadUrlResult<T> = std::result::Result<T, DownloadUrlError>;
-
 #[async_trait::async_trait]
 pub trait DownloadUrlSource: Send + Sync {
-    async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String>;
+    async fn get_download_url(&self, file_id: i64) -> AppResult<String>;
 }
 
 pub type DownloadUrlSourceHandle = Arc<dyn DownloadUrlSource>;
