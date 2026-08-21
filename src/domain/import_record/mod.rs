@@ -4,4 +4,6 @@ mod summary;
 
 pub(crate) use outcome::ImportOutcome;
 pub(crate) use status::ImportStatus;
-pub(crate) use summary::{ImportSource, ImportSourceKind, RecordSummary, SummaryItem, summarize};
+pub(crate) use summary::{
+    EpisodeOutcome, ImportSource, ImportSourceKind, RecordSummary, SummaryItem, summarize,
+};
