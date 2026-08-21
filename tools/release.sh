@@ -54,7 +54,8 @@ cargo clippy -- -D warnings
 # Bump version in Cargo.toml
 echo ""
 echo "--- Bumping version to $VERSION ---"
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+rm -f Cargo.toml.bak
 
 # Verify it compiles with new version
 echo ""
