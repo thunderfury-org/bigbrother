@@ -5,6 +5,7 @@
 - **Domain** — before exploring, or when naming or changing import, subscription, file-index, or media-source concepts: `docs/agents/domain.md`
 - **Triage** — when classifying an issue or deciding whether to implement: `docs/agents/triage-labels.md`
 - **Issues** — when creating, reading, labeling, commenting, or closing GitHub issues: `docs/agents/issue-tracker.md`
+- **Release** — when tagging, bumping version, or running `make release` / `make changelog`: `docs/agents/release.md`
 
 ## Architecture
 
