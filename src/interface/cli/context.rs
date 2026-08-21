@@ -6,6 +6,7 @@ use crate::{
     application::import_local_store::ImportLocalStore,
     error::AppResult,
     infrastructure::{
+        cache::Cache,
         client,
         fs::tokio_file_store::TokioFileStore,
         import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
@@ -119,6 +120,10 @@ impl CliContext {
         ))
     }
 
+    fn tmdb_metadata_gateway(&self, db: DatabaseConnection) -> TmdbMetadataGateway {
+        TmdbMetadataGateway::new(self.tmdb()).with_cache(Cache::new(db))
+    }
+
     pub(super) async fn identify_service(&self) -> AppResult<IdentifyService> {
         let openai_config = self.config.get_openai_config();
         let openai_client = if openai_config.is_configured() {
@@ -131,10 +136,10 @@ impl CliContext {
             None
         };
         let db = self.db().await?.clone();
-        let title_extractor = TitleExtractorService::new(openai_client, db);
+        let title_extractor = TitleExtractorService::new(openai_client, db.clone());
 
         Ok(IdentifyService::new(
-            TmdbMetadataGateway::new(self.tmdb()),
+            self.tmdb_metadata_gateway(db),
             title_extractor,
         ))
     }
@@ -151,10 +156,10 @@ impl CliContext {
             None
         };
         let db = self.db().await?.clone();
-        let title_extractor = TitleExtractorService::new(openai_client, db);
+        let title_extractor = TitleExtractorService::new(openai_client, db.clone());
 
         Ok(ParseRuntimeService::new(
-            TmdbMetadataGateway::new(self.tmdb()),
+            self.tmdb_metadata_gateway(db),
             title_extractor,
         ))
     }
@@ -175,8 +180,8 @@ impl CliContext {
         &self,
     ) -> AppResult<(SubscriptionService, SeaOrmSubscriptionRepository)> {
         let db = self.db().await?.clone();
-        let repo = SeaOrmSubscriptionRepository::new(db);
-        let service = SubscriptionService::new(repo.clone(), TmdbMetadataGateway::new(self.tmdb()));
+        let repo = SeaOrmSubscriptionRepository::new(db.clone());
+        let service = SubscriptionService::new(repo.clone(), self.tmdb_metadata_gateway(db));
         Ok((service, repo))
     }
 
