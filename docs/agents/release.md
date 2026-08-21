@@ -1,8 +1,8 @@
 # Release
 
-When tagging, bumping the crate version, generating the changelog, or running `make release` / `make changelog`.
+When tagging, bumping the crate version, generating the changelog, or running `make release` / `make release-tag` / `make changelog`.
 
-Release cuts happen on a clean `main`. Other work still uses a working branch.
+`main` requires a PR. Do not push the release commit or tag from local `main`.
 
 ## Version
 
@@ -10,8 +10,13 @@ Release cuts happen on a clean `main`. Other work still uses a working branch.
 
 ## Cut
 
-`make release VERSION=x.y.z` prepares the release locally: tests, lint, `Cargo.toml` bump, changelog, `chore: release vX` commit, and annotated `vX` tag. It does not push.
+`make release VERSION=x.y.z` creates `dev/release-x.y.z` from `origin/main`, runs tests and lint, bumps `Cargo.toml`, writes the changelog, and commits `chore: release vX`. It does not tag.
 
-Review `git log -1` and `git show vX`. Then `git push --follow-tags`.
+Push the branch and open a PR. After it is merged onto `main`:
 
-CI builds a multi-arch image to `ghcr.io` and opens a GitHub Release whose body is that version's CHANGELOG section.
+```bash
+git checkout main && git pull
+make release-tag VERSION=x.y.z
+```
+
+That tags `origin/main` as `vX` and pushes the tag. CI builds a multi-arch image to `ghcr.io` and opens a GitHub Release whose body is that version's CHANGELOG section.
