@@ -1,6 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use serde::{Serialize, de::DeserializeOwned};
+use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
+use tracing::warn;
 
 use crate::{
     application::ports::{
@@ -11,7 +14,10 @@ use crate::{
     },
     domain::share::FileHash,
     error::{AppError, AppResult},
-    infrastructure::client::{RequestError, pan123, tmdb},
+    infrastructure::{
+        cache::Cache,
+        client::{RequestError, pan123, tmdb},
+    },
 };
 
 #[derive(Clone)]
@@ -30,6 +36,7 @@ struct LibraryDirCache {
 #[derive(Clone)]
 pub struct TmdbMetadataGateway {
     tmdb: tmdb::Client,
+    cache: Option<Cache>,
 }
 
 impl PanLibraryGateway {
@@ -229,9 +236,57 @@ fn join_dir_path(parent: &str, name: &str) -> String {
     }
 }
 
+const TMDB_EMPTY_TTL: Duration = Duration::from_secs(60 * 60);
+const TMDB_SEARCH_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+const TMDB_TV_DETAIL_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const TMDB_MOVIE_DETAIL_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+fn tmdb_search_cache_key(kind: &str, title: &str, year: &str) -> String {
+    let digest = Sha256::digest(format!("{year}\0{title}"));
+    format!("tmdb:{kind}:search:{}", hex::encode(digest))
+}
+
+fn tmdb_movie_detail_cache_key(id: u32) -> String {
+    format!("tmdb:movie:detail:{id}")
+}
+
+fn tmdb_tv_detail_cache_key(id: u32) -> String {
+    format!("tmdb:tv:detail:{id}")
+}
+
 impl TmdbMetadataGateway {
     pub fn new(tmdb: tmdb::Client) -> Self {
-        Self { tmdb }
+        Self { tmdb, cache: None }
+    }
+
+    pub fn with_cache(self, cache: Cache) -> Self {
+        Self {
+            tmdb: self.tmdb,
+            cache: Some(cache),
+        }
+    }
+
+    async fn get_cached<V: DeserializeOwned + Send>(&self, key: &str) -> Option<V> {
+        let cache = self.cache.as_ref()?;
+        match cache.get::<V>(key).await {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(key, error = %err, "invalid tmdb cache entry, refetching");
+                if let Err(delete_err) = cache.delete(key).await {
+                    warn!(key, error = %delete_err, "failed to delete invalid tmdb cache entry");
+                }
+                None
+            }
+        }
+    }
+
+    async fn set_cached<V: Serialize + Send + Sync>(&self, key: &str, value: &V, ttl: Duration) {
+        let Some(cache) = &self.cache else {
+            return;
+        };
+        if let Err(err) = cache.set(key, value, Some(ttl)).await {
+            warn!(key, error = %err, "failed to cache tmdb response");
+        }
     }
 }
 
@@ -434,31 +489,67 @@ impl LibraryGateway for PanLibraryGateway {
 #[async_trait::async_trait]
 impl MetadataCatalog for TmdbMetadataGateway {
     async fn search_movie(&self, title: &str, year: &str) -> AppResult<Vec<SearchMovieResult>> {
-        Ok(self
-            .tmdb
-            .search_movie(title, year)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        let key = tmdb_search_cache_key("movie", title, year);
+        if let Some(cached) = self.get_cached::<Vec<tmdb::SearchMovieResult>>(&key).await {
+            return Ok(cached.into_iter().map(Into::into).collect());
+        }
+
+        let results = self.tmdb.search_movie(title, year).await?;
+        let ttl = if results.is_empty() {
+            TMDB_EMPTY_TTL
+        } else {
+            TMDB_SEARCH_TTL
+        };
+        self.set_cached(&key, &results, ttl).await;
+        Ok(results.into_iter().map(Into::into).collect())
     }
 
     async fn get_movie_detail(&self, id: u32) -> AppResult<Option<MovieDetail>> {
-        Ok(self.tmdb.get_movie_detail(id).await?.map(Into::into))
+        let key = tmdb_movie_detail_cache_key(id);
+        if let Some(cached) = self.get_cached::<Option<tmdb::MovieDetail>>(&key).await {
+            return Ok(cached.map(Into::into));
+        }
+
+        let detail = self.tmdb.get_movie_detail(id).await?;
+        let ttl = if detail.is_some() {
+            TMDB_MOVIE_DETAIL_TTL
+        } else {
+            TMDB_EMPTY_TTL
+        };
+        self.set_cached(&key, &detail, ttl).await;
+        Ok(detail.map(Into::into))
     }
 
     async fn search_tv(&self, title: &str, year: &str) -> AppResult<Vec<SearchTvResult>> {
-        Ok(self
-            .tmdb
-            .search_tv(title, year)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        let key = tmdb_search_cache_key("tv", title, year);
+        if let Some(cached) = self.get_cached::<Vec<tmdb::SearchTvResult>>(&key).await {
+            return Ok(cached.into_iter().map(Into::into).collect());
+        }
+
+        let results = self.tmdb.search_tv(title, year).await?;
+        let ttl = if results.is_empty() {
+            TMDB_EMPTY_TTL
+        } else {
+            TMDB_SEARCH_TTL
+        };
+        self.set_cached(&key, &results, ttl).await;
+        Ok(results.into_iter().map(Into::into).collect())
     }
 
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
-        Ok(self.tmdb.get_tv_detail(id).await?.map(Into::into))
+        let key = tmdb_tv_detail_cache_key(id);
+        if let Some(cached) = self.get_cached::<Option<tmdb::TvDetail>>(&key).await {
+            return Ok(cached.map(Into::into));
+        }
+
+        let detail = self.tmdb.get_tv_detail(id).await?;
+        let ttl = if detail.is_some() {
+            TMDB_TV_DETAIL_TTL
+        } else {
+            TMDB_EMPTY_TTL
+        };
+        self.set_cached(&key, &detail, ttl).await;
+        Ok(detail.map(Into::into))
     }
 }
 
@@ -806,3 +897,7 @@ mod tests {
         assert_eq!(second, 20);
     }
 }
+
+#[cfg(test)]
+#[path = "tmdb_cache_tests.rs"]
+mod tmdb_cache_tests;

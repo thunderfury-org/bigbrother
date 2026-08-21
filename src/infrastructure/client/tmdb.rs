@@ -1,17 +1,17 @@
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use super::{RequestError, RequestResult};
 
 const TMDB_HOST: &str = "https://api.themoviedb.org/3";
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Genre {
     pub id: u32,
     pub name: String,
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MovieDetail {
     pub id: u32,
@@ -23,7 +23,7 @@ pub struct MovieDetail {
     pub origin_country: Vec<String>,
     pub release_date: String,
 }
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SearchMovieResult {
     pub id: u32,
@@ -39,7 +39,7 @@ struct SearchMovieResponse {
     pub results: Vec<SearchMovieResult>,
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Season {
     pub id: u32,
@@ -48,7 +48,7 @@ pub struct Season {
     pub season_number: u32,
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TvDetail {
     pub id: u32,
@@ -68,7 +68,7 @@ struct SearchTvResponse {
     pub results: Vec<SearchTvResult>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SearchTvResult {
     pub id: u32,
@@ -94,7 +94,7 @@ impl Client {
     }
 
     #[cfg(test)]
-    fn with_host(api_key: &str, host: &str) -> Self {
+    pub(crate) fn with_host(api_key: &str, host: &str) -> Self {
         Client {
             api_key: api_key.to_owned(),
             host: host.to_owned(),

@@ -51,6 +51,11 @@ impl Cache {
         Ok(())
     }
 
+    pub async fn delete(&self, key: &str) -> AppResult<()> {
+        cache::delete_by_key(&self.db, key).await?;
+        Ok(())
+    }
+
     pub async fn clear_expired(&self) -> AppResult<u64> {
         Ok(cache::delete_expired(&self.db).await?)
     }
@@ -125,6 +130,18 @@ mod tests {
         let cache = Cache::new(db);
 
         let result: Option<TestData> = cache.get("nonexistent").await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_key() {
+        let db = setup_test_db().await;
+        let cache = Cache::new(db);
+
+        cache.set("key", &"value", None).await.unwrap();
+        cache.delete("key").await.unwrap();
+
+        let result: Option<String> = cache.get("key").await.unwrap();
         assert_eq!(result, None);
     }
 
