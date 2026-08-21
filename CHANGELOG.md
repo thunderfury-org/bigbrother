@@ -1,4 +1,39 @@
 # Changelog
+## [0.2.0] - 2026-08-21
+### Bug Fixes
+
+- (app) paginate library listing and cache directory ids (#150)
+- (app) show this-run import history instead of season gaps (#147)
+- (app) upgrade action-gh-release to v3 for Node 24 (#133)
+- (app) stop automatic docker builds on main (#134)
+- (app) restrict docker latest tag to stable version tags only (#128)
+
+### Documentation
+
+- (app) move release workflow into agent docs and slim README (#152)
+- (app) tighten AGENTS.md and satellite pointers (#135)
+
+### Features
+
+- (app) persist TMDB catalog responses in sqlite cache (#151)
+- (app) batch subscription File Index rescan into one import (#146)
+- (app) enrich subscription console with TMDB posters and year (#143)
+- (app) restyle web console as a light workbench (#142)
+- (app) add media directory browse and delete to web console (#141)
+
+### Refactoring
+
+- (app) implement DownloadUrlCache on Cache (#149)
+- (app) fold download url source into pan library gateway (#148)
+- (app) simplify application ports (#140)
+- (app) collapse application service type parameters (#139)
+- (app) collect hexagonal ports and composition root (#138)
+- (app) collapse workspace into a single src crate (#137)
+- (app) sink media source observation processing into application (#136)
+
+### Support
+
+- (app) bump console and sea-orm dependencies (#144)
 ## [0.1.0] - 2026-07-02
 ### Bug Fixes
 
@@ -15,6 +50,10 @@
 - (app) continue tv title fallback after cached miss (#74)
 - (app) update dependency version (#72)
 - (app) filter unsupported telegram links before import (#65)
+
+### Chores
+
+- (app) release v0.1.0
 
 ### Documentation
 
