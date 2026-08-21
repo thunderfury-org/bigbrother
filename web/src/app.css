@@ -347,6 +347,11 @@ textarea {
   font-size: 12px;
 }
 
+.cell-stack .cell-title,
+.cell-stack .cell-sub {
+  overflow-wrap: anywhere;
+}
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;

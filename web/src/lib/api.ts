@@ -3,6 +3,11 @@ export interface ImportRecordPage {
   next_cursor: number | null;
 }
 
+export interface ImportRecordError {
+  kind: string;
+  message: string;
+}
+
 export interface ImportListItem {
   id: number;
   source_kind: string;
@@ -16,6 +21,45 @@ export interface ImportListItem {
   cost_ms: number;
   created_at: string;
   finished_at: string | null;
+  error?: ImportRecordError | null;
+}
+
+export interface ImportEpisodeOutcome {
+  episode: number;
+  succeeded: boolean;
+}
+
+export type ImportSummaryItem =
+  | {
+      type: 'movie';
+      title: string;
+      year: string;
+      size: number;
+      cost_ms: number;
+      succeeded: boolean;
+    }
+  | {
+      type: 'tv';
+      name: string;
+      year: string;
+      season: number;
+      episodes: ImportEpisodeOutcome[];
+      missing_episodes: number[];
+      max_episode_number: number;
+      number_of_episodes: number;
+      total_size: number;
+      cost_ms: number;
+    }
+  | {
+      type: 'skipped';
+      files: string[];
+    };
+
+export interface ImportSummary {
+  items: ImportSummaryItem[];
+  total_size: number;
+  total_cost_ms: number;
+  skipped_files: string[];
 }
 
 export interface ImportDetail {
@@ -23,8 +67,8 @@ export interface ImportDetail {
   source_kind: string;
   source: string;
   status: string;
-  summary: unknown;
-  error: { kind: string; message: string } | null;
+  summary: ImportSummary | null;
+  error: ImportRecordError | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
