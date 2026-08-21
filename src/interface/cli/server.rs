@@ -13,7 +13,6 @@ use crate::{
     error::{AppError, AppResult},
     infrastructure::{
         cache::{Cache, string_store::StringCacheStore},
-        client::library_remote::Pan123LibraryRemote,
         event::publisher::EventBusPublisher,
         event_bus::EventBus,
         fs::tokio_file_store::TokioFileStore,
@@ -102,7 +101,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         media_server_strm_path_prefix,
         MediaDownloadUrlService::new(
             StringCacheStore::new(cache.clone()),
-            Pan123LibraryRemote::new(pan123.clone()),
+            PanLibraryGateway::new(pan123.clone()),
         ),
     ));
 
@@ -160,7 +159,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 config.strm_path_prefix.clone(),
                 MediaDownloadUrlService::new(
                     StringCacheStore::new(cache.clone()),
-                    Pan123LibraryRemote::new(pan123),
+                    PanLibraryGateway::new(pan123),
                 ),
             )
             .expect("validated emby proxy config"),

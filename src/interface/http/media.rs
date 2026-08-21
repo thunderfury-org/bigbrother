@@ -105,9 +105,7 @@ pub(crate) fn map_app_error_to_response(error: AppError) -> Response {
 mod tests {
     use super::*;
     use crate::{
-        application::ports::{
-            DownloadUrlCache, DownloadUrlError, DownloadUrlResult, DownloadUrlSource,
-        },
+        application::ports::{DownloadUrlCache, DownloadUrlSource},
         error::AppResult,
     };
     use axum::http::StatusCode as HttpStatusCode;
@@ -151,13 +149,13 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, _file_id: i64) -> DownloadUrlResult<String> {
+        async fn get_download_url(&self, _file_id: i64) -> AppResult<String> {
             match &self.result {
                 FakeSourceResult::Url(url) => Ok(url.clone()),
-                FakeSourceResult::NotFound => {
-                    Err(DownloadUrlError::NotFound("missing".to_string()))
+                FakeSourceResult::NotFound => Err(AppError::NotFound("missing".to_string())),
+                FakeSourceResult::Error => {
+                    Err(AppError::ExternalService("upstream failed".into(), false))
                 }
-                FakeSourceResult::Error => Err(DownloadUrlError::Error("upstream failed".into())),
             }
         }
     }

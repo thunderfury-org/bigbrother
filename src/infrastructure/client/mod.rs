@@ -6,8 +6,6 @@ pub mod tmdb;
 
 mod http;
 
-pub mod library_remote;
-
 #[derive(Debug, thiserror::Error)]
 pub enum RequestError {
     #[error("already exists")]

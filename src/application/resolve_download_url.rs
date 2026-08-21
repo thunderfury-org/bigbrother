@@ -10,8 +10,7 @@ use tracing::{debug, error, warn};
 use crate::error::{AppError, AppResult};
 
 use super::ports::{
-    DownloadUrlCache, DownloadUrlCacheHandle, DownloadUrlError, DownloadUrlSource,
-    DownloadUrlSourceHandle,
+    DownloadUrlCache, DownloadUrlCacheHandle, DownloadUrlSource, DownloadUrlSourceHandle,
 };
 
 type SharedResolveResult = AppResult<String>;
@@ -122,34 +121,23 @@ impl ResolveDownloadUrlService {
     }
 
     async fn resolve_uncached(&self, file_id: i64, cache_key: &str) -> SharedResolveResult {
-        match self.source.get_download_url(file_id).await {
-            Ok(url) => {
-                if url.is_empty() {
-                    return Err(AppError::ExternalService(
-                        "download url source returned empty url".to_owned(),
-                        false,
-                    ));
-                }
-
-                if let Err(err) = self
-                    .cache
-                    .set_download_url(cache_key, &url, Duration::from_mins(30))
-                    .await
-                {
-                    error!("Failed to cache download url for file {file_id}, {err}");
-                }
-
-                Ok(url)
-            }
-            Err(DownloadUrlError::Unauthorized) => Err(AppError::Unauthorized(
-                "download url source unauthorized".to_owned(),
-            )),
-            Err(DownloadUrlError::NotFound(msg)) => Err(AppError::NotFound(msg)),
-            Err(err) => Err(AppError::ExternalService(
-                format!("failed to get download url: {err}"),
+        let url = self.source.get_download_url(file_id).await?;
+        if url.is_empty() {
+            return Err(AppError::ExternalService(
+                "download url source returned empty url".to_owned(),
                 false,
-            )),
+            ));
         }
+
+        if let Err(err) = self
+            .cache
+            .set_download_url(cache_key, &url, Duration::from_mins(30))
+            .await
+        {
+            error!("Failed to cache download url for file {file_id}, {err}");
+        }
+
+        Ok(url)
     }
 }
 
@@ -163,8 +151,6 @@ mod tests {
         },
         time::Duration,
     };
-
-    use super::super::ports::DownloadUrlResult;
 
     use super::*;
 
@@ -238,7 +224,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DownloadUrlSource for FakeSource {
-        async fn get_download_url(&self, file_id: i64) -> DownloadUrlResult<String> {
+        async fn get_download_url(&self, file_id: i64) -> AppResult<String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if !self.delay.is_zero() {
                 tokio::time::sleep(self.delay).await;
@@ -254,9 +240,9 @@ mod tests {
 
             match result {
                 Ok(url) => Ok(url),
-                Err("not_found") => Err(DownloadUrlError::NotFound("missing".to_string())),
-                Err("unauthorized") => Err(DownloadUrlError::Unauthorized),
-                Err(kind) => Err(DownloadUrlError::Error(kind.to_string())),
+                Err("not_found") => Err(AppError::NotFound("missing".to_string())),
+                Err("unauthorized") => Err(AppError::Unauthorized("unauthorized".to_string())),
+                Err(kind) => Err(AppError::ExternalService(kind.to_string(), false)),
             }
         }
     }

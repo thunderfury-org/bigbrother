@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-    application::ports::{LibraryGateway, MediaDirectoryRecord, MetadataCatalog},
+    application::ports::{
+        DownloadUrlSource, LibraryGateway, MediaDirectoryRecord, MetadataCatalog,
+    },
     domain::import::{
         Genre, LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, Season, TvDetail,
     },
     domain::share::FileHash,
-    error::AppResult,
-    infrastructure::client::{pan123, tmdb},
+    error::{AppError, AppResult},
+    infrastructure::client::{RequestError, pan123, tmdb},
 };
 
 #[derive(Clone)]
@@ -123,6 +125,28 @@ impl From<pan123::File> for LibraryFile {
     }
 }
 
+fn map_download_url_error(err: RequestError) -> AppError {
+    match err {
+        RequestError::Unauthorized => {
+            AppError::Unauthorized("download url source unauthorized".to_owned())
+        }
+        RequestError::NotFound(message) | RequestError::ShareCancelled(message) => {
+            AppError::NotFound(message)
+        }
+        err => AppError::ExternalService(format!("failed to get download url: {err}"), false),
+    }
+}
+
+#[async_trait::async_trait]
+impl DownloadUrlSource for PanLibraryGateway {
+    async fn get_download_url(&self, file_id: i64) -> AppResult<String> {
+        self.pan123
+            .get_download_url(file_id)
+            .await
+            .map_err(map_download_url_error)
+    }
+}
+
 #[async_trait::async_trait]
 impl LibraryGateway for PanLibraryGateway {
     async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
@@ -224,5 +248,106 @@ impl MetadataCatalog for TmdbMetadataGateway {
 
     async fn get_tv_detail(&self, id: u32) -> AppResult<Option<TvDetail>> {
         Ok(self.tmdb.get_tv_detail(id).await?.map(Into::into))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+    use crate::application::ports::DownloadUrlSource;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+
+    fn unique_cache_dir() -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("bigbrother-library-gateway-{nanos}"))
+            .display()
+            .to_string()
+    }
+
+    async fn gateway(server: &MockServer) -> PanLibraryGateway {
+        let client = pan123::Client::with_open_api_base(
+            &format!("{}/refresh", server.uri()),
+            "refresh-token",
+            &unique_cache_dir(),
+            server.uri().as_str(),
+        );
+        client
+            .set_token_for_test(
+                "test-token",
+                time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+            )
+            .await;
+        PanLibraryGateway::new(client)
+    }
+
+    #[test]
+    fn map_download_url_error_preserves_expected_variants() {
+        assert!(matches!(
+            map_download_url_error(RequestError::Unauthorized),
+            AppError::Unauthorized(_)
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::NotFound("missing".to_string())),
+            AppError::NotFound(message) if message == "missing"
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::ShareCancelled("cancelled".to_string())),
+            AppError::NotFound(message) if message == "cancelled"
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::TooManyRequests),
+            AppError::ExternalService(message, false) if message.contains("too many requests")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::ShareAuditNotPass),
+            AppError::ExternalService(message, false) if message.contains("share audit not pass")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::BadRequest("bad".to_string())),
+            AppError::ExternalService(message, false) if message.contains("bad")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::ConnectError("conn".to_string())),
+            AppError::ExternalService(message, false) if message.contains("conn")
+        ));
+        assert!(matches!(
+            map_download_url_error(RequestError::Timeout("timeout".to_string())),
+            AppError::ExternalService(message, false) if message.contains("timeout")
+        ));
+    }
+
+    #[tokio::test]
+    async fn get_download_url_maps_empty_url_error() {
+        let server = MockServer::start().await;
+        let gateway = gateway(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v1/file/download_info"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "downloadUrl": ""
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = DownloadUrlSource::get_download_url(&gateway, 99)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, AppError::ExternalService(message, false) if message.contains("empty download url"))
+        );
     }
 }
