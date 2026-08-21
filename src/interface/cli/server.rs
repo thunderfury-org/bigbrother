@@ -13,7 +13,7 @@ use crate::{
     error::{AppError, AppResult},
     infrastructure::{
         cache::Cache, event::publisher::EventBusPublisher, event_bus::EventBus,
-        fs::tokio_file_store::TokioFileStore, import::gateway::PanLibraryGateway,
+        fs::tokio_file_store::TokioFileStore,
     },
     interface::{
         http,
@@ -43,7 +43,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let event_bus = EventBus::new(db.clone());
     let bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());
     let cache = Cache::new(db.clone());
-    let pan123 = ctx.pan123();
+    let library_gateway = ctx.library_gateway();
 
     // Telegram
     let user_id = config
@@ -96,11 +96,11 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     // Media server
     let media_server = media::new_router(MediaServerContext::new(
         media_server_strm_path_prefix,
-        MediaDownloadUrlService::new(cache.clone(), PanLibraryGateway::new(pan123.clone())),
+        MediaDownloadUrlService::new(cache.clone(), library_gateway.clone()),
     ));
 
     let delete_media_service = DeleteMediaService::new(
-        PanLibraryGateway::new(pan123.clone()),
+        library_gateway.clone(),
         ImportLocalStore::new(
             TokioFileStore,
             library.remote_path.clone(),
@@ -115,7 +115,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         user_id,
         notify_service: EventBusPublisher::new(event_bus.clone()),
         sync_service: SyncStrmService::new(
-            PanLibraryGateway::new(pan123.clone()),
+            library_gateway.clone(),
             TokioFileStore,
             library.clone(),
         ),
@@ -151,7 +151,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 config.api_key.clone(),
                 config.advertise_base_url.clone(),
                 config.strm_path_prefix.clone(),
-                MediaDownloadUrlService::new(cache.clone(), PanLibraryGateway::new(pan123)),
+                MediaDownloadUrlService::new(cache.clone(), library_gateway),
             )
             .expect("validated emby proxy config"),
         )
