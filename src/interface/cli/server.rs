@@ -12,11 +12,8 @@ use crate::{
     },
     error::{AppError, AppResult},
     infrastructure::{
-        cache::{Cache, string_store::StringCacheStore},
-        event::publisher::EventBusPublisher,
-        event_bus::EventBus,
-        fs::tokio_file_store::TokioFileStore,
-        import::gateway::PanLibraryGateway,
+        cache::Cache, event::publisher::EventBusPublisher, event_bus::EventBus,
+        fs::tokio_file_store::TokioFileStore, import::gateway::PanLibraryGateway,
     },
     interface::{
         http,
@@ -99,10 +96,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     // Media server
     let media_server = media::new_router(MediaServerContext::new(
         media_server_strm_path_prefix,
-        MediaDownloadUrlService::new(
-            StringCacheStore::new(cache.clone()),
-            PanLibraryGateway::new(pan123.clone()),
-        ),
+        MediaDownloadUrlService::new(cache.clone(), PanLibraryGateway::new(pan123.clone())),
     ));
 
     let delete_media_service = DeleteMediaService::new(
@@ -157,10 +151,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 config.api_key.clone(),
                 config.advertise_base_url.clone(),
                 config.strm_path_prefix.clone(),
-                MediaDownloadUrlService::new(
-                    StringCacheStore::new(cache.clone()),
-                    PanLibraryGateway::new(pan123),
-                ),
+                MediaDownloadUrlService::new(cache.clone(), PanLibraryGateway::new(pan123)),
             )
             .expect("validated emby proxy config"),
         )

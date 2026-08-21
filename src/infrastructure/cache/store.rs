@@ -4,9 +4,11 @@ use chrono::Utc;
 use sea_orm::DatabaseConnection;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{error::AppResult, infrastructure::entity::cache};
+use crate::{
+    application::ports::DownloadUrlCache, error::AppResult, infrastructure::entity::cache,
+};
 
-/// Cache trait for storing and retrieving data with optional TTL
+/// JSON cache with optional TTL.
 #[derive(Clone)]
 pub struct Cache {
     db: DatabaseConnection,
@@ -54,6 +56,17 @@ impl Cache {
     }
 }
 
+#[async_trait::async_trait]
+impl DownloadUrlCache for Cache {
+    async fn get_download_url(&self, key: &str) -> AppResult<Option<String>> {
+        self.get(key).await
+    }
+
+    async fn set_download_url(&self, key: &str, url: &str, ttl: Duration) -> AppResult<()> {
+        self.set(key, &url, Some(ttl)).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,10 +94,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_trait_bounds() {
-        // This test verifies that Cache trait has correct Send + Sync bounds
+    async fn test_cache_bounds() {
         fn assert_send_sync<T: Send + Sync>() {}
+        fn assert_download_url_cache<T: DownloadUrlCache>() {}
         assert_send_sync::<Cache>();
+        assert_download_url_cache::<Cache>();
     }
 
     #[tokio::test]
