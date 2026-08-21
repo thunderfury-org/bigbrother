@@ -34,6 +34,7 @@ pub(super) struct CliContext {
     pan123: client::pan123::Client,
     pan189: client::pan189::Client,
     tmdb: client::tmdb::Client,
+    library_gateway: PanLibraryGateway,
 }
 
 impl CliContext {
@@ -53,6 +54,7 @@ impl CliContext {
             cache_dir: format!("{}/pan189", config.get_cache_dir()),
         });
         let tmdb = client::tmdb::Client::new(&config.get_tmdb_config().api_key);
+        let library_gateway = PanLibraryGateway::new(pan123.clone());
 
         Ok(Self {
             config,
@@ -61,6 +63,7 @@ impl CliContext {
             pan123,
             pan189,
             tmdb,
+            library_gateway,
         })
     }
 
@@ -90,6 +93,10 @@ impl CliContext {
         self.tmdb.clone()
     }
 
+    pub(super) fn library_gateway(&self) -> PanLibraryGateway {
+        self.library_gateway.clone()
+    }
+
     pub(super) fn share_resolver(&self) -> ShareResolverRuntimeService {
         ShareResolverRuntimeService::new(
             Pan123ShareService::new(self.pan123()),
@@ -100,7 +107,7 @@ impl CliContext {
 
     pub(super) async fn import_service(&self) -> AppResult<ImportService> {
         Ok(ImportService::new(
-            PanLibraryGateway::new(self.pan123()),
+            self.library_gateway(),
             ImportLocalStore::new(
                 TokioFileStore,
                 self.config.get_library_config().remote_path.clone(),

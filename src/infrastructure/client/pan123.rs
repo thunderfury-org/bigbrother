@@ -34,6 +34,7 @@ pub struct File {
     pub size: u64,
     #[serde(rename = "Etag", alias = "etag")]
     pub etag: String,
+    #[allow(dead_code)]
     #[serde(default, alias = "parentFileId")]
     pub parent_file_id: Option<i64>,
     /// 0: normal, 1: in trash
@@ -58,7 +59,7 @@ pub struct SearchPathFile {
 #[derive(Debug, Deserialize)]
 struct OpenApiFileListResponse {
     #[serde(default, rename = "lastFileId")]
-    _last_file_id: i64,
+    last_file_id: i64,
     #[serde(default, rename = "InfoList", alias = "fileList")]
     file_list: Vec<File>,
 }
@@ -201,16 +202,32 @@ impl Client {
 
     pub async fn list(&self, file_id: i64) -> RequestResult<Vec<File>> {
         let parent_file_id = file_id.to_string();
-        self.get::<OpenApiFileListResponse>(
-            self.build_api_url("/api/v2/file/list"),
-            Some(vec![
-                ("parentFileId", parent_file_id.as_str()),
-                ("limit", "100"),
-                ("lastFileId", "0"),
-            ]),
-        )
-        .await
-        .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
+        let mut last_file_id = 0i64;
+        let mut files = Vec::new();
+
+        loop {
+            let last_file_id_value = last_file_id.to_string();
+            let page = self
+                .get::<OpenApiFileListResponse>(
+                    self.build_api_url("/api/v2/file/list"),
+                    Some(vec![
+                        ("parentFileId", parent_file_id.as_str()),
+                        ("limit", "100"),
+                        ("lastFileId", last_file_id_value.as_str()),
+                    ]),
+                )
+                .await?;
+            let next_last_file_id = page.last_file_id;
+            let raw_empty = page.file_list.is_empty();
+            files.extend(page.file_list.into_iter().filter(|f| f.trashed == 0));
+
+            if next_last_file_id <= 0 || raw_empty || next_last_file_id == last_file_id {
+                break;
+            }
+            last_file_id = next_last_file_id;
+        }
+
+        Ok(files)
     }
 
     pub async fn list_dir_ids(&self, file_id: i64) -> RequestResult<HashMap<String, i64>> {
@@ -339,6 +356,7 @@ impl Client {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn mkdir_by_path(&self, folder_path: &str) -> RequestResult<i64> {
         if folder_path.is_empty() || folder_path == "/" {
             return Ok(0);
@@ -363,6 +381,7 @@ impl Client {
         Ok(current_file_id)
     }
 
+    #[allow(dead_code)]
     async fn get_dir_id(&self, parent_file_id: i64, folder_name: &str) -> RequestResult<i64> {
         self.list(parent_file_id)
             .await?
@@ -399,6 +418,7 @@ impl Client {
             .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
     }
 
+    #[allow(dead_code)]
     pub async fn get_file_id_by_path(&self, path: &str) -> RequestResult<Option<i64>> {
         if path.is_empty() {
             return Ok(None);
@@ -859,6 +879,74 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result.get("Season 1"), Some(&10));
+    }
+
+    #[tokio::test]
+    async fn list_paginates_until_last_file_id_is_terminal() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("parentFileId", "7"))
+            .and(query_param("lastFileId", "0"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "lastFileId": 50,
+                    "fileList": [file_json(10, "first", 1, 7)]
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("parentFileId", "7"))
+            .and(query_param("lastFileId", "50"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "lastFileId": -1,
+                    "fileList": [file_json(11, "second", 0, 7)]
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list(7).await.unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].file_name, "first");
+        assert_eq!(result[1].file_name, "second");
+    }
+
+    #[tokio::test]
+    async fn list_stops_when_last_file_id_is_omitted() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v2/file/list"))
+            .and(query_param("parentFileId", "8"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": {
+                    "fileList": [file_json(20, "only", 1, 8)]
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list(8).await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_id, 20);
     }
 
     #[tokio::test]
