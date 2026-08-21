@@ -8,6 +8,15 @@
     type ImportListItem,
     type ListImportsFilter,
   } from '../lib/api';
+  import {
+    failedEpisodes,
+    formatEpisodes,
+    formatErrorLine,
+    formatListTitle,
+    formatSeasonCell,
+    formatSeasonLabel,
+    succeededEpisodes,
+  } from '../lib/importDisplay';
 
   type FilterForm = {
     status: string;
@@ -118,19 +127,6 @@
     if (!ms) return '—';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  function formatSeason(item: ImportListItem): string {
-    if (item.season != null) {
-      const padded = String(item.season).padStart(2, '0');
-      return `S${padded}${item.episode_summary ? ' ' + item.episode_summary : ''}`;
-    }
-    return item.episode_summary ?? '';
-  }
-
-  function formatTitle(item: ImportListItem): string {
-    if (!item.title) return '—';
-    return item.year ? `${item.title} (${item.year})` : item.title;
   }
 
   function formatSize(bytes: number): string {
@@ -251,8 +247,15 @@
               onkeydown={(event) => onRowKey(event, item.id)}
             >
               <td><span class="status status-{item.status}">{statusLabel(item.status)}</span></td>
-              <td class="cell-title">{formatTitle(item)}</td>
-              <td class="mono">{formatSeason(item) || '—'}</td>
+              <td>
+                <div class="cell-stack">
+                  <span class="cell-title" title={formatListTitle(item)}>{formatListTitle(item)}</span>
+                  {#if item.error}
+                    <span class="cell-sub" title={formatErrorLine(item.error)}>{formatErrorLine(item.error)}</span>
+                  {/if}
+                </div>
+              </td>
+              <td class="mono">{formatSeasonCell(item) || '—'}</td>
               <td>{sourceLabel(item.source_kind)}</td>
               <td class="mono">{formatSize(item.total_size)}</td>
               <td class="mono">{formatCost(item.cost_ms)}</td>
@@ -326,15 +329,91 @@
                 <span class="detail-label">错误信息</span>
                 <div class="detail-error">
                   <span class="detail-error-kind">{detail.error.kind}</span>
-                  <p>{detail.error.message}</p>
+                  {#if detail.error.message}
+                    <p>{detail.error.message}</p>
+                  {/if}
                 </div>
               </div>
             {/if}
             {#if detail.summary}
-              <div>
-                <span class="detail-label">导入摘要</span>
-                <pre class="detail-json">{JSON.stringify(detail.summary, null, 2)}</pre>
-              </div>
+              {#each detail.summary.items as item, index (index)}
+                {#if item.type === 'movie'}
+                  <div>
+                    <span class="detail-label">电影</span>
+                    <span class="detail-value">{item.year ? `${item.title} (${item.year})` : item.title}</span>
+                  </div>
+                  <div>
+                    <span class="detail-label">本次结果</span>
+                    <span class="detail-value">{item.succeeded ? '入库成功' : '入库失败'}</span>
+                  </div>
+                  {#if item.size}
+                    <div>
+                      <span class="detail-label">大小</span>
+                      <span class="detail-value">{formatSize(item.size)}</span>
+                    </div>
+                  {/if}
+                  {#if item.cost_ms}
+                    <div>
+                      <span class="detail-label">耗时</span>
+                      <span class="detail-value">{formatCost(item.cost_ms)}</span>
+                    </div>
+                  {/if}
+                {:else if item.type === 'tv'}
+                  <div>
+                    <span class="detail-label">剧集</span>
+                    <span class="detail-value">{item.year ? `${item.name} (${item.year})` : item.name} {formatSeasonLabel(item.season)}</span>
+                  </div>
+                  {#if succeededEpisodes(item).length > 0}
+                    <div>
+                      <span class="detail-label">本次入库</span>
+                      <span class="detail-value">{formatEpisodes(succeededEpisodes(item))}</span>
+                    </div>
+                  {/if}
+                  {#if failedEpisodes(item).length > 0}
+                    <div>
+                      <span class="detail-label">本次失败</span>
+                      <span class="detail-value">{formatEpisodes(failedEpisodes(item))}</span>
+                    </div>
+                  {/if}
+                  {#if item.missing_episodes.length > 0}
+                    <div>
+                      <span class="detail-label">库内缺失</span>
+                      <span class="detail-value">相对整季还缺 {formatEpisodes(item.missing_episodes)}</span>
+                    </div>
+                  {/if}
+                  {#if item.total_size}
+                    <div>
+                      <span class="detail-label">大小</span>
+                      <span class="detail-value">{formatSize(item.total_size)}</span>
+                    </div>
+                  {/if}
+                  {#if item.cost_ms}
+                    <div>
+                      <span class="detail-label">耗时</span>
+                      <span class="detail-value">{formatCost(item.cost_ms)}</span>
+                    </div>
+                  {/if}
+                {:else if item.type === 'skipped' && detail.summary.skipped_files.length === 0 && item.files.length > 0}
+                  <div>
+                    <span class="detail-label">跳过文件</span>
+                    <div class="detail-value">
+                      {#each item.files as file}
+                        <div class="mono">{file}</div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              {/each}
+              {#if detail.summary.skipped_files.length > 0}
+                <div>
+                  <span class="detail-label">跳过文件</span>
+                  <div class="detail-value">
+                    {#each detail.summary.skipped_files as file}
+                      <div class="mono">{file}</div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             {/if}
           </div>
         {/if}

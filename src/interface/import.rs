@@ -27,7 +27,7 @@ pub(crate) fn source_for_telegram_document(file_name: &str) -> ImportSource {
     }
 }
 
-fn format_episodes(episodes: &[u32]) -> String {
+pub(crate) fn format_episodes(episodes: &[u32]) -> String {
     if episodes.is_empty() {
         return String::new();
     }

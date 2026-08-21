@@ -22,12 +22,15 @@ use crate::{
         },
         recorded_import::RecordedImportService,
     },
-    domain::import_record::{ImportSourceKind, ImportStatus, RecordSummary, SummaryItem},
+    domain::import_record::{
+        EpisodeOutcome, ImportSourceKind, ImportStatus, RecordSummary, SummaryItem,
+    },
     error::AppError,
     infrastructure::repo::{
         import_record::SeaOrmImportRecordRepository, subscription::SeaOrmSubscriptionRepository,
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
+    interface::import::format_episodes,
     interface::runtime::{IdentifyService, ImportService, SubscriptionService},
 };
 
@@ -311,6 +314,8 @@ struct ListItemJson {
     cost_ms: u64,
     created_at: DateTime<Utc>,
     finished_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<ImportRecordErrorJson>,
 }
 
 #[derive(Debug, Serialize)]
@@ -345,11 +350,60 @@ fn list_to_json(page: ImportRecordPage) -> ImportRecordPageJson {
     }
 }
 
-fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
-    let summary = view
-        .summary_json
+const LIST_ERROR_MESSAGE_MAX_CHARS: usize = 160;
+
+fn parse_summary(view: &ImportRecordView) -> Option<RecordSummary> {
+    view.summary_json
         .as_deref()
-        .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
+        .and_then(|raw| serde_json::from_str(raw).ok())
+}
+
+fn tv_episode_summary(episodes: &[EpisodeOutcome]) -> Option<String> {
+    let succeeded: Vec<u32> = episodes
+        .iter()
+        .filter(|episode| episode.succeeded)
+        .map(|episode| episode.episode)
+        .collect();
+    let failed: Vec<u32> = episodes
+        .iter()
+        .filter(|episode| !episode.succeeded)
+        .map(|episode| episode.episode)
+        .collect();
+    let succeeded_text = format_episodes(&succeeded);
+    let failed_text = format_episodes(&failed);
+    match (succeeded_text.is_empty(), failed_text.is_empty()) {
+        (true, true) => None,
+        (false, true) => Some(succeeded_text),
+        (true, false) => Some(format!("{failed_text} 失败")),
+        (false, false) => Some(format!("{succeeded_text} / {failed_text} 失败")),
+    }
+}
+
+fn excerpt_error_message(message: &str) -> String {
+    let first_line = message.lines().next().unwrap_or("").trim();
+    if first_line.starts_with('<') {
+        return String::new();
+    }
+    if first_line.chars().count() <= LIST_ERROR_MESSAGE_MAX_CHARS {
+        first_line.to_owned()
+    } else {
+        let truncated: String = first_line
+            .chars()
+            .take(LIST_ERROR_MESSAGE_MAX_CHARS)
+            .collect();
+        format!("{truncated}...")
+    }
+}
+
+fn list_error(view: &ImportRecordView) -> Option<ImportRecordErrorJson> {
+    Some(ImportRecordErrorJson {
+        kind: view.error_kind.clone()?,
+        message: excerpt_error_message(view.error_message.as_deref().unwrap_or("")),
+    })
+}
+
+fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
+    let summary = parse_summary(view);
 
     let (title, year, season, episode_summary) = match summary
         .as_ref()
@@ -361,14 +415,13 @@ fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
             year,
             season,
             episodes,
-            missing_episodes,
             ..
-        }) => {
-            let total = episodes.len() + missing_episodes.len();
-            let succeeded = episodes.iter().filter(|e| e.succeeded).count();
-            let summary_str = format!("{succeeded}/{total}");
-            (name.clone(), year.clone(), Some(*season), Some(summary_str))
-        }
+        }) => (
+            name.clone(),
+            year.clone(),
+            Some(*season),
+            tv_episode_summary(episodes),
+        ),
         Some(SummaryItem::Skipped { .. }) | None => (String::new(), String::new(), None, None),
     };
 
@@ -388,14 +441,12 @@ fn list_item_to_json(view: &ImportRecordView) -> ListItemJson {
         cost_ms,
         created_at: view.created_at,
         finished_at: view.finished_at,
+        error: list_error(view),
     }
 }
 
 fn detail_to_json(view: &ImportRecordView) -> DetailJson {
-    let summary = view
-        .summary_json
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<RecordSummary>(raw).ok());
+    let summary = parse_summary(view);
     let error = view.error_kind.as_ref().map(|kind| ImportRecordErrorJson {
         kind: kind.clone(),
         message: view.error_message.clone().unwrap_or_default(),
@@ -563,6 +614,69 @@ mod tests {
         id
     }
 
+    async fn seed_finalized(
+        repo: &SeaOrmImportRecordRepository,
+        seconds: i64,
+        status: ImportStatus,
+        summary_json: String,
+        error: Option<(&str, &str)>,
+    ) -> i64 {
+        let id = repo
+            .create(&ImportRecordCreate {
+                source_kind: ImportSourceKind::Pan115,
+                source: format!("https://115cdn.com/s/{seconds}"),
+                created_at: Utc.timestamp_opt(seconds, 0).unwrap(),
+            })
+            .await
+            .unwrap();
+        repo.finalize(
+            id,
+            &ImportRecordFinalize {
+                status,
+                summary_json,
+                error_kind: error.map(|e| e.0.to_owned()),
+                error_message: error.map(|e| e.1.to_owned()),
+                finished_at: Utc.timestamp_opt(seconds + 100, 0).unwrap(),
+            },
+        )
+        .await
+        .unwrap();
+        id
+    }
+
+    fn episode(episode: u32, succeeded: bool) -> EpisodeOutcome {
+        EpisodeOutcome { episode, succeeded }
+    }
+
+    fn tv_summary(
+        name: &str,
+        episodes: Vec<EpisodeOutcome>,
+        missing_episodes: Vec<u32>,
+    ) -> RecordSummary {
+        RecordSummary {
+            items: vec![SummaryItem::Tv {
+                name: name.into(),
+                year: "2025".into(),
+                season: 1,
+                episodes,
+                missing_episodes,
+                max_episode_number: 15,
+                number_of_episodes: 20,
+                total_size: 0,
+                cost_ms: 106,
+            }],
+            total_size: 0,
+            total_cost_ms: 106,
+            skipped_files: vec![],
+        }
+    }
+
+    async fn first_list_item(repo: SeaOrmImportRecordRepository) -> serde_json::Value {
+        let router = router_with(repo).await;
+        let response = router.oneshot(request("/api/imports")).await.unwrap();
+        json_body(response).await["items"][0].clone()
+    }
+
     async fn body_string(response: Response) -> String {
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
@@ -696,6 +810,160 @@ mod tests {
         let body = json_body(response).await;
         assert_eq!(body["error"]["kind"], "network");
         assert_eq!(body["error"]["message"], "upstream timeout");
+    }
+
+    #[tokio::test]
+    async fn list_tv_episode_summary_uses_this_run_not_missing_episodes() {
+        let repo = fresh_repo().await;
+        seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Succeeded,
+            serde_json::to_string(&tv_summary(
+                "入青云",
+                vec![episode(15, true)],
+                (1..14).collect(),
+            ))
+            .unwrap(),
+            None,
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        assert_eq!(item["title"], "入青云");
+        assert_eq!(item["season"], 1);
+        assert_eq!(item["episode_summary"], "E15");
+        assert!(item["error"].is_null());
+        let summary = item["episode_summary"].as_str().unwrap();
+        assert!(!summary.contains('/'), "{summary}");
+        assert!(!summary.contains("1/"), "{summary}");
+    }
+
+    #[tokio::test]
+    async fn list_empty_tv_stays_succeeded_without_zero_of_n() {
+        let repo = fresh_repo().await;
+        seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Succeeded,
+            serde_json::to_string(&tv_summary("欢迎回我的频道", vec![], (1..20).collect()))
+                .unwrap(),
+            None,
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        assert_eq!(item["status"], "succeeded");
+        assert_eq!(item["title"], "欢迎回我的频道");
+        assert_eq!(item["season"], 1);
+        assert!(item["episode_summary"].is_null());
+        assert!(item["error"].is_null());
+    }
+
+    #[tokio::test]
+    async fn list_failed_row_with_empty_summary_includes_error_excerpt() {
+        let repo = fresh_repo().await;
+        seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Failed,
+            "{}".into(),
+            Some((
+                "internal",
+                "internal error: error, api error, code: 200020, message: OpenAPI only",
+            )),
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        assert_eq!(item["title"], "");
+        assert_eq!(item["error"]["kind"], "internal");
+        assert_eq!(
+            item["error"]["message"],
+            "internal error: error, api error, code: 200020, message: OpenAPI only"
+        );
+        assert!(item["summary"].is_null());
+    }
+
+    #[tokio::test]
+    async fn list_failed_tv_episodes_keep_title_and_mark_failures() {
+        let repo = fresh_repo().await;
+        seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Failed,
+            serde_json::to_string(&tv_summary(
+                "大唐迷雾",
+                (1..=14).map(|n| episode(n, false)).collect(),
+                vec![],
+            ))
+            .unwrap(),
+            None,
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        assert_eq!(item["title"], "大唐迷雾");
+        assert_eq!(item["episode_summary"], "E01-E14 失败");
+        assert!(item["error"].is_null());
+    }
+
+    #[tokio::test]
+    async fn list_error_excerpt_drops_html_and_truncates() {
+        let repo = fresh_repo().await;
+        let long = "x".repeat(200);
+        seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Failed,
+            "{}".into(),
+            Some(("internal", &format!("{long}\nsecond line"))),
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        let message = item["error"]["message"].as_str().unwrap();
+        assert_eq!(message.chars().count(), 163);
+        assert!(message.ends_with("..."));
+        assert!(!message.contains("second line"));
+
+        let repo = fresh_repo().await;
+        seed_finalized(
+            &repo,
+            1_700_000_100,
+            ImportStatus::Failed,
+            "{}".into(),
+            Some(("internal", "<!DOCTYPE html>\n<html>")),
+        )
+        .await;
+        let item = first_list_item(repo).await;
+        assert_eq!(item["error"]["kind"], "internal");
+        assert_eq!(item["error"]["message"], "");
+    }
+
+    #[tokio::test]
+    async fn get_detail_does_not_truncate_error_message() {
+        let repo = fresh_repo().await;
+        let long = format!("{}\nsecond line", "x".repeat(200));
+        let id = seed_finalized(
+            &repo,
+            1_700_000_000,
+            ImportStatus::Failed,
+            "{}".into(),
+            Some(("internal", &long)),
+        )
+        .await;
+        let router = router_with(repo).await;
+        let response = router
+            .oneshot(request(&format!("/api/imports/{id}")))
+            .await
+            .unwrap();
+        let body = json_body(response).await;
+        assert_eq!(body["error"]["message"], long);
+    }
+
+    #[test]
+    fn tv_episode_summary_formats_mixed_outcomes() {
+        assert_eq!(
+            super::tv_episode_summary(&[episode(15, true), episode(16, false)]),
+            Some("E15 / E16 失败".into())
+        );
+        assert_eq!(super::tv_episode_summary(&[]), None);
     }
 
     #[tokio::test]
