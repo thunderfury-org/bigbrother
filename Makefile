@@ -27,6 +27,10 @@ test:
 changelog:
 	git cliff --bump --unreleased
 
-# Execute a release. Usage: make release VERSION=0.2.0
+# Prepare a release PR. Usage: make release VERSION=0.2.0
 release:
 	tools/release.sh $(VERSION)
+
+# After the release PR is merged. Usage: make release-tag VERSION=0.2.0
+release-tag:
+	tools/release.sh --tag $(VERSION)
