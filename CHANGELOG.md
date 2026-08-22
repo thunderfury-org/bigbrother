@@ -1,4 +1,14 @@
 # Changelog
+## [0.3.0] - 2026-08-22
+### Bug Fixes
+
+- (app) paginate pan123 share file listing (#157)
+- (app) cut releases through a PR before tagging (#154)
+
+### Features
+
+- (app) transfer TV episodes concurrently within a season (#156)
+- (app) search pan1 community threads from the console (#155)
 ## [0.2.0] - 2026-08-21
 ### Bug Fixes
 
@@ -7,6 +17,10 @@
 - (app) upgrade action-gh-release to v3 for Node 24 (#133)
 - (app) stop automatic docker builds on main (#134)
 - (app) restrict docker latest tag to stable version tags only (#128)
+
+### Chores
+
+- (app) release v0.2.0 (#153)
 
 ### Documentation
 
