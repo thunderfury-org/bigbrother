@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod client;
+pub mod community;
 pub mod entity;
 mod error_conversions;
 pub mod event;

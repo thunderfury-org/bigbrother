@@ -1,7 +1,11 @@
+pub mod community;
 pub mod import;
 pub mod notify;
 pub mod share;
 
+pub use community::{
+    CommunityCatalog, CommunityCatalogHandle, CommunityThread, CommunityThreadShares,
+};
 pub use import::{
     LibraryGateway, LibraryGatewayHandle, MetadataCatalog, MetadataCatalogHandle, TitleExtractor,
     TitleExtractorHandle,

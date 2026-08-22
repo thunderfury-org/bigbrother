@@ -1,3 +1,4 @@
+pub mod community;
 pub mod delete_media;
 pub mod emby_proxy;
 pub mod file_index;

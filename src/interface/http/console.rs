@@ -17,8 +17,9 @@ use crate::{
         file_index::FileIndexService,
         file_index_import::{FileIndexImportService, ImportFileResult},
         ports::{
-            FileLocationRecord, FileSearchRecord, ImportRecordFilter, ImportRecordPage,
-            ImportRecordPaging, ImportRecordRepository, ImportRecordView,
+            CommunityCatalogHandle, FileLocationRecord, FileSearchRecord, ImportRecordFilter,
+            ImportRecordPage, ImportRecordPaging, ImportRecordRepository, ImportRecordView,
+            ShareResolverHandle,
         },
         recorded_import::RecordedImportService,
     },
@@ -59,9 +60,12 @@ pub(crate) struct ConsoleContext {
     pub(super) subscription_service: Option<Arc<SubscriptionService>>,
     pub(super) subscription_repo: Option<Arc<SeaOrmSubscriptionRepository>>,
     pub(super) delete_media_service: Option<Arc<DeleteMediaService>>,
+    pub(super) community_catalog: Option<CommunityCatalogHandle>,
+    pub(super) share_resolver: Option<ShareResolverHandle>,
 }
 
 impl ConsoleContext {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         repo: SeaOrmImportRecordRepository,
         file_index_service: FileIndexService,
@@ -70,6 +74,8 @@ impl ConsoleContext {
         subscription_service: SubscriptionService,
         subscription_repo: SeaOrmSubscriptionRepository,
         delete_media_service: DeleteMediaService,
+        community_catalog: CommunityCatalogHandle,
+        share_resolver: ShareResolverHandle,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -82,6 +88,8 @@ impl ConsoleContext {
             subscription_service: Some(Arc::new(subscription_service)),
             subscription_repo: Some(Arc::new(subscription_repo)),
             delete_media_service: Some(Arc::new(delete_media_service)),
+            community_catalog: Some(community_catalog),
+            share_resolver: Some(share_resolver),
         }
     }
 
@@ -99,6 +107,8 @@ impl ConsoleContext {
             subscription_service: None,
             subscription_repo: None,
             delete_media_service: None,
+            community_catalog: None,
+            share_resolver: None,
         }
     }
 
@@ -118,6 +128,8 @@ impl ConsoleContext {
             subscription_service: Some(Arc::new(subscription_service)),
             subscription_repo: Some(Arc::new(subscription_repo)),
             delete_media_service: None,
+            community_catalog: None,
+            share_resolver: None,
         }
     }
 
@@ -136,7 +148,20 @@ impl ConsoleContext {
             subscription_service: None,
             subscription_repo: None,
             delete_media_service: Some(Arc::new(delete_media_service)),
+            community_catalog: None,
+            share_resolver: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_catalog(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService,
+        community_catalog: CommunityCatalogHandle,
+    ) -> Self {
+        let mut ctx = Self::new_without_import(repo, file_index_service);
+        ctx.community_catalog = Some(community_catalog);
+        ctx
     }
 }
 
@@ -148,6 +173,14 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
         .route("/api/files/import", post(import_files))
+        .route(
+            "/api/community/threads",
+            get(super::community::search_threads),
+        )
+        .route(
+            "/api/community/threads/import",
+            post(super::community::import_threads),
+        )
         .route(
             "/api/subscriptions",
             get(sub::list_subscriptions).post(sub::create_subscription),
@@ -530,6 +563,7 @@ pub(super) fn app_error_to_response(err: AppError) -> Response {
     let status = match &err {
         AppError::InvalidParameter(_) => StatusCode::BAD_REQUEST,
         AppError::NotFound(_) => StatusCode::NOT_FOUND,
+        AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, err.to_string()).into_response()

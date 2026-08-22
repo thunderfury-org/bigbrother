@@ -6,6 +6,12 @@ pan123:
   api_address: "https://api.oplist.org/123cloud/renewapi"
   refresh_token: ""
 
+pan1:
+  # 123分享社区（pan1.me）登录 Cookie，用于搜索帖子并在导入时解锁隐藏分享链接
+  base_url: "https://pan1.me"
+  cookie: ""
+  reply_message: "感谢分享,太棒了！"
+
 pan189:
   # 天翼云盘账号密码；用于自动获取 PC 客户端 session
   username: ""
