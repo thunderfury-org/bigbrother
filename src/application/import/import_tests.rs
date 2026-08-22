@@ -1,12 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use super::identify::MediaIdentifyService;
@@ -72,6 +72,11 @@ struct FakeLibraryState {
     fail_mkdir_path: bool,
     fail_mkdir_dir: bool,
     md5_upload_returns_none: bool,
+    upload_none_for: HashSet<String>,
+    fail_uploads_for: HashSet<String>,
+    upload_delay: Duration,
+    current_in_flight: usize,
+    max_in_flight: usize,
 }
 
 #[derive(Clone, Default)]
@@ -173,10 +178,35 @@ impl LibraryGateway for FakeLibraryGateway {
         hash: &FileHash,
         size: u64,
     ) -> AppResult<Option<i64>> {
-        if matches!(hash, FileHash::Md5(_)) && self.state.lock().unwrap().md5_upload_returns_none {
-            return Ok(None);
+        let (delay, fail) = {
+            let mut state = self.state.lock().unwrap();
+            if matches!(hash, FileHash::Md5(_)) && state.md5_upload_returns_none {
+                return Ok(None);
+            }
+            if state
+                .upload_none_for
+                .iter()
+                .any(|needle| file_name.contains(needle))
+            {
+                return Ok(None);
+            }
+            let fail = state
+                .fail_uploads_for
+                .iter()
+                .any(|needle| file_name.contains(needle));
+            state.current_in_flight += 1;
+            state.max_in_flight = state.max_in_flight.max(state.current_in_flight);
+            (state.upload_delay, fail)
+        };
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
         }
-        self.state.lock().unwrap().fast_uploads.push((
+        let mut state = self.state.lock().unwrap();
+        state.current_in_flight -= 1;
+        if fail {
+            return Err(AppError::ExternalService("upload failed".into(), false));
+        }
+        state.fast_uploads.push((
             parent_dir_id,
             file_name.to_string(),
             hash.hash_value().to_string(),
@@ -505,8 +535,10 @@ async fn import_from_raw_files_groups_tv_episodes_and_writes_season_strms() {
         vec!["/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string()]
     );
     assert_eq!(state.mkdir_dirs, vec![(1, "Season 01".to_string())]);
+    let mut uploads = state.fast_uploads.clone();
+    uploads.sort_by(|left, right| left.1.cmp(&right.1));
     assert_eq!(
-        state.fast_uploads,
+        uploads,
         vec![
             (
                 10,
@@ -534,6 +566,184 @@ async fn import_from_raw_files_groups_tv_episodes_and_writes_season_strms() {
     assert_eq!(
         ep2,
         "http://localhost/d/remote/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking Bad.2008.S01E02.1080p.mkv?file_id=42"
+    );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_raw_files_transfers_tv_episodes_concurrently() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    gateway.state.lock().unwrap().upload_delay = Duration::from_millis(50);
+    let service = TestImportService::new(
+        gateway.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let imported = service
+        .import_from_raw_files(vec![
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                1001,
+            ),
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                1002,
+            ),
+        ])
+        .await
+        .unwrap();
+
+    let ImportedMedia::Tv {
+        episodes,
+        has_failed,
+        ..
+    } = imported
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("expected one tv import result"))
+    else {
+        panic!("expected tv import result");
+    };
+    assert_eq!(episodes, vec![1, 2]);
+    assert!(!has_failed);
+
+    let state = gateway.state.lock().unwrap();
+    assert!(
+        state.max_in_flight >= 2,
+        "expected overlapping episode uploads, max_in_flight={}",
+        state.max_in_flight
+    );
+    drop(state);
+
+    let season_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
+    assert!(
+        season_dir
+            .join("Breaking Bad.2008.S01E01.1080p.strm")
+            .exists()
+    );
+    assert!(
+        season_dir
+            .join("Breaking Bad.2008.S01E02.1080p.strm")
+            .exists()
+    );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_raw_files_marks_failed_tv_episode_when_upload_returns_none() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    gateway
+        .state
+        .lock()
+        .unwrap()
+        .upload_none_for
+        .insert("S01E02".to_string());
+    let service = TestImportService::new(
+        gateway.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let imported = service
+        .import_from_raw_files(vec![
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                1001,
+            ),
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                1002,
+            ),
+        ])
+        .await
+        .unwrap();
+
+    let ImportedMedia::Tv {
+        episodes,
+        failed_episodes,
+        has_failed,
+        total_size,
+        ..
+    } = imported
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("expected one tv import result"))
+    else {
+        panic!("expected tv import result");
+    };
+    assert_eq!(episodes, vec![1]);
+    assert_eq!(failed_episodes, vec![2]);
+    assert!(has_failed);
+    assert_eq!(total_size, 1001);
+
+    let season_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
+    assert!(
+        season_dir
+            .join("Breaking Bad.2008.S01E01.1080p.strm")
+            .exists()
+    );
+    assert!(
+        !season_dir
+            .join("Breaking Bad.2008.S01E02.1080p.strm")
+            .exists()
+    );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_from_raw_files_finishes_in_flight_tv_episode_when_another_upload_fails() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    {
+        let mut state = gateway.state.lock().unwrap();
+        state.upload_delay = Duration::from_millis(50);
+        state.fail_uploads_for.insert("S01E01".to_string());
+    }
+    let service = TestImportService::new(
+        gateway.clone(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+    );
+
+    let error = service
+        .import_from_raw_files(vec![
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E01.1080p.mkv",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                1001,
+            ),
+            raw_file(
+                "Breaking Bad (2008) {tmdb-1396}/Season 01/Breaking.Bad.S01E02.1080p.mkv",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                1002,
+            ),
+        ])
+        .await
+        .unwrap_err();
+    assert!(matches!(error, AppError::ExternalService(_, _)));
+    assert!(error.to_string().contains("upload failed"));
+
+    let season_dir = local_dir.join("电视剧/欧美/Breaking Bad (2008) {tmdb-1396}/Season 01");
+    assert!(
+        !season_dir
+            .join("Breaking Bad.2008.S01E01.1080p.strm")
+            .exists()
+    );
+    assert!(
+        season_dir
+            .join("Breaking Bad.2008.S01E02.1080p.strm")
+            .exists(),
+        "in-flight episode should finish after a sibling upload error"
     );
 
     let _ = fs::remove_dir_all(local_dir);
