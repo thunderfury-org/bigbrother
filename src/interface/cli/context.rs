@@ -8,6 +8,7 @@ use crate::{
     infrastructure::{
         cache::Cache,
         client,
+        community::Pan1CommunityCatalog,
         fs::tokio_file_store::TokioFileStore,
         import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
         repo::{
@@ -33,6 +34,7 @@ pub(super) struct CliContext {
     db: OnceCell<DatabaseConnection>,
     pan115: client::pan115::Client,
     pan123: client::pan123::Client,
+    pan1: client::pan1::Client,
     pan189: client::pan189::Client,
     tmdb: client::tmdb::Client,
     library_gateway: PanLibraryGateway,
@@ -49,6 +51,12 @@ impl CliContext {
             &config.get_pan123_config().refresh_token,
             &format!("{}/pan123", config.get_cache_dir()),
         );
+        let pan1_config = config.get_pan1_config();
+        let pan1 = client::pan1::Client::new(
+            &pan1_config.base_url,
+            &pan1_config.cookie,
+            &pan1_config.reply_message,
+        );
         let pan189 = client::pan189::Client::new(client::pan189::AuthConfig {
             username: config.get_pan189_config().username.clone(),
             password: config.get_pan189_config().password.clone(),
@@ -62,6 +70,7 @@ impl CliContext {
             db: OnceCell::new(),
             pan115,
             pan123,
+            pan1,
             pan189,
             tmdb,
             library_gateway,
@@ -84,6 +93,14 @@ impl CliContext {
 
     pub(super) fn pan123(&self) -> client::pan123::Client {
         self.pan123.clone()
+    }
+
+    pub(super) fn pan1(&self) -> client::pan1::Client {
+        self.pan1.clone()
+    }
+
+    pub(super) fn community_catalog(&self) -> Pan1CommunityCatalog {
+        Pan1CommunityCatalog::new(self.pan1())
     }
 
     pub(super) fn pan189(&self) -> client::pan189::Client {

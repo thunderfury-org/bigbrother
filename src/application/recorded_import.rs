@@ -91,7 +91,7 @@ fn classify_error(err: &AppError) -> &'static str {
     }
 }
 
-fn import_outcome_from(media: &ImportedMedia) -> ImportOutcome {
+pub(crate) fn import_outcome_from(media: &ImportedMedia) -> ImportOutcome {
     match media {
         ImportedMedia::Movie {
             title,

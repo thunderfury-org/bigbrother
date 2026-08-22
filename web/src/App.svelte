@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Router, Route, Link } from 'svelte-routing';
   import Inbox from '@lucide/svelte/icons/inbox';
-  import FolderSearch from '@lucide/svelte/icons/folder-search';
+  import Search from '@lucide/svelte/icons/search';
   import FolderTree from '@lucide/svelte/icons/folder-tree';
   import ListPlus from '@lucide/svelte/icons/list-plus';
   import ImportsPage from './routes/ImportsPage.svelte';
@@ -31,8 +31,8 @@
               <span>导入历史</span>
             </Link>
             <Link to="/files" class="nav-link">
-              <FolderSearch size={15} />
-              <span>文件索引</span>
+              <Search size={15} />
+              <span>搜索</span>
             </Link>
             <Link to="/media" class="nav-link">
               <FolderTree size={15} />

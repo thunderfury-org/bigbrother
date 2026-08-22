@@ -188,6 +188,59 @@ textarea {
   pointer-events: none;
 }
 
+.tabs {
+  display: inline-flex;
+  margin: 4px 0 12px;
+  border: 1px solid var(--color-bb-line);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-bb-surface);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid var(--color-bb-line);
+  background: transparent;
+  color: var(--color-bb-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:last-child {
+  border-right: 0;
+}
+
+.tab:hover:not(.is-active) {
+  color: var(--color-bb-ink);
+  background: var(--color-bb-panel);
+}
+
+.tab.is-active {
+  background: var(--color-bb-ink);
+  color: var(--color-bb-paper);
+}
+
+.tab-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+a.cell-title {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.cell-title:hover {
+  color: var(--color-bb-mark);
+}
+
 /* ── Buttons ── */
 .btn {
   display: inline-flex;
@@ -697,6 +750,20 @@ textarea {
 .result-row:last-child,
 .rescan-item:last-child {
   border-bottom: 0;
+}
+
+.import-summary {
+  padding: 8px 0 16px;
+  border-bottom: 1px solid var(--color-bb-line);
+}
+
+.import-summary:last-child {
+  border-bottom: 0;
+}
+
+.import-summary .detail-grid {
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .page-actions {

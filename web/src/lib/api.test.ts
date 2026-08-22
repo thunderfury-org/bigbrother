@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ApiError, deleteMediaDirs, getImport, listImports, listMediaDirs, searchFiles, searchMediaDirs } from './api';
+import { ApiError, deleteMediaDirs, getImport, importCommunityThreads, listImports, listMediaDirs, searchCommunityThreads, searchFiles, searchMediaDirs } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -98,6 +98,31 @@ describe('searchFiles', () => {
 
     const [url] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/files?q=movie+2024+BD&limit=100');
+  });
+});
+
+describe('searchCommunityThreads', () => {
+  test('serializes keyword and limit', async () => {
+    const fetchMock = stubFetchOnce({ items: [] });
+
+    await searchCommunityThreads('黑镜', 50);
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/community/threads?q=%E9%BB%91%E9%95%9C&limit=50');
+  });
+});
+
+describe('importCommunityThreads', () => {
+  test('posts selected thread ids', async () => {
+    const fetchMock = stubFetchOnce({ results: [] });
+
+    await importCommunityThreads([50570, 28311]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/community/threads/import');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(String(init?.body))).toEqual({ tids: [50570, 28311] });
   });
 });
 

@@ -170,6 +170,58 @@ export async function importFiles(ids: number[]): Promise<ImportFilesResponse> {
   return (await res.json()) as ImportFilesResponse;
 }
 
+
+export interface CommunityThreadPage {
+  items: CommunityThread[];
+}
+
+export interface CommunityThread {
+  tid: number;
+  title: string;
+  tags: string[];
+  author: string;
+  posted_at: string;
+  comments: number;
+  likes: number;
+  url: string;
+}
+
+export async function searchCommunityThreads(keyword: string, limit: number): Promise<CommunityThreadPage> {
+  const params = new URLSearchParams();
+  if (keyword) params.set('q', keyword);
+  params.set('limit', String(limit));
+  return fetchJson<CommunityThreadPage>(`/api/community/threads?${params.toString()}`);
+}
+
+export interface CommunityImportResult {
+  tid: number;
+  thread_title: string;
+  share_url?: string;
+  status: string;
+  title?: string;
+  year?: string;
+  size?: number;
+  summary?: ImportSummary;
+  error?: string;
+}
+
+export interface CommunityImportResponse {
+  results: CommunityImportResult[];
+}
+
+export async function importCommunityThreads(tids: number[]): Promise<CommunityImportResponse> {
+  const res = await fetch('/api/community/threads/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tids }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  return (await res.json()) as CommunityImportResponse;
+}
+
 // ── Subscriptions ──
 
 export interface SubscriptionItem {

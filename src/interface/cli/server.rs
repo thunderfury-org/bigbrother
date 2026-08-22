@@ -175,6 +175,8 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 subscription_service,
                 subscription_repo,
                 delete_media_service,
+                std::sync::Arc::new(ctx.community_catalog()),
+                std::sync::Arc::new(ctx.share_resolver()),
             ))),
         )
     } else {

@@ -133,6 +133,56 @@ pub async fn post_response<U: IntoUrl, P: Serialize>(
         .map_err(|e| RequestError::Other(format!("http post failed, {}", e)))
 }
 
+pub async fn get_text<U: IntoUrl>(
+    url: U,
+    headers: Option<Vec<(&str, &str)>>,
+) -> RequestResult<String> {
+    let mut request = HTTP_CLIENT.get(url);
+    request = request.header("user-agent", UA_VALUE);
+    request = request.header("accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8");
+    if let Some(h) = headers {
+        for (k, v) in h {
+            request = request.header(k, v);
+        }
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|e| RequestError::Other(format!("http get failed, {}", e)))?;
+    read_success_text(response).await
+}
+
+pub async fn post_form<U: IntoUrl>(
+    url: U,
+    form: &[(&str, &str)],
+    headers: Option<Vec<(&str, &str)>>,
+) -> RequestResult<String> {
+    let mut request = HTTP_CLIENT.post(url).form(form);
+    request = request.header("user-agent", UA_VALUE);
+    request = request.header("accept", "*/*");
+    if let Some(h) = headers {
+        for (k, v) in h {
+            request = request.header(k, v);
+        }
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|e| RequestError::Other(format!("http post failed, {}", e)))?;
+    read_success_text(response).await
+}
+
+async fn read_success_text(response: reqwest::Response) -> RequestResult<String> {
+    let status = response.status();
+    let url = response.url().to_string();
+    let payload = response.text().await?;
+    if status.is_success() {
+        Ok(payload)
+    } else {
+        Err(status_to_error(status, &url, &payload))
+    }
+}
+
 async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> RequestResult<T> {
     let status = response.status();
     let url = response.url().to_string();
@@ -147,19 +197,22 @@ async fn process_response<T: DeserializeOwned>(response: reqwest::Response) -> R
         };
     }
 
+    Err(status_to_error(status, &url, &payload))
+}
+
+fn status_to_error(status: StatusCode, url: &str, payload: &str) -> RequestError {
     match status {
-        StatusCode::UNAUTHORIZED => Err(RequestError::Unauthorized),
-        StatusCode::NOT_FOUND => Err(RequestError::NotFound(format!(
-            "resource not found, url: {}",
-            url
-        ))),
-        StatusCode::TOO_MANY_REQUESTS => Err(RequestError::TooManyRequests),
-        s if s.is_client_error() => Err(RequestError::BadRequest(format!(
+        StatusCode::UNAUTHORIZED => RequestError::Unauthorized,
+        StatusCode::NOT_FOUND => {
+            RequestError::NotFound(format!("resource not found, url: {}", url))
+        }
+        StatusCode::TOO_MANY_REQUESTS => RequestError::TooManyRequests,
+        s if s.is_client_error() => RequestError::BadRequest(format!(
             "http request to {url} failed, status: {status}, payload: {payload}",
-        ))),
-        _ => Err(RequestError::ServerError(format!(
+        )),
+        _ => RequestError::ServerError(format!(
             "http request to {url} failed, status: {status}, payload: {payload}",
-        ))),
+        )),
     }
 }
 
@@ -177,7 +230,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{body_json, header, method, path, query_param},
+        matchers::{body_json, body_string, header, method, path, query_param},
     };
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -596,5 +649,36 @@ mod tests {
             }
             _ => panic!("Expected BadRequest, got: {:?}", result),
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_text_success() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<html>ok</html>"))
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/page", mock_server.uri());
+        let body = get_text(url, None).await.unwrap();
+        assert_eq!(body, "<html>ok</html>");
+    }
+
+    #[tokio::test]
+    async fn test_post_form_success() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/form"))
+            .and(body_string("doctype=1&message=hi"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"code":0}"#))
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/form", mock_server.uri());
+        let body = post_form(url, &[("doctype", "1"), ("message", "hi")], None)
+            .await
+            .unwrap();
+        assert_eq!(body, r#"{"code":0}"#);
     }
 }

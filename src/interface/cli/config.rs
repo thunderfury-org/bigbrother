@@ -10,6 +10,7 @@ struct AppConfig {
     pub console: ConsoleConfig,
     pub pan115: Pan115Config,
     pub pan123: Pan123Config,
+    pub pan1: Pan1Config,
     pub pan189: Pan189Config,
     pub tmdb: TmdbConfig,
     pub openai: OpenaiConfig,
@@ -69,6 +70,24 @@ impl Default for Pan123Config {
         Self {
             api_address: "https://api.oplist.org/123cloud/renewapi".to_string(),
             refresh_token: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct Pan1Config {
+    pub base_url: String,
+    pub cookie: String,
+    pub reply_message: String,
+}
+
+impl Default for Pan1Config {
+    fn default() -> Self {
+        Self {
+            base_url: "https://pan1.me".to_string(),
+            cookie: String::new(),
+            reply_message: "感谢分享,太棒了！".to_string(),
         }
     }
 }
@@ -147,6 +166,10 @@ impl Manager {
 
     pub fn get_pan123_config(&self) -> &Pan123Config {
         &self.app_config.pan123
+    }
+
+    pub fn get_pan1_config(&self) -> &Pan1Config {
+        &self.app_config.pan1
     }
 
     pub fn get_pan115_config(&self) -> &Pan115Config {
@@ -437,5 +460,17 @@ pan115:
         let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
 
         assert_eq!(config.get_pan115_config().get_request_interval_ms(), 900);
+    }
+
+    #[test]
+    fn pan1_defaults_to_community_site() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let pan1 = config.get_pan1_config();
+        assert_eq!(pan1.base_url, "https://pan1.me");
+        assert!(pan1.cookie.is_empty());
+        assert_eq!(pan1.reply_message, "感谢分享,太棒了！");
     }
 }
