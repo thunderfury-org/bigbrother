@@ -60,6 +60,8 @@ pub struct SearchPathFile {
 struct OpenApiFileListResponse {
     #[serde(default, rename = "lastFileId")]
     last_file_id: i64,
+    #[serde(default, rename = "Next", alias = "next")]
+    next: String,
     #[serde(default, rename = "InfoList", alias = "fileList")]
     file_list: Vec<File>,
 }
@@ -139,6 +141,7 @@ pub struct Client {
     initial_refresh_token: String,
     cache_dir: String,
     open_api_base: String,
+    web_api_base: String,
     token: Arc<RwLock<Option<CachedToken>>>,
 }
 
@@ -149,6 +152,7 @@ impl Client {
             initial_refresh_token: refresh_token.to_owned(),
             cache_dir: cache_dir.to_owned(),
             open_api_base: OPEN_API_BASE.to_owned(),
+            web_api_base: WEB_API_BASE.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
     }
@@ -165,6 +169,7 @@ impl Client {
             initial_refresh_token: refresh_token.to_owned(),
             cache_dir: cache_dir.to_owned(),
             open_api_base: open_api_base.to_owned(),
+            web_api_base: open_api_base.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
     }
@@ -401,21 +406,37 @@ impl Client {
         parent_file_id: i64,
     ) -> RequestResult<Vec<File>> {
         let file_id_str = parent_file_id.to_string();
-        let query = Some(vec![
-            ("ShareKey", share_key),
-            ("SharePwd", share_password),
-            ("limit", "100"),
-            ("next", "-1"),
-            ("orderBy", "file_name"),
-            ("orderDirection", "asc"),
-            ("Page", "0"),
-            ("parentFileId", file_id_str.as_str()),
-            ("event", "homeListFile"),
-        ]);
-        let response: CommonResponse<OpenApiFileListResponse> =
-            http::get(self.build_web_api_url("/api/share/get"), query, None).await?;
-        self.process_response(response)
-            .map(|r| r.file_list.into_iter().filter(|f| f.trashed == 0).collect())
+        let mut files = Vec::new();
+        // Page 0 and 1 both return the first page; start at 1 so later pages do not duplicate.
+        let mut page = 1;
+
+        loop {
+            let page_value = page.to_string();
+            let query = Some(vec![
+                ("ShareKey", share_key),
+                ("SharePwd", share_password),
+                ("limit", "100"),
+                ("next", "0"),
+                ("orderBy", "file_name"),
+                ("orderDirection", "asc"),
+                ("Page", page_value.as_str()),
+                ("parentFileId", file_id_str.as_str()),
+                ("event", "homeListFile"),
+            ]);
+            let response: CommonResponse<OpenApiFileListResponse> =
+                http::get(self.build_web_api_url("/api/share/get"), query, None).await?;
+            let page_data = self.process_response(response)?;
+            let next = page_data.next;
+            let page_len = page_data.file_list.len();
+            files.extend(page_data.file_list.into_iter().filter(|f| f.trashed == 0));
+
+            if next == "-1" || page_len < 100 {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(files)
     }
 
     #[allow(dead_code)]
@@ -597,7 +618,7 @@ impl Client {
 
     #[inline]
     fn build_web_api_url(&self, path: &str) -> String {
-        format!("{}{}", WEB_API_BASE, path)
+        format!("{}{}", self.web_api_base, path)
     }
 
     fn read_token_from_cache_file(&self, file_name: &str) -> RequestResult<Option<CachedToken>> {
@@ -947,6 +968,88 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].file_id, 20);
+    }
+
+    fn share_list_json(next: &str, files: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "Next": next,
+                "InfoList": files
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn list_share_files_collects_multiple_pages() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/share/get"))
+            .and(query_param("ShareKey", "share-key"))
+            .and(query_param("SharePwd", "pwd"))
+            .and(query_param("parentFileId", "9"))
+            .and(query_param("Page", "1"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(share_list_json(
+                    "",
+                    (1..=100)
+                        .map(|index| file_json(index, &format!("E{index:03}.avi"), 0, 9))
+                        .collect(),
+                )),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/share/get"))
+            .and(query_param("ShareKey", "share-key"))
+            .and(query_param("SharePwd", "pwd"))
+            .and(query_param("parentFileId", "9"))
+            .and(query_param("Page", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(share_list_json(
+                "-1",
+                vec![file_json(101, "E101.avi", 0, 9)],
+            )))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .list_share_files("share-key", "pwd", 9)
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 101);
+        assert_eq!(result[0].file_name, "E001.avi");
+        assert_eq!(result[99].file_name, "E100.avi");
+        assert_eq!(result[100].file_name, "E101.avi");
+    }
+
+    #[tokio::test]
+    async fn list_share_files_stops_when_next_is_terminal() {
+        let server = MockServer::start().await;
+        let client = client(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/share/get"))
+            .and(query_param("ShareKey", "share-key"))
+            .and(query_param("parentFileId", "9"))
+            .and(query_param("Page", "1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(share_list_json("-1", vec![file_json(10, "only.avi", 0, 9)])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client.list_share_files("share-key", "", 9).await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "only.avi");
     }
 
     #[tokio::test]
