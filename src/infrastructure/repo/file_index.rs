@@ -226,4 +226,200 @@ mod tests {
         let results = repo.get_records_by_ids(&[]).await.unwrap();
         assert!(results.is_empty());
     }
+
+    #[tokio::test]
+    async fn search_files_omits_unrelated_location_of_same_fingerprint() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "movie.mkv".into(),
+                file_path: "/Movies".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "other.mkv".into(),
+                file_path: "/Other".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("movie", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "movie.mkv");
+    }
+
+    #[tokio::test]
+    async fn search_files_shared_description_fills_remaining_limit() {
+        let repo = repo().await;
+        let files = (0..5)
+            .map(|index| FileIndexRecordInput {
+                size: 100 + index,
+                hash_type: "md5".into(),
+                hash_value: format!("{index:032x}"),
+                file_name: format!("episode-{index}.mkv"),
+                file_path: "/Shows".into(),
+                description: Some("shared keyword".into()),
+            })
+            .collect::<Vec<_>>();
+        repo.record_files(&files).await.unwrap();
+
+        let results = repo.search_files("shared", 3).await.unwrap();
+        assert_eq!(results.len(), 3);
+        assert!(
+            results
+                .iter()
+                .all(|record| record.locations.iter().any(|location| {
+                    location
+                        .descriptions
+                        .iter()
+                        .any(|desc| desc == "shared keyword")
+                }))
+        );
+    }
+
+    #[tokio::test]
+    async fn get_records_by_ids_hydrates_all_locations_and_descriptions() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "movie-a.mkv".into(),
+                file_path: "/A".into(),
+                description: Some("alpha".into()),
+            },
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "movie-b.mkv".into(),
+                file_path: "/B".into(),
+                description: Some("beta".into()),
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "sha1".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "episode.mkv".into(),
+                file_path: "/Shows".into(),
+                description: Some("gamma".into()),
+            },
+        ])
+        .await
+        .unwrap();
+
+        let all = repo.search_files("mkv", 20).await.unwrap();
+        let ids = all.iter().map(|record| record.id).collect::<Vec<_>>();
+        let results = repo.get_records_by_ids(&ids).await.unwrap();
+        assert_eq!(results.len(), 2);
+
+        let movie = results
+            .iter()
+            .find(|record| record.hash_type == "md5")
+            .unwrap();
+        assert_eq!(movie.locations.len(), 2);
+        let mut movie_names = movie
+            .locations
+            .iter()
+            .map(|location| location.file_name.as_str())
+            .collect::<Vec<_>>();
+        movie_names.sort();
+        assert_eq!(movie_names, vec!["movie-a.mkv", "movie-b.mkv"]);
+        let mut movie_descriptions = movie
+            .locations
+            .iter()
+            .flat_map(|location| location.descriptions.clone())
+            .collect::<Vec<_>>();
+        movie_descriptions.sort();
+        assert_eq!(movie_descriptions, vec!["alpha", "beta"]);
+
+        let episode = results
+            .iter()
+            .find(|record| record.hash_type == "sha1")
+            .unwrap();
+        assert_eq!(episode.locations.len(), 1);
+        assert_eq!(episode.locations[0].descriptions, vec!["gamma"]);
+    }
+
+    #[tokio::test]
+    async fn search_files_ands_whitespace_tokens_across_dotted_filename() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "Love.Is.Blind.2020.S09E11.mkv".into(),
+                file_path: "/Reality".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "Half.Lives.2024.mkv".into(),
+                file_path: "/Movies".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("Love Is Blind", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].locations[0].file_name,
+            "Love.Is.Blind.2020.S09E11.mkv"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_files_requires_every_token() {
+        let repo = repo().await;
+        repo.record_files(&[FileIndexRecordInput {
+            size: 100,
+            hash_type: "md5".into(),
+            hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            file_name: "movie.2024.mkv".into(),
+            file_path: "/Movies".into(),
+            description: None,
+        }])
+        .await
+        .unwrap();
+
+        let hits = repo.search_files("movie 2024", 20).await.unwrap();
+        assert_eq!(hits.len(), 1);
+
+        let misses = repo.search_files("movie 2025", 20).await.unwrap();
+        assert!(misses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_files_ands_tokens_across_name_and_description() {
+        let repo = repo().await;
+        repo.record_files(&[FileIndexRecordInput {
+            size: 100,
+            hash_type: "md5".into(),
+            hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            file_name: "episode.mkv".into(),
+            file_path: "/Shows".into(),
+            description: Some("rare keyword".into()),
+        }])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("episode rare", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "episode.mkv");
+    }
 }
