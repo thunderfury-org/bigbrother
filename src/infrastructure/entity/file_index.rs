@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, TransactionSession, TransactionTrait,
+    sea_query::{Expr, ExprTrait, Query},
 };
 
 use crate::{
@@ -46,49 +47,14 @@ where
     let mut by_fingerprint = BTreeMap::new();
 
     let locations = file_location::Entity::find()
-        .filter(
-            Condition::any()
-                .add(file_location::Column::FileName.contains(trimmed))
-                .add(file_location::Column::FilePath.contains(trimmed)),
-        )
+        .filter(keyword_matches(trimmed))
         .order_by_asc(file_location::Column::Id)
         .limit(limit)
         .all(db)
         .await?;
-    for location in locations {
-        add_location_match(db, &mut by_fingerprint, &location).await?;
-    }
-
-    let pattern = format!("%{}%", trimmed);
-    let description_matches = file_description::Entity::find()
-        .filter(file_description::Column::Description.like(pattern))
-        .limit(limit)
-        .all(db)
-        .await?;
-
-    for description in description_matches {
-        if by_fingerprint.len() >= limit as usize {
-            break;
-        }
-
-        let links = file_location_description::Entity::find()
-            .filter(file_location_description::Column::FileDescriptionId.eq(description.id))
-            .all(db)
-            .await?;
-
-        for link in links {
-            if by_fingerprint.len() >= limit as usize {
-                break;
-            }
-
-            let Some(location) = file_location::Entity::find_by_id(link.file_location_id)
-                .one(db)
-                .await?
-            else {
-                continue;
-            };
-            add_location_match(db, &mut by_fingerprint, &location).await?;
-        }
+    let hydration = LocationHydration::load(db, &locations).await?;
+    for location in &locations {
+        add_location_match(&mut by_fingerprint, location, &hydration);
     }
 
     let mut results = by_fingerprint.into_values().collect::<Vec<_>>();
@@ -108,23 +74,41 @@ where
         .filter(file_index::Column::Id.is_in(ids.to_vec()))
         .all(db)
         .await?;
+    if indices.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let index_ids = indices.iter().map(|index| index.id).collect::<Vec<_>>();
+    let locations = file_location::Entity::find()
+        .filter(file_location::Column::FileIndexId.is_in(index_ids))
+        .all(db)
+        .await?;
+    let location_ids = locations
+        .iter()
+        .map(|location| location.id)
+        .collect::<Vec<_>>();
+    let descriptions = load_descriptions_by_location_ids(db, &location_ids).await?;
+
+    let mut locations_by_index: HashMap<i64, Vec<file_location::Model>> = HashMap::new();
+    for location in locations {
+        locations_by_index
+            .entry(location.file_index_id)
+            .or_default()
+            .push(location);
+    }
 
     let mut results = Vec::with_capacity(indices.len());
     for index in indices {
-        let locations = file_location::Entity::find()
-            .filter(file_location::Column::FileIndexId.eq(index.id))
-            .all(db)
-            .await?;
-
-        let mut location_records = Vec::new();
-        for location in locations {
-            let descriptions = descriptions_for_location(db, location.id).await?;
-            location_records.push(FileLocationRecord {
+        let location_records = locations_by_index
+            .remove(&index.id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|location| FileLocationRecord {
+                descriptions: descriptions.get(&location.id).cloned().unwrap_or_default(),
                 file_name: location.file_name,
                 file_path: location.file_path,
-                descriptions,
-            });
-        }
+            })
+            .collect();
 
         results.push(FileSearchRecord {
             id: index.id,
@@ -138,22 +122,20 @@ where
     Ok(results)
 }
 
-async fn add_location_match<C>(
-    db: &C,
+fn add_location_match(
     by_fingerprint: &mut BTreeMap<i64, FileSearchRecord>,
     location: &file_location::Model,
-) -> Result<(), DbErr>
-where
-    C: ConnectionTrait,
-{
-    let Some(index) = file_index::Entity::find_by_id(location.file_index_id)
-        .one(db)
-        .await?
-    else {
-        return Ok(());
+    hydration: &LocationHydration,
+) {
+    let Some(index) = hydration.indexes.get(&location.file_index_id) else {
+        return;
     };
 
-    let descriptions = descriptions_for_location(db, location.id).await?;
+    let descriptions = hydration
+        .descriptions
+        .get(&location.id)
+        .cloned()
+        .unwrap_or_default();
     let entry = by_fingerprint
         .entry(index.id)
         .or_insert_with(|| FileSearchRecord {
@@ -177,8 +159,6 @@ where
             descriptions,
         });
     }
-
-    Ok(())
 }
 
 async fn find_or_insert_file_index<C>(db: &C, file: &FileIndexRecordInput) -> AppResult<i64>
@@ -300,25 +280,131 @@ where
     Ok(())
 }
 
-async fn descriptions_for_location<C>(db: &C, location_id: i64) -> Result<Vec<String>, DbErr>
+fn keyword_matches(keyword: &str) -> Condition {
+    keyword
+        .split_whitespace()
+        .fold(Condition::all(), |condition, token| {
+            condition.add(token_matches(token))
+        })
+}
+
+fn token_matches(token: &str) -> Condition {
+    Condition::any()
+        .add(file_location::Column::FileName.contains(token))
+        .add(file_location::Column::FilePath.contains(token))
+        .add(
+            file_location::Column::Id.in_subquery(
+                Query::select()
+                    .column(file_location_description::Column::FileLocationId)
+                    .from(file_location_description::Entity)
+                    .inner_join(
+                        file_description::Entity,
+                        Expr::col((
+                            file_location_description::Entity,
+                            file_location_description::Column::FileDescriptionId,
+                        ))
+                        .equals((file_description::Entity, file_description::Column::Id)),
+                    )
+                    .and_where(file_description::Column::Description.contains(token))
+                    .to_owned(),
+            ),
+        )
+}
+
+struct LocationHydration {
+    indexes: HashMap<i64, file_index::Model>,
+    descriptions: HashMap<i64, Vec<String>>,
+}
+
+impl LocationHydration {
+    async fn load<C>(db: &C, locations: &[file_location::Model]) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if locations.is_empty() {
+            return Ok(Self {
+                indexes: HashMap::new(),
+                descriptions: HashMap::new(),
+            });
+        }
+
+        let index_ids = locations
+            .iter()
+            .map(|location| location.file_index_id)
+            .collect::<Vec<_>>();
+        let location_ids = locations
+            .iter()
+            .map(|location| location.id)
+            .collect::<Vec<_>>();
+        Ok(Self {
+            indexes: load_indexes_by_ids(db, &index_ids).await?,
+            descriptions: load_descriptions_by_location_ids(db, &location_ids).await?,
+        })
+    }
+}
+
+async fn load_indexes_by_ids<C>(
+    db: &C,
+    ids: &[i64],
+) -> Result<HashMap<i64, file_index::Model>, DbErr>
 where
     C: ConnectionTrait,
 {
-    let links = file_location_description::Entity::find()
-        .filter(file_location_description::Column::FileLocationId.eq(location_id))
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = file_index::Entity::find()
+        .filter(file_index::Column::Id.is_in(ids.to_vec()))
         .all(db)
         .await?;
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
+}
 
-    let mut descriptions = Vec::new();
-    for link in links {
-        if let Some(description) = file_description::Entity::find_by_id(link.file_description_id)
-            .one(db)
-            .await?
-        {
-            push_unique(&mut descriptions, description.description);
-        }
+async fn load_descriptions_by_location_ids<C>(
+    db: &C,
+    location_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, DbErr>
+where
+    C: ConnectionTrait,
+{
+    if location_ids.is_empty() {
+        return Ok(HashMap::new());
     }
-    Ok(descriptions)
+
+    let links = file_location_description::Entity::find()
+        .filter(file_location_description::Column::FileLocationId.is_in(location_ids.to_vec()))
+        .order_by_asc(file_location_description::Column::Id)
+        .all(db)
+        .await?;
+    if links.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let description_ids = links
+        .iter()
+        .map(|link| link.file_description_id)
+        .collect::<Vec<_>>();
+    let descriptions = file_description::Entity::find()
+        .filter(file_description::Column::Id.is_in(description_ids))
+        .all(db)
+        .await?;
+    let description_by_id = descriptions
+        .into_iter()
+        .map(|description| (description.id, description.description))
+        .collect::<HashMap<_, _>>();
+
+    let mut descriptions_by_location: HashMap<i64, Vec<String>> = HashMap::new();
+    for link in links {
+        let Some(description) = description_by_id.get(&link.file_description_id) else {
+            continue;
+        };
+        let entry = descriptions_by_location
+            .entry(link.file_location_id)
+            .or_default();
+        push_unique(entry, description.clone());
+    }
+    Ok(descriptions_by_location)
 }
 
 fn push_unique(values: &mut Vec<String>, value: String) {
