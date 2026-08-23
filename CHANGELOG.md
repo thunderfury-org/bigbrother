@@ -1,9 +1,17 @@
 # Changelog
+## [0.4.0] - 2026-08-23
+### Features
+
+- (app) batch file index search and AND keyword tokens (#159)
 ## [0.3.0] - 2026-08-22
 ### Bug Fixes
 
 - (app) paginate pan123 share file listing (#157)
 - (app) cut releases through a PR before tagging (#154)
+
+### Chores
+
+- (app) release v0.3.0 (#158)
 
 ### Features
 
