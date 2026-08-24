@@ -151,6 +151,7 @@ export interface ImportFileResult {
   year?: string;
   size?: number;
   error?: string;
+  summary?: ImportSummary;
 }
 
 export interface ImportFilesResponse {

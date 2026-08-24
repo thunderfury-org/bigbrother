@@ -1,5 +1,6 @@
 <script lang="ts">
   import Search from '@lucide/svelte/icons/search';
+  import X from '@lucide/svelte/icons/x';
   import {
     ApiError,
     searchFiles,
@@ -11,11 +12,10 @@
     type CommunityThread,
     type CommunityImportResult,
   } from '../lib/api';
+  import ImportSummaryItems from '../lib/ImportSummaryItems.svelte';
   import {
-    failedEpisodes,
-    formatEpisodes,
-    formatSeasonLabel,
-    succeededEpisodes,
+    formatSize,
+    statusLabel,
   } from '../lib/importDisplay';
 
   let keyword = $state('');
@@ -23,51 +23,64 @@
   let lastQuery = $state('');
   let items: FileSearchItem[] = $state([]);
   let threads: CommunityThread[] = $state([]);
-  let loading = $state(false);
+  let fileLoading = $state(false);
+  let communityLoading = $state(false);
   let fileError = $state('');
   let communityError = $state('');
   let hasSearched = $state(false);
   let activeTab: 'files' | 'community' = $state('files');
+  let searchSeq = 0;
 
   let selectedIds: Set<number> = $state(new Set());
-  let selectedTids: Set<number> = $state(new Set());
   let importing = $state(false);
-  let importResults: ImportFileResult[] | null = $state(null);
-  let communityImportResults: CommunityImportResult[] | null = $state(null);
+  let importOpen = $state(false);
+  let importLabel = $state('');
+  let importError = $state('');
+  let importFileResults: ImportFileResult[] | null = $state(null);
+  let importCommunityResults: CommunityImportResult[] | null = $state(null);
 
-  async function run() {
+  function run() {
     const q = keyword.trim();
+    const seq = ++searchSeq;
     lastQuery = q;
     hasSearched = true;
-    loading = true;
+    fileLoading = true;
+    communityLoading = true;
     fileError = '';
     communityError = '';
     selectedIds = new Set();
-    selectedTids = new Set();
-    importResults = null;
-    communityImportResults = null;
-    try {
-      const [fileResult, communityResult] = await Promise.allSettled([
-        searchFiles(q, limit),
-        searchCommunityThreads(q, limit),
-      ]);
-      if (fileResult.status === 'fulfilled') {
-        items = fileResult.value.items;
-      } else {
-        const err = fileResult.reason;
-        fileError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+    items = [];
+    threads = [];
+
+    void searchFiles(q, limit)
+      .then((page) => {
+        if (seq !== searchSeq) return;
+        items = page.items;
+      })
+      .catch((err) => {
+        if (seq !== searchSeq) return;
         items = [];
-      }
-      if (communityResult.status === 'fulfilled') {
-        threads = communityResult.value.items;
-      } else {
-        const err = communityResult.reason;
-        communityError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+        fileError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+      })
+      .finally(() => {
+        if (seq !== searchSeq) return;
+        fileLoading = false;
+      });
+
+    void searchCommunityThreads(q, limit)
+      .then((page) => {
+        if (seq !== searchSeq) return;
+        threads = page.items;
+      })
+      .catch((err) => {
+        if (seq !== searchSeq) return;
         threads = [];
-      }
-    } finally {
-      loading = false;
-    }
+        communityError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+      })
+      .finally(() => {
+        if (seq !== searchSeq) return;
+        communityLoading = false;
+      });
   }
 
   function reset() {
@@ -79,11 +92,12 @@
     hasSearched = false;
     fileError = '';
     communityError = '';
+    fileLoading = false;
+    communityLoading = false;
+    searchSeq += 1;
     selectedIds = new Set();
-    selectedTids = new Set();
-    importResults = null;
-    communityImportResults = null;
     activeTab = 'files';
+    closeImport();
   }
 
   function toggleSelect(id: number) {
@@ -95,15 +109,6 @@
     selectedIds = new Set(selectedIds);
   }
 
-  function toggleThread(tid: number) {
-    if (selectedTids.has(tid)) {
-      selectedTids.delete(tid);
-    } else {
-      selectedTids.add(tid);
-    }
-    selectedTids = new Set(selectedTids);
-  }
-
   function selectAll() {
     selectedIds = new Set(items.map(item => item.id));
   }
@@ -112,84 +117,87 @@
     selectedIds = new Set();
   }
 
-  function selectAllThreads() {
-    selectedTids = new Set(threads.map(thread => thread.tid));
+  function fileLabel(item: FileSearchItem): string {
+    return item.locations[0]?.file_name || `${item.hash_type}:${item.hash_value.slice(0, 8)}`;
   }
 
-  function deselectAllThreads() {
-    selectedTids = new Set();
+  function fileLabelById(id: number): string {
+    const item = items.find((entry) => entry.id === id);
+    return item ? fileLabel(item) : `文件 #${id}`;
   }
 
-  async function runImport() {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
+  function openImport(label: string) {
+    importOpen = true;
     importing = true;
-    importResults = null;
-    fileError = '';
+    importLabel = label;
+    importError = '';
+    importFileResults = null;
+    importCommunityResults = null;
+  }
+
+  function closeImport() {
+    if (importing) return;
+    importOpen = false;
+    importLabel = '';
+    importError = '';
+    importFileResults = null;
+    importCommunityResults = null;
+  }
+
+  async function runFileImport(ids: number[], label: string) {
+    if (ids.length === 0 || importing) return;
+    openImport(label);
     try {
       const resp = await importFiles(ids);
-      importResults = resp.results;
-    } catch (err) {
-      fileError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
-    } finally {
-      importing = false;
+      importFileResults = resp.results;
       selectedIds = new Set();
-    }
-  }
-
-  async function runCommunityImport() {
-    const tids = Array.from(selectedTids);
-    if (tids.length === 0) return;
-    importing = true;
-    communityImportResults = null;
-    communityError = '';
-    try {
-      const resp = await importCommunityThreads(tids);
-      communityImportResults = resp.results;
     } catch (err) {
-      communityError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
+      importError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
     } finally {
       importing = false;
-      selectedTids = new Set();
     }
   }
 
-  function formatCost(ms: number): string {
-    if (!ms) return '—';
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  function formatSize(bytes: number): string {
-    if (bytes == null) return '—';
-    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-    let value = Number(bytes);
-    let unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-    return `${unitIndex === 0 ? value.toFixed(0) : value.toFixed(2)} ${units[unitIndex]}`;
-  }
-
-  function statusLabel(status: string): string {
-    switch (status) {
-      case 'succeeded': return '成功';
-      case 'failed': return '失败';
-      case 'skipped': return '跳过';
-      case 'partially_failed': return '部分失败';
-      default: return status;
+  async function runCommunityImport(thread: CommunityThread) {
+    if (importing) return;
+    openImport(thread.title);
+    try {
+      const resp = await importCommunityThreads([thread.tid]);
+      importCommunityResults = resp.results;
+    } catch (err) {
+      importError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
+    } finally {
+      importing = false;
     }
   }
+
+  function importSelectedFiles() {
+    const ids = Array.from(selectedIds);
+    const label = ids.length === 1
+      ? fileLabelById(ids[0])
+      : `${ids.length} 个文件`;
+    return runFileImport(ids, label);
+  }
+
+  $effect(() => {
+    if (!importOpen) return;
+    void importing;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeImport();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const currentError = $derived(activeTab === 'files' ? fileError : communityError);
   const currentCount = $derived(activeTab === 'files' ? items.length : threads.length);
+  const currentLoading = $derived(activeTab === 'files' ? fileLoading : communityLoading);
 </script>
 
 <section>
   <header class="page-header">
     <h1 class="page-title">搜索</h1>
-    {#if hasSearched && !loading && !currentError && lastQuery}
+    {#if hasSearched && !currentLoading && !currentError && lastQuery}
       <span class="page-count">{currentCount} 条结果</span>
     {/if}
   </header>
@@ -202,19 +210,20 @@
         bind:value={keyword}
         placeholder="输入文件名、路径、描述或片名…"
         class="input"
+        disabled={importing}
       />
     </div>
     <label class="field">
       <span class="field-label">条数</span>
-      <select bind:value={limit} class="select">
+      <select bind:value={limit} class="select" disabled={importing}>
         <option value={20}>20</option>
         <option value={50}>50</option>
         <option value={100}>100</option>
         <option value={200}>200</option>
       </select>
     </label>
-    <button type="submit" class="btn btn-primary">搜索</button>
-    <button type="button" onclick={reset} class="btn btn-ghost">重置</button>
+    <button type="submit" class="btn btn-primary" disabled={importing}>搜索</button>
+    <button type="button" onclick={reset} class="btn btn-ghost" disabled={importing}>重置</button>
   </form>
 
   {#if hasSearched}
@@ -227,7 +236,7 @@
         aria-selected={activeTab === 'files'}
         onclick={() => { activeTab = 'files'; }}
       >
-        文件索引 {#if hasSearched && !loading}<span class="tab-count">{items.length}</span>{/if}
+        文件索引 {#if hasSearched && !fileLoading}<span class="tab-count">{items.length}</span>{/if}
       </button>
       <button
         type="button"
@@ -237,7 +246,7 @@
         aria-selected={activeTab === 'community'}
         onclick={() => { activeTab = 'community'; }}
       >
-        123分享社区 {#if hasSearched && !loading}<span class="tab-count">{threads.length}</span>{/if}
+        123分享社区 {#if hasSearched && !communityLoading}<span class="tab-count">{threads.length}</span>{/if}
       </button>
     </div>
   {/if}
@@ -245,169 +254,18 @@
   {#if activeTab === 'files' && items.length > 0}
     <div class="work-band">
       <div class="work-band-left">
-        <button type="button" onclick={selectAll} class="btn btn-ghost btn-sm">全选</button>
-        <button type="button" onclick={deselectAll} class="btn btn-ghost btn-sm">取消</button>
+        <button type="button" onclick={selectAll} class="btn btn-ghost btn-sm" disabled={importing}>全选</button>
+        <button type="button" onclick={deselectAll} class="btn btn-ghost btn-sm" disabled={importing}>取消</button>
         <span class="work-count">{selectedIds.size} 已选</span>
       </div>
       <button
         type="button"
-        onclick={runImport}
+        onclick={importSelectedFiles}
         disabled={selectedIds.size === 0 || importing}
         class="btn btn-primary btn-sm"
       >
-        {importing ? '导入中…' : `导入选中 (${selectedIds.size})`}
+        导入选中 ({selectedIds.size})
       </button>
-    </div>
-  {/if}
-
-  {#if activeTab === 'community' && threads.length > 0}
-    <div class="work-band">
-      <div class="work-band-left">
-        <button type="button" onclick={selectAllThreads} class="btn btn-ghost btn-sm">全选</button>
-        <button type="button" onclick={deselectAllThreads} class="btn btn-ghost btn-sm">取消</button>
-        <span class="work-count">{selectedTids.size} 已选</span>
-      </div>
-      <button
-        type="button"
-        onclick={runCommunityImport}
-        disabled={selectedTids.size === 0 || importing}
-        class="btn btn-primary btn-sm"
-      >
-        {importing ? '解锁导入中…' : `导入选中 (${selectedTids.size})`}
-      </button>
-    </div>
-  {/if}
-
-  {#if activeTab === 'files' && importResults}
-    <div class="panel">
-      <div class="panel-header">
-        <h3 class="panel-title">导入结果</h3>
-        <button type="button" onclick={() => { importResults = null; }} class="btn btn-ghost btn-sm">关闭</button>
-      </div>
-      {#each importResults as result}
-        <div class="result-row" data-status={result.status}>
-          <span class="status status-{result.status}">{statusLabel(result.status)}</span>
-          {#if result.title}
-            <span class="cell-title">{result.title}</span>
-          {/if}
-          {#if result.year}
-            <span class="cell-sub">{result.year}</span>
-          {/if}
-          {#if result.size}
-            <span class="mono cell-sub">{formatSize(result.size)}</span>
-          {/if}
-          {#if result.error}
-            <span class="banner-error">{result.error}</span>
-          {/if}
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  {#if activeTab === 'community' && communityImportResults}
-    <div class="panel">
-      <div class="panel-header">
-        <h3 class="panel-title">导入总结</h3>
-        <button type="button" onclick={() => { communityImportResults = null; }} class="btn btn-ghost btn-sm">关闭</button>
-      </div>
-      {#each communityImportResults as result}
-        <div class="import-summary" data-status={result.status}>
-          <div class="result-row">
-            <span class="status status-{result.status}">{statusLabel(result.status)}</span>
-            <span class="cell-title">{result.thread_title}</span>
-          </div>
-          {#if result.summary}
-            <div class="detail-grid">
-              {#each result.summary.items as item, index (index)}
-                {#if item.type === 'movie'}
-                  <div>
-                    <span class="detail-label">电影</span>
-                    <span class="detail-value">{item.year ? `${item.title} (${item.year})` : item.title}</span>
-                  </div>
-                  <div>
-                    <span class="detail-label">本次结果</span>
-                    <span class="detail-value">{item.succeeded ? '入库成功' : '入库失败'}</span>
-                  </div>
-                  {#if item.size}
-                    <div>
-                      <span class="detail-label">大小</span>
-                      <span class="detail-value">{formatSize(item.size)}</span>
-                    </div>
-                  {/if}
-                  {#if item.cost_ms}
-                    <div>
-                      <span class="detail-label">耗时</span>
-                      <span class="detail-value">{formatCost(item.cost_ms)}</span>
-                    </div>
-                  {/if}
-                {:else if item.type === 'tv'}
-                  <div>
-                    <span class="detail-label">剧集</span>
-                    <span class="detail-value">{item.year ? `${item.name} (${item.year})` : item.name} {formatSeasonLabel(item.season)}</span>
-                  </div>
-                  {#if succeededEpisodes(item).length > 0}
-                    <div>
-                      <span class="detail-label">本次入库</span>
-                      <span class="detail-value">{formatEpisodes(succeededEpisodes(item))}</span>
-                    </div>
-                  {/if}
-                  {#if failedEpisodes(item).length > 0}
-                    <div>
-                      <span class="detail-label">本次失败</span>
-                      <span class="detail-value">{formatEpisodes(failedEpisodes(item))}</span>
-                    </div>
-                  {/if}
-                  {#if item.missing_episodes.length > 0}
-                    <div>
-                      <span class="detail-label">库内缺失</span>
-                      <span class="detail-value">相对整季还缺 {formatEpisodes(item.missing_episodes)}</span>
-                    </div>
-                  {/if}
-                  {#if item.total_size}
-                    <div>
-                      <span class="detail-label">大小</span>
-                      <span class="detail-value">{formatSize(item.total_size)}</span>
-                    </div>
-                  {/if}
-                  {#if item.cost_ms}
-                    <div>
-                      <span class="detail-label">耗时</span>
-                      <span class="detail-value">{formatCost(item.cost_ms)}</span>
-                    </div>
-                  {/if}
-                {:else if item.type === 'skipped' && result.summary.skipped_files.length === 0 && item.files.length > 0}
-                  <div>
-                    <span class="detail-label">跳过文件</span>
-                    <div class="detail-value">
-                      {#each item.files as file}
-                        <div class="mono">{file}</div>
-                      {/each}
-                    </div>
-                  </div>
-                {/if}
-              {/each}
-              {#if result.summary.skipped_files.length > 0}
-                <div>
-                  <span class="detail-label">跳过文件</span>
-                  <div class="detail-value">
-                    {#each result.summary.skipped_files as file}
-                      <div class="mono">{file}</div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            </div>
-          {:else if result.title}
-            <div class="cell-sub">{result.title}{result.year ? ` (${result.year})` : ''}</div>
-          {/if}
-          {#if result.share_url}
-            <div class="mono cell-sub">{result.share_url}</div>
-          {/if}
-          {#if result.error}
-            <div class="banner-error">{result.error}</div>
-          {/if}
-        </div>
-      {/each}
     </div>
   {/if}
 
@@ -415,7 +273,7 @@
     <div class="banner banner-error">{currentError}</div>
   {/if}
 
-  {#if loading}
+  {#if currentLoading}
     <div class="loading">
       <div class="loading-bar"></div>
       <p>正在搜索…</p>
@@ -435,6 +293,7 @@
             <th>哈希</th>
             <th>大小</th>
             <th>位置</th>
+            <th class="col-action"></th>
           </tr>
         </thead>
         <tbody>
@@ -445,6 +304,7 @@
                   <input
                     type="checkbox"
                     checked={selectedIds.has(item.id)}
+                    disabled={importing}
                     onchange={() => toggleSelect(item.id)}
                   />
                 </label>
@@ -476,6 +336,16 @@
                   </div>
                 {/each}
               </td>
+              <td class="col-action">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  disabled={importing}
+                  onclick={() => runFileImport([item.id], fileLabel(item))}
+                >
+                  导入
+                </button>
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -486,25 +356,16 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th class="col-check"></th>
             <th>帖子</th>
             <th>作者</th>
             <th>时间</th>
             <th>评论</th>
+            <th class="col-action"></th>
           </tr>
         </thead>
         <tbody>
           {#each threads as thread (thread.tid)}
-            <tr class:is-selected={selectedTids.has(thread.tid)}>
-              <td class="col-check">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selectedTids.has(thread.tid)}
-                    onchange={() => toggleThread(thread.tid)}
-                  />
-                </label>
-              </td>
+            <tr>
               <td>
                 <div class="cell-stack">
                   <a class="cell-title" href={thread.url} target="_blank" rel="noreferrer">{thread.title}</a>
@@ -520,10 +381,104 @@
               <td>{thread.author}</td>
               <td class="cell-sub">{thread.posted_at}</td>
               <td class="mono">{thread.comments}</td>
+              <td class="col-action">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  disabled={importing}
+                  onclick={() => runCommunityImport(thread)}
+                >
+                  导入
+                </button>
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
+    </div>
+  {/if}
+
+  {#if importOpen}
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <div
+      class="modal-backdrop"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) closeImport();
+      }}
+    >
+      <div
+        class="modal"
+        role="dialog"
+        tabindex="-1"
+        aria-modal="true"
+        aria-labelledby="import-dialog-title"
+      >
+        <header class="modal-header">
+          <h2 id="import-dialog-title" class="modal-title">{importing ? '导入中' : '导入结果'}</h2>
+          <button
+            type="button"
+            class="drawer-close"
+            aria-label="关闭"
+            disabled={importing}
+            onclick={closeImport}
+          >
+            <X size={16} />
+          </button>
+        </header>
+        <div class="modal-body">
+          {#if importing}
+            <div class="loading">
+              <div class="loading-bar"></div>
+              <p>正在导入 {importLabel}，请保持此页打开</p>
+            </div>
+          {:else if importError}
+            <div class="banner banner-error">{importError}</div>
+          {:else if importFileResults && importFileResults.length > 0}
+            {#each importFileResults as result (result.id)}
+              <div class="import-summary" data-status={result.status}>
+                <div class="result-row">
+                  <span class="status status-{result.status}">{statusLabel(result.status)}</span>
+                  {#if !result.summary}
+                    <span class="cell-title">{fileLabelById(result.id)}</span>
+                  {/if}
+                </div>
+                {#if result.summary}
+                  <ImportSummaryItems summary={result.summary} />
+                {/if}
+                {#if result.summary}
+                  <div class="mono cell-sub">{fileLabelById(result.id)}</div>
+                {/if}
+                {#if result.error}
+                  <div class="banner-error">{result.error}</div>
+                {/if}
+              </div>
+            {/each}
+          {:else if importCommunityResults && importCommunityResults.length > 0}
+            {#each importCommunityResults as result, index (`${result.tid}-${index}`)}
+              <div class="import-summary" data-status={result.status}>
+                <div class="result-row">
+                  <span class="status status-{result.status}">{statusLabel(result.status)}</span>
+                  {#if !result.summary}
+                    <span class="cell-title">{result.thread_title}</span>
+                  {/if}
+                </div>
+                {#if result.summary}
+                  <ImportSummaryItems summary={result.summary} />
+                {/if}
+                {#if result.share_url}
+                  <div class="mono cell-sub">{result.share_url}</div>
+                {/if}
+                {#if result.error}
+                  <div class="banner-error">{result.error}</div>
+                {/if}
+              </div>
+            {/each}
+          {:else}
+            <div class="empty">没有返回导入结果</div>
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
 </section>

@@ -87,6 +87,23 @@ pub(crate) struct RecordSummary {
     pub skipped_files: Vec<String>,
 }
 
+impl RecordSummary {
+    pub(crate) fn display_fields(&self) -> (Option<String>, Option<String>, Option<u64>) {
+        match self.items.first() {
+            Some(SummaryItem::Movie {
+                title, year, size, ..
+            }) => (Some(title.clone()), Some(year.clone()), Some(*size)),
+            Some(SummaryItem::Tv {
+                name,
+                year,
+                total_size,
+                ..
+            }) => (Some(name.clone()), Some(year.clone()), Some(*total_size)),
+            Some(SummaryItem::Skipped { .. }) | None => (None, None, None),
+        }
+    }
+}
+
 fn duration_ms(value: Duration) -> u64 {
     u64::try_from(value.as_millis()).unwrap_or(u64::MAX)
 }
@@ -349,6 +366,34 @@ mod tests {
     #[test]
     fn unknown_source_kind_string_maps_to_other() {
         assert_eq!(ImportSourceKind::from_str("wat"), ImportSourceKind::Other);
+    }
+
+    #[test]
+    fn display_fields_use_first_movie_or_tv_item() {
+        let (movie, _) = summarize(&[ok_movie()]);
+        assert_eq!(
+            movie.display_fields(),
+            (
+                Some("Movie".into()),
+                Some("2024".into()),
+                Some(1_500_000_000)
+            )
+        );
+
+        let (tv_summary, _) = summarize(&[tv(vec![1], vec![])]);
+        assert_eq!(
+            tv_summary.display_fields(),
+            (
+                Some("Show".into()),
+                Some("2025".into()),
+                Some(6_000_000_000)
+            )
+        );
+
+        let (skipped, _) = summarize(&[ImportOutcome::Skipped {
+            files: vec!["a.mkv".into()],
+        }]);
+        assert_eq!(skipped.display_fields(), (None, None, None));
     }
 
     #[test]
