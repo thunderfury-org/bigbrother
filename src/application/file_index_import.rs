@@ -271,6 +271,7 @@ mod tests {
                 file_path: format!("/movies/{id}"),
                 descriptions: vec!["desc1".into()],
             }],
+            rank: 0,
         }
     }
 

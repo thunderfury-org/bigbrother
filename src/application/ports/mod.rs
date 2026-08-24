@@ -92,6 +92,7 @@ pub struct FileSearchRecord {
     pub hash_type: String,
     pub hash_value: String,
     pub locations: Vec<FileLocationRecord>,
+    pub rank: i64,
 }
 
 #[async_trait::async_trait]

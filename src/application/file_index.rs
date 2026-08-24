@@ -224,6 +224,7 @@ mod tests {
                     file_path: "/Movies".into(),
                     descriptions: vec!["desc".into()],
                 }],
+                rank: 0,
             }])
         }
 
@@ -365,6 +366,7 @@ mod tests {
                         descriptions: vec!["another desc".into()],
                     },
                 ],
+                rank: 0,
             }])),
             ..Default::default()
         };
@@ -405,6 +407,7 @@ mod tests {
                     file_path: "/path".into(),
                     descriptions: vec![],
                 }],
+                rank: 0,
             }])),
             ..Default::default()
         };

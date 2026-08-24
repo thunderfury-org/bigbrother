@@ -620,6 +620,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn search_files_ranks_filename_phrase_before_all_token_hits() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "Love.Night.Is.Blind.mkv".into(),
+                file_path: "/Movies".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "Love.Is.Blind.S09E11.mkv".into(),
+                file_path: "/Reality".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("Love Is Blind", 20).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results[0].locations[0].file_name,
+            "Love.Is.Blind.S09E11.mkv"
+        );
+        assert_eq!(results[0].rank, 0);
+        assert_eq!(results[1].locations[0].file_name, "Love.Night.Is.Blind.mkv");
+        assert_eq!(results[1].rank, 1);
+
+        let limited = repo.search_files("Love Is Blind", 1).await.unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(
+            limited[0].locations[0].file_name,
+            "Love.Is.Blind.S09E11.mkv"
+        );
+        assert_eq!(limited[0].rank, 0);
+    }
+
+    #[tokio::test]
     async fn search_files_matches_consecutive_chinese_phrase_only() {
         let repo = repo().await;
         repo.record_files(&[
