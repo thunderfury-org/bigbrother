@@ -9,7 +9,7 @@ where
     let Some(query) = fts_query(keyword) else {
         return Ok(Vec::new());
     };
-    let name_query = format!("{{file_name}} : ({query})");
+    let name_query = format!("{{file_name}} : ({})", query.all_tokens);
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = db
         .query_all_raw(Statement::from_sql_and_values(
@@ -29,7 +29,7 @@ where
             ORDER BY rank ASC, id ASC
             LIMIT ?
             "#,
-            [name_query.into(), query.into(), limit.into()],
+            [name_query.into(), query.any_token.into(), limit.into()],
         ))
         .await?;
 
@@ -97,16 +97,64 @@ where
         .map_err(Into::into)
 }
 
-fn fts_query(keyword: &str) -> Option<String> {
-    let parts = keyword
-        .split_whitespace()
-        .filter_map(token_to_fts)
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
+struct FtsQuery {
+    all_tokens: String,
+    any_token: String,
+}
+
+fn fts_query(keyword: &str) -> Option<FtsQuery> {
+    let mut all_parts = Vec::new();
+    let mut recall_parts = Vec::new();
+    for token in keyword.split_whitespace() {
+        let Some(part) = token_to_fts(token) else {
+            continue;
+        };
+        all_parts.push(part.clone());
+        if !is_recall_stopword_token(token) {
+            recall_parts.push(part);
+        }
+    }
+    if all_parts.is_empty() || recall_parts.is_empty() {
         None
     } else {
-        Some(parts.join(" AND "))
+        Some(FtsQuery {
+            all_tokens: all_parts.join(" AND "),
+            any_token: recall_parts
+                .iter()
+                .map(|part| format!("({part})"))
+                .collect::<Vec<_>>()
+                .join(" OR "),
+        })
     }
+}
+
+const ENGLISH_STOPWORDS: &[&str] = &[
+    "a", "an", "the", "in", "on", "of", "and", "or", "to", "for", "is", "at", "by", "with", "from",
+];
+
+fn is_english_stopword(term: &str) -> bool {
+    ENGLISH_STOPWORDS
+        .iter()
+        .any(|stop| term.eq_ignore_ascii_case(stop))
+}
+
+fn is_recall_stopword_token(token: &str) -> bool {
+    if token.chars().any(is_cjk) {
+        return false;
+    }
+    let mut terms = Vec::new();
+    let mut current = String::new();
+    for ch in token.chars() {
+        if ch.is_alphanumeric() {
+            current.push(ch);
+        } else if !current.is_empty() {
+            terms.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        terms.push(current);
+    }
+    !terms.is_empty() && terms.iter().all(|term| is_english_stopword(term))
 }
 
 fn token_to_fts(token: &str) -> Option<String> {

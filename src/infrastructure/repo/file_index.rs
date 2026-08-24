@@ -384,7 +384,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_files_requires_every_token() {
+    async fn search_files_recalls_partial_whitespace_tokens() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "Love.Is.Blind.S09E11.mkv".into(),
+                file_path: "/Reality".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "The.Office.mkv".into(),
+                file_path: "/Sitcoms".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("Love Blind", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].locations[0].file_name,
+            "Love.Is.Blind.S09E11.mkv"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_files_excludes_locations_with_no_token_hits() {
         let repo = repo().await;
         repo.record_files(&[FileIndexRecordInput {
             size: 100,
@@ -397,11 +429,76 @@ mod tests {
         .await
         .unwrap();
 
-        let hits = repo.search_files("movie 2024", 20).await.unwrap();
+        let hits = repo.search_files("movie 2025", 20).await.unwrap();
         assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].locations[0].file_name, "movie.2024.mkv");
 
-        let misses = repo.search_files("movie 2025", 20).await.unwrap();
+        let misses = repo.search_files("office unmatched", 20).await.unwrap();
         assert!(misses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_files_ignores_stopwords_for_partial_recall() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "The Three-Body Problem in Minecraft.mkv".into(),
+                file_path: "/Shows".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "仙逆.S01E01.mkv".into(),
+                file_path: "/Donghua".into(),
+                description: Some(
+                    "He firmly believed in human beings and became famous in the cultivation world."
+                        .into(),
+                ),
+            },
+            FileIndexRecordInput {
+                size: 300,
+                hash_type: "md5".into(),
+                hash_value: "cccccccccccccccccccccccccccccccc".into(),
+                file_name: "Adrift.in.Love.mkv".into(),
+                file_path: "/Dramas".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo
+            .search_files("Three-Body in Minecraft", 20)
+            .await
+            .unwrap();
+        let names = results
+            .iter()
+            .map(|record| record.locations[0].file_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["The Three-Body Problem in Minecraft.mkv"]);
+    }
+
+    #[tokio::test]
+    async fn search_files_returns_empty_for_stopword_only_query() {
+        let repo = repo().await;
+        repo.record_files(&[FileIndexRecordInput {
+            size: 100,
+            hash_type: "md5".into(),
+            hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            file_name: "Adrift.in.Love.mkv".into(),
+            file_path: "/Dramas".into(),
+            description: Some("a story in the city".into()),
+        }])
+        .await
+        .unwrap();
+
+        assert!(repo.search_files("in", 20).await.unwrap().is_empty());
+        assert!(repo.search_files("in the of", 20).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -468,6 +565,58 @@ mod tests {
             limited[0].locations[0].file_name,
             "Love.Is.Blind.S09E11.mkv"
         );
+    }
+
+    #[tokio::test]
+    async fn search_files_ranks_complete_filename_hits_before_partial_and_description() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "unrelated.mkv".into(),
+                file_path: "/Other".into(),
+                description: Some("Love Is Blind".into()),
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "Love.Blind.mkv".into(),
+                file_path: "/Movies".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 300,
+                hash_type: "md5".into(),
+                hash_value: "cccccccccccccccccccccccccccccccc".into(),
+                file_name: "Love.Is.Blind.S09E11.mkv".into(),
+                file_path: "/Reality".into(),
+                description: Some("other notes".into()),
+            },
+            FileIndexRecordInput {
+                size: 400,
+                hash_type: "md5".into(),
+                hash_value: "dddddddddddddddddddddddddddddddd".into(),
+                file_name: "The.Office.mkv".into(),
+                file_path: "/Sitcoms".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("Love Is Blind", 20).await.unwrap();
+        let names = results
+            .iter()
+            .map(|record| record.locations[0].file_name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names[0], "Love.Is.Blind.S09E11.mkv");
+        assert_eq!(results.len(), 3);
+        assert!(names.contains(&"Love.Blind.mkv"));
+        assert!(names.contains(&"unrelated.mkv"));
+        assert!(!names.contains(&"The.Office.mkv"));
     }
 
     #[tokio::test]
