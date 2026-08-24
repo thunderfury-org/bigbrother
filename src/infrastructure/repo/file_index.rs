@@ -422,4 +422,165 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].locations[0].file_name, "episode.mkv");
     }
+
+    #[tokio::test]
+    async fn search_files_ranks_filename_hits_before_path_and_description() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "unrelated.mkv".into(),
+                file_path: "/Other".into(),
+                description: Some("Love Is Blind".into()),
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "clip.mkv".into(),
+                file_path: "/Love/Is/Blind".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 300,
+                hash_type: "md5".into(),
+                hash_value: "cccccccccccccccccccccccccccccccc".into(),
+                file_name: "Love.Is.Blind.S09E11.mkv".into(),
+                file_path: "/Reality".into(),
+                description: Some("other notes".into()),
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("Love Is Blind", 20).await.unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(
+            results[0].locations[0].file_name,
+            "Love.Is.Blind.S09E11.mkv"
+        );
+
+        let limited = repo.search_files("Love Is Blind", 1).await.unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(
+            limited[0].locations[0].file_name,
+            "Love.Is.Blind.S09E11.mkv"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_files_matches_consecutive_chinese_phrase_only() {
+        let repo = repo().await;
+        repo.record_files(&[
+            FileIndexRecordInput {
+                size: 100,
+                hash_type: "md5".into(),
+                hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                file_name: "三体.S01E01.mkv".into(),
+                file_path: "/Shows".into(),
+                description: None,
+            },
+            FileIndexRecordInput {
+                size: 200,
+                hash_type: "md5".into(),
+                hash_value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                file_name: "三.mkv".into(),
+                file_path: "/Other".into(),
+                description: Some("体".into()),
+            },
+            FileIndexRecordInput {
+                size: 300,
+                hash_type: "md5".into(),
+                hash_value: "cccccccccccccccccccccccccccccccc".into(),
+                file_name: "三.体.mkv".into(),
+                file_path: "/Other".into(),
+                description: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let results = repo.search_files("三体", 20).await.unwrap();
+        let names = results
+            .iter()
+            .flat_map(|record| {
+                record
+                    .locations
+                    .iter()
+                    .map(|location| location.file_name.as_str())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(results.len(), 1);
+        assert_eq!(names, vec!["三体.S01E01.mkv"]);
+    }
+
+    #[tokio::test]
+    async fn search_files_updates_index_when_description_is_added_later() {
+        let repo = repo().await;
+        let file = FileIndexRecordInput {
+            size: 100,
+            hash_type: "md5".into(),
+            hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            file_name: "movie.mkv".into(),
+            file_path: "/Movies".into(),
+            description: None,
+        };
+        repo.record_files(&[file.clone()]).await.unwrap();
+        assert!(repo.search_files("rare", 20).await.unwrap().is_empty());
+
+        let mut with_description = file;
+        with_description.description = Some("rare keyword".into());
+        repo.record_files(&[with_description]).await.unwrap();
+
+        let results = repo.search_files("rare", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "movie.mkv");
+    }
+
+    #[tokio::test]
+    async fn search_files_backfills_existing_locations() {
+        use chrono::Utc;
+        use sea_orm::{ActiveModelTrait, ActiveValue};
+
+        use crate::{
+            application::file_index::location_hash,
+            infrastructure::entity::{file_index::backfill_file_location_fts, model},
+        };
+
+        let repo = repo().await;
+        let now = Utc::now();
+        let index = model::file_index::ActiveModel {
+            size: ActiveValue::Set(100),
+            hash_type: ActiveValue::Set("md5".into()),
+            hash_value: ActiveValue::Set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+            create_time: ActiveValue::Set(now),
+            update_time: ActiveValue::Set(now),
+            ..Default::default()
+        }
+        .insert(&repo.db)
+        .await
+        .unwrap();
+        model::file_location::ActiveModel {
+            file_index_id: ActiveValue::Set(index.id),
+            file_name: ActiveValue::Set("legacy.mkv".into()),
+            file_path: ActiveValue::Set("/Archive".into()),
+            location_hash: ActiveValue::Set(location_hash("/Archive", "legacy.mkv")),
+            create_time: ActiveValue::Set(now),
+            update_time: ActiveValue::Set(now),
+            ..Default::default()
+        }
+        .insert(&repo.db)
+        .await
+        .unwrap();
+
+        assert!(repo.search_files("legacy", 20).await.unwrap().is_empty());
+
+        backfill_file_location_fts(&repo.db).await.unwrap();
+
+        let results = repo.search_files("legacy", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "legacy.mkv");
+    }
 }

@@ -169,6 +169,7 @@ async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
     Migrator::up(&db, None)
         .await
         .map_err(|err| AppError::Database(format!("failed to run migration: {err}"), false))?;
+    crate::infrastructure::entity::file_index::backfill_file_location_fts(&db).await?;
 
     Ok(db)
 }

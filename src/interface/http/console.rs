@@ -1107,6 +1107,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn search_files_ranks_filename_phrase_hits_first() {
+        let file_repo = fresh_file_repo().await;
+        file_repo
+            .record_files(&[
+                FileIndexRecordInput {
+                    size: 100,
+                    hash_type: "md5".into(),
+                    hash_value: "a".repeat(32),
+                    file_name: "unrelated.mkv".into(),
+                    file_path: "/Other".into(),
+                    description: Some("Love Is Blind".into()),
+                },
+                FileIndexRecordInput {
+                    size: 200,
+                    hash_type: "md5".into(),
+                    hash_value: "b".repeat(32),
+                    file_name: "Love.Is.Blind.S09E11.mkv".into(),
+                    file_path: "/Reality".into(),
+                    description: Some("from share xyz".into()),
+                },
+            ])
+            .await
+            .unwrap();
+        let router = router_with_files(file_repo).await;
+
+        let response = router
+            .oneshot(request("/api/files?q=Love+Is+Blind"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(
+            items[0]["locations"][0]["file_name"],
+            "Love.Is.Blind.S09E11.mkv"
+        );
+        assert!(items[0].get("score").is_none());
+        assert!(items[0]["id"].is_number());
+        assert!(items[0]["size"].is_number());
+        assert!(items[0]["hash_type"].is_string());
+        assert!(items[0]["hash_value"].is_string());
+        assert!(items[0]["locations"].is_array());
+    }
+
+    #[tokio::test]
     async fn import_files_returns_503_without_import_service() {
         let router = router_with(fresh_repo().await).await;
 
