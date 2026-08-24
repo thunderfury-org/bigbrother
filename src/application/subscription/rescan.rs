@@ -2,15 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::application::file_index::FileIndexService;
-use crate::application::file_index_import::ImportFileResult;
+use crate::application::file_index_import::{
+    ImportFileResult, identify_files_with_fallback, media_file_ids,
+};
 use crate::application::import::MetadataLookup;
-use crate::application::import::identify::{IdentifyOutcome, UnmatchedFile};
 use crate::application::import::{ImportedMedia, MediaIdentifier, MediaImporter};
 use crate::application::ports::{SubscriptionRecord, SubscriptionRepository};
 use crate::application::recorded_import::RecordedImportService;
 use crate::application::subscription::import_filter::media_matches_subscription;
-use crate::domain::import::inner::{Media, MediaFile};
-use crate::domain::import::policy::{insert_movie_media, insert_tv_media};
+use crate::domain::import::inner::Media;
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
 use crate::error::{AppError, AppResult};
 
@@ -87,7 +87,7 @@ pub(crate) async fn rescan_subscription(
     for (raw_file, descriptions) in pending {
         media_files.extend(metadata_lookup.build_media_files(vec![raw_file], descriptions));
     }
-    let identified = identify_rescan_files(identifier, media_files).await;
+    let identified = identify_files_with_fallback(identifier, media_files).await;
     let failed = identified.failed;
     let filtered_groups = groups_for_subscription(&subscription, identified.groups);
     let imported_file_ids = media_file_ids(&filtered_groups);
@@ -123,70 +123,6 @@ pub(crate) async fn rescan_subscription(
     }
 }
 
-struct RescanIdentify {
-    groups: Vec<Media>,
-    unmatched: Vec<UnmatchedFile>,
-    failed: Vec<(i64, AppError)>,
-}
-
-async fn identify_rescan_files(
-    identifier: &dyn MediaIdentifier,
-    files: Vec<MediaFile>,
-) -> RescanIdentify {
-    match identifier.identify(files.clone()).await {
-        Ok(IdentifyOutcome { groups, unmatched }) => RescanIdentify {
-            groups,
-            unmatched,
-            failed: Vec::new(),
-        },
-        Err(_) => {
-            let mut groups = Vec::new();
-            let mut unmatched = Vec::new();
-            let mut failed = Vec::new();
-            for file in files {
-                let Some(file_id) = file.video.id else {
-                    continue;
-                };
-                match identifier.identify(vec![file]).await {
-                    Ok(outcome) => {
-                        groups.extend(outcome.groups);
-                        unmatched.extend(outcome.unmatched);
-                    }
-                    Err(err) => failed.push((file_id, err)),
-                }
-            }
-            RescanIdentify {
-                groups: merge_media_groups(groups),
-                unmatched,
-                failed,
-            }
-        }
-    }
-}
-
-fn merge_media_groups(groups: Vec<Media>) -> Vec<Media> {
-    let mut by_id = HashMap::new();
-    for group in groups {
-        match group {
-            Media::Tv { detail, files } => {
-                for (season, episodes) in files {
-                    for (episode, media_files) in episodes {
-                        for file in media_files {
-                            insert_tv_media(&mut by_id, detail.clone(), season, episode, file);
-                        }
-                    }
-                }
-            }
-            Media::Movie { detail, files } => {
-                for file in files {
-                    insert_movie_media(&mut by_id, detail.clone(), file);
-                }
-            }
-        }
-    }
-    by_id.into_values().collect()
-}
-
 fn subscription_rescan_source(subscription: &SubscriptionRecord) -> String {
     let title = subscription
         .title_en
@@ -207,33 +143,6 @@ fn groups_for_subscription(subscription: &SubscriptionRecord, groups: Vec<Media>
             media_matches_subscription(media, subscription.tmdb_id, &subscription.media_type)
         })
         .collect()
-}
-
-fn media_file_ids(groups: &[Media]) -> HashSet<i64> {
-    let mut ids = HashSet::new();
-    for group in groups {
-        match group {
-            Media::Movie { files, .. } => {
-                for file in files {
-                    if let Some(id) = file.video.id {
-                        ids.insert(id);
-                    }
-                }
-            }
-            Media::Tv { files, .. } => {
-                for episodes in files.values() {
-                    for media_files in episodes.values() {
-                        for file in media_files {
-                            if let Some(id) = file.video.id {
-                                ids.insert(id);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    ids
 }
 
 fn append_identify_failures(
