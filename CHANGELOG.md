@@ -1,5 +1,21 @@
 # Changelog
+## [0.5.0] - 2026-08-24
+### Bug Fixes
+
+- (app) search file descriptions without scanning every link (#161)
+
+### Features
+
+- (app) show search imports in a blocking result dialog (#169)
+- (app) batch console file index import by identified media (#168)
+- (app) import only high-relevance subscription rescan hits (#167)
+- (app) relax file index search to partial-token recall (#166)
+- (app) replace file index search with FTS (#165)
 ## [0.4.0] - 2026-08-23
+### Chores
+
+- (app) release v0.4.0 (#160)
+
 ### Features
 
 - (app) batch file index search and AND keyword tokens (#159)
