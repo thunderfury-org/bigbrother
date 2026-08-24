@@ -14,6 +14,9 @@ use crate::domain::import::policy::{insert_movie_media, insert_tv_media};
 use crate::domain::import_record::{ImportSource, ImportSourceKind};
 use crate::error::{AppError, AppResult};
 
+const RESCAN_FILE_SEARCH_LIMIT: u64 = 100;
+const HIGH_RELEVANCE_MAX_RANK: i64 = 1;
+
 pub(crate) async fn rescan_subscription(
     subscription_id: i64,
     sub_repo: &dyn SubscriptionRepository,
@@ -47,7 +50,13 @@ pub(crate) async fn rescan_subscription(
     let mut seen_ids = HashSet::new();
     let mut search_results = Vec::new();
     for query in &queries {
-        for record in file_index.search_files(query, 100).await? {
+        for record in file_index
+            .search_files(query, RESCAN_FILE_SEARCH_LIMIT)
+            .await?
+        {
+            if record.rank > HIGH_RELEVANCE_MAX_RANK {
+                continue;
+            }
             if seen_ids.insert(record.id) {
                 search_results.push(record);
             }
@@ -412,9 +421,12 @@ mod tests {
         async fn search_files(
             &self,
             _keyword: &str,
-            _limit: u64,
+            limit: u64,
         ) -> AppResult<Vec<FileSearchRecord>> {
-            Ok(self.records.lock().unwrap().clone())
+            let mut records = self.records.lock().unwrap().clone();
+            records.sort_by_key(|record| (record.rank, record.id));
+            records.truncate(limit as usize);
+            Ok(records)
         }
         async fn get_records_by_ids(&self, ids: &[i64]) -> AppResult<Vec<FileSearchRecord>> {
             Ok(self
@@ -522,6 +534,7 @@ mod tests {
                 file_path: format!("/movies/{id}"),
                 descriptions: vec!["desc1".into()],
             }],
+            rank: 0,
         }
     }
 
@@ -732,6 +745,7 @@ mod tests {
                 file_path: format!("/tv/{name}"),
                 descriptions: vec!["desc".into()],
             }],
+            rank: 0,
         }
     }
 
@@ -858,6 +872,7 @@ mod tests {
                         file_path: "/tv/Breaking.Bad".into(),
                         descriptions: vec!["desc".into()],
                     }],
+                    rank: 0,
                 },
             ])),
         };
@@ -1090,5 +1105,180 @@ mod tests {
 
         assert!(results.is_empty());
         assert!(import_repo.created.lock().unwrap().is_empty());
+    }
+
+    fn ranked_record(
+        id: i64,
+        rank: i64,
+        file_name: &str,
+        descriptions: Vec<String>,
+    ) -> FileSearchRecord {
+        FileSearchRecord {
+            id,
+            size: 1000,
+            hash_type: "md5".into(),
+            hash_value: format!("hash-{id}"),
+            locations: vec![FileLocationRecord {
+                file_name: file_name.into(),
+                file_path: format!("/files/{id}"),
+                descriptions,
+            }],
+            rank,
+        }
+    }
+
+    #[tokio::test]
+    async fn rescan_imports_filename_phrase_hits() {
+        let sub_repo = FakeSubRepo::default();
+        SubscriptionRepository::create(
+            &sub_repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 27205,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: None,
+                title_en: Some("Inception".into()),
+                year: None,
+                poster_path: None,
+                overview: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let file_repo = FakeFileRepo {
+            records: Arc::new(Mutex::new(vec![ranked_record(
+                3,
+                0,
+                "Inception.2010.mkv",
+                vec!["share notes".into()],
+            )])),
+        };
+        let file_index = FileIndexService::new(file_repo);
+        let import_repo = FakeImportRepo::default();
+        let recorded = RecordedImportService::new(import_repo);
+        let results = rescan_subscription(
+            1,
+            &sub_repo,
+            &file_index,
+            &MovieIdentifier {
+                tmdb_id: 27205,
+                title: "Inception".into(),
+            },
+            &movie_importer(),
+            &recorded,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, 3);
+        assert_eq!(results[0].status, "succeeded");
+    }
+
+    #[tokio::test]
+    async fn rescan_skips_description_only_and_partial_token_hits() {
+        let sub_repo = FakeSubRepo::default();
+        SubscriptionRepository::create(
+            &sub_repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 27205,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: None,
+                title_en: Some("Love Is Blind".into()),
+                year: None,
+                poster_path: None,
+                overview: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let file_repo = FakeFileRepo {
+            records: Arc::new(Mutex::new(vec![
+                ranked_record(1, 2, "unrelated.mkv", vec!["Love Is Blind".into()]),
+                ranked_record(2, 2, "Love.Blind.mkv", vec![]),
+                ranked_record(3, 0, "Love.Is.Blind.S09E11.mkv", vec![]),
+                ranked_record(4, 1, "Love.Night.Is.Blind.mkv", vec![]),
+            ])),
+        };
+        let file_index = FileIndexService::new(file_repo);
+        let import_repo = FakeImportRepo::default();
+        let recorded = RecordedImportService::new(import_repo);
+        let results = rescan_subscription(
+            1,
+            &sub_repo,
+            &file_index,
+            &MovieIdentifier {
+                tmdb_id: 27205,
+                title: "Love Is Blind".into(),
+            },
+            &movie_importer(),
+            &recorded,
+        )
+        .await
+        .unwrap();
+
+        let mut ids: Vec<i64> = results.iter().map(|result| result.id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![3, 4]);
+        assert!(results.iter().all(|result| result.status == "succeeded"));
+    }
+
+    #[tokio::test]
+    async fn rescan_truncates_qualified_hits_by_relevance_not_id() {
+        let sub_repo = FakeSubRepo::default();
+        SubscriptionRepository::create(
+            &sub_repo,
+            &SubscriptionCreateInput {
+                tmdb_id: 27205,
+                media_type: SubscriptionMediaType::Movie,
+                title_zh: None,
+                title_en: Some("Inception".into()),
+                year: None,
+                poster_path: None,
+                overview: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut records = (1..=100)
+            .map(|id| ranked_record(id, 1, "Inception.cut.mkv", vec![]))
+            .collect::<Vec<_>>();
+        records.push(ranked_record(200, 0, "Inception.2010.1080p.mkv", vec![]));
+        records.push(ranked_record(
+            201,
+            2,
+            "unrelated.mkv",
+            vec!["Inception".into()],
+        ));
+
+        let file_repo = FakeFileRepo {
+            records: Arc::new(Mutex::new(records)),
+        };
+        let file_index = FileIndexService::new(file_repo);
+        let import_repo = FakeImportRepo::default();
+        let recorded = RecordedImportService::new(import_repo);
+        let results = rescan_subscription(
+            1,
+            &sub_repo,
+            &file_index,
+            &MovieIdentifier {
+                tmdb_id: 27205,
+                title: "Inception".into(),
+            },
+            &movie_importer(),
+            &recorded,
+        )
+        .await
+        .unwrap();
+
+        let mut ids: Vec<i64> = results.iter().map(|result| result.id).collect();
+        ids.sort_unstable();
+        assert_eq!(results.len(), 100);
+        assert!(ids.contains(&200));
+        assert!(!ids.contains(&100));
+        assert!(!ids.contains(&201));
+        assert!(results.iter().all(|result| result.status == "succeeded"));
     }
 }

@@ -55,24 +55,30 @@ where
         return Ok(Vec::new());
     }
 
-    let location_ids =
+    let ranked_locations =
         super::file_location_fts::search_location_ids(db, keyword.trim(), limit).await?;
-    if location_ids.is_empty() {
+    if ranked_locations.is_empty() {
         return Ok(Vec::new());
     }
 
+    let location_ids = ranked_locations
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    let rank_by_location = ranked_locations.into_iter().collect::<HashMap<_, _>>();
     let locations = load_locations_in_order(db, &location_ids).await?;
     let hydration = LocationHydration::load(db, &locations).await?;
     let mut by_fingerprint = HashMap::new();
     let mut order = Vec::new();
     for location in &locations {
+        let rank = rank_by_location.get(&location.id).copied().unwrap_or(2);
         if !by_fingerprint.contains_key(&location.file_index_id) {
             if order.len() >= limit as usize {
                 continue;
             }
             order.push(location.file_index_id);
         }
-        add_location_match(&mut by_fingerprint, location, &hydration);
+        add_location_match(&mut by_fingerprint, location, &hydration, rank);
     }
 
     Ok(order
@@ -165,6 +171,7 @@ where
             hash_type: index.hash_type,
             hash_value: index.hash_value,
             locations: location_records,
+            rank: 0,
         });
     }
 
@@ -175,6 +182,7 @@ fn add_location_match(
     by_fingerprint: &mut HashMap<i64, FileSearchRecord>,
     location: &file_location::Model,
     hydration: &LocationHydration,
+    rank: i64,
 ) {
     let Some(index) = hydration.indexes.get(&location.file_index_id) else {
         return;
@@ -193,7 +201,11 @@ fn add_location_match(
             hash_type: index.hash_type.clone(),
             hash_value: index.hash_value.clone(),
             locations: Vec::new(),
+            rank,
         });
+    if rank < entry.rank {
+        entry.rank = rank;
+    }
 
     if let Some(existing) = entry.locations.iter_mut().find(|existing| {
         existing.file_name == location.file_name && existing.file_path == location.file_path

@@ -2,14 +2,14 @@ use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
 use crate::error::AppResult;
 
-pub async fn search_location_ids<C>(db: &C, keyword: &str, limit: u64) -> AppResult<Vec<i64>>
+pub async fn search_location_ids<C>(db: &C, keyword: &str, limit: u64) -> AppResult<Vec<(i64, i64)>>
 where
     C: ConnectionTrait,
 {
     let Some(query) = fts_query(keyword) else {
         return Ok(Vec::new());
     };
-    let name_query = format!("{{file_name}} : ({})", query.all_tokens);
+    let name_tokens = format!("{{file_name}} : ({})", query.all_tokens);
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = db
         .query_all_raw(Statement::from_sql_and_values(
@@ -24,19 +24,29 @@ where
                 SELECT rowid AS id, 1 AS rank
                 FROM file_location_fts
                 WHERE file_location_fts MATCH ?
+                UNION ALL
+                SELECT rowid AS id, 2 AS rank
+                FROM file_location_fts
+                WHERE file_location_fts MATCH ?
             )
             GROUP BY id
             ORDER BY rank ASC, id ASC
             LIMIT ?
             "#,
-            [name_query.into(), query.any_token.into(), limit.into()],
+            [
+                query.name_phrase.into(),
+                name_tokens.into(),
+                query.any_token.into(),
+                limit.into(),
+            ],
         ))
         .await?;
 
-    rows.into_iter()
-        .map(|row| row.try_get("", "id"))
-        .collect::<Result<Vec<i64>, _>>()
-        .map_err(Into::into)
+    let mut ranked = Vec::with_capacity(rows.len());
+    for row in rows {
+        ranked.push((row.try_get("", "id")?, row.try_get("", "rank")?));
+    }
+    Ok(ranked)
 }
 
 pub async fn upsert_location_fts<C>(
@@ -98,17 +108,26 @@ where
 }
 
 struct FtsQuery {
+    name_phrase: String,
     all_tokens: String,
     any_token: String,
 }
 
 fn fts_query(keyword: &str) -> Option<FtsQuery> {
+    let mut phrase_terms = Vec::new();
     let mut all_parts = Vec::new();
     let mut recall_parts = Vec::new();
     for token in keyword.split_whitespace() {
-        let Some(part) = token_to_fts(token) else {
+        let terms = token_terms(token);
+        if terms.is_empty() {
             continue;
-        };
+        }
+        let part = terms
+            .iter()
+            .map(|term| quote_term(term))
+            .collect::<Vec<_>>()
+            .join(" AND ");
+        phrase_terms.extend(terms);
         all_parts.push(part.clone());
         if !is_recall_stopword_token(token) {
             recall_parts.push(part);
@@ -118,6 +137,7 @@ fn fts_query(keyword: &str) -> Option<FtsQuery> {
         None
     } else {
         Some(FtsQuery {
+            name_phrase: format!("{{file_name}} : ({})", quote_term(&phrase_terms.join(" "))),
             all_tokens: all_parts.join(" AND "),
             any_token: recall_parts
                 .iter()
@@ -157,7 +177,7 @@ fn is_recall_stopword_token(token: &str) -> bool {
     !terms.is_empty() && terms.iter().all(|term| is_english_stopword(term))
 }
 
-fn token_to_fts(token: &str) -> Option<String> {
+fn token_terms(token: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut current_cjk = false;
@@ -165,32 +185,24 @@ fn token_to_fts(token: &str) -> Option<String> {
     for ch in token.chars() {
         if is_cjk(ch) {
             if !current.is_empty() && !current_cjk {
-                parts.push(quote_term(&current));
-                current.clear();
+                parts.push(std::mem::take(&mut current));
             }
             current.push(ch);
             current_cjk = true;
         } else if ch.is_alphanumeric() {
             if !current.is_empty() && current_cjk {
-                parts.push(quote_term(&current));
-                current.clear();
+                parts.push(std::mem::take(&mut current));
             }
             current.push(ch);
             current_cjk = false;
         } else if !current.is_empty() {
-            parts.push(quote_term(&current));
-            current.clear();
+            parts.push(std::mem::take(&mut current));
         }
     }
     if !current.is_empty() {
-        parts.push(quote_term(&current));
+        parts.push(current);
     }
-
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join(" AND "))
-    }
+    parts
 }
 
 fn fts_document(text: &str) -> String {

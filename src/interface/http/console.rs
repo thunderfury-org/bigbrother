@@ -1145,6 +1145,7 @@ mod tests {
             "Love.Is.Blind.S09E11.mkv"
         );
         assert!(items[0].get("score").is_none());
+        assert!(items[0].get("rank").is_none());
         assert!(items[0]["id"].is_number());
         assert!(items[0]["size"].is_number());
         assert!(items[0]["hash_type"].is_string());
@@ -1191,6 +1192,7 @@ mod tests {
             "Love.Is.Blind.S09E11.mkv"
         );
         assert!(items[0].get("score").is_none());
+        assert!(items[0].get("rank").is_none());
         assert!(items[0]["id"].is_number());
         assert!(items[0]["size"].is_number());
         assert!(items[0]["hash_type"].is_string());
