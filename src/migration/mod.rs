@@ -13,7 +13,6 @@ mod m20260602_000001_drop_table_keyword;
 mod m20260818_000000_add_subscription_display_fields;
 mod m20260824_000000_index_file_location_description_by_description;
 mod m20260824_120000_create_file_location_fts;
-mod m20260824_180000_contentless_file_location_fts;
 
 pub struct Migrator;
 
@@ -34,7 +33,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260818_000000_add_subscription_display_fields::Migration),
             Box::new(m20260824_000000_index_file_location_description_by_description::Migration),
             Box::new(m20260824_120000_create_file_location_fts::Migration),
-            Box::new(m20260824_180000_contentless_file_location_fts::Migration),
         ]
     }
 }
