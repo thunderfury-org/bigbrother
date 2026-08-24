@@ -23,11 +23,13 @@
   let lastQuery = $state('');
   let items: FileSearchItem[] = $state([]);
   let threads: CommunityThread[] = $state([]);
-  let loading = $state(false);
+  let fileLoading = $state(false);
+  let communityLoading = $state(false);
   let fileError = $state('');
   let communityError = $state('');
   let hasSearched = $state(false);
   let activeTab: 'files' | 'community' = $state('files');
+  let searchSeq = 0;
 
   let selectedIds: Set<number> = $state(new Set());
   let importing = $state(false);
@@ -37,36 +39,48 @@
   let importFileResults: ImportFileResult[] | null = $state(null);
   let importCommunityResults: CommunityImportResult[] | null = $state(null);
 
-  async function run() {
+  function run() {
     const q = keyword.trim();
+    const seq = ++searchSeq;
     lastQuery = q;
     hasSearched = true;
-    loading = true;
+    fileLoading = true;
+    communityLoading = true;
     fileError = '';
     communityError = '';
     selectedIds = new Set();
-    try {
-      const [fileResult, communityResult] = await Promise.allSettled([
-        searchFiles(q, limit),
-        searchCommunityThreads(q, limit),
-      ]);
-      if (fileResult.status === 'fulfilled') {
-        items = fileResult.value.items;
-      } else {
-        const err = fileResult.reason;
-        fileError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+    items = [];
+    threads = [];
+
+    void searchFiles(q, limit)
+      .then((page) => {
+        if (seq !== searchSeq) return;
+        items = page.items;
+      })
+      .catch((err) => {
+        if (seq !== searchSeq) return;
         items = [];
-      }
-      if (communityResult.status === 'fulfilled') {
-        threads = communityResult.value.items;
-      } else {
-        const err = communityResult.reason;
-        communityError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+        fileError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+      })
+      .finally(() => {
+        if (seq !== searchSeq) return;
+        fileLoading = false;
+      });
+
+    void searchCommunityThreads(q, limit)
+      .then((page) => {
+        if (seq !== searchSeq) return;
+        threads = page.items;
+      })
+      .catch((err) => {
+        if (seq !== searchSeq) return;
         threads = [];
-      }
-    } finally {
-      loading = false;
-    }
+        communityError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+      })
+      .finally(() => {
+        if (seq !== searchSeq) return;
+        communityLoading = false;
+      });
   }
 
   function reset() {
@@ -78,6 +92,9 @@
     hasSearched = false;
     fileError = '';
     communityError = '';
+    fileLoading = false;
+    communityLoading = false;
+    searchSeq += 1;
     selectedIds = new Set();
     activeTab = 'files';
     closeImport();
@@ -174,12 +191,13 @@
 
   const currentError = $derived(activeTab === 'files' ? fileError : communityError);
   const currentCount = $derived(activeTab === 'files' ? items.length : threads.length);
+  const currentLoading = $derived(activeTab === 'files' ? fileLoading : communityLoading);
 </script>
 
 <section>
   <header class="page-header">
     <h1 class="page-title">搜索</h1>
-    {#if hasSearched && !loading && !currentError && lastQuery}
+    {#if hasSearched && !currentLoading && !currentError && lastQuery}
       <span class="page-count">{currentCount} 条结果</span>
     {/if}
   </header>
@@ -218,7 +236,7 @@
         aria-selected={activeTab === 'files'}
         onclick={() => { activeTab = 'files'; }}
       >
-        文件索引 {#if hasSearched && !loading}<span class="tab-count">{items.length}</span>{/if}
+        文件索引 {#if hasSearched && !fileLoading}<span class="tab-count">{items.length}</span>{/if}
       </button>
       <button
         type="button"
@@ -228,7 +246,7 @@
         aria-selected={activeTab === 'community'}
         onclick={() => { activeTab = 'community'; }}
       >
-        123分享社区 {#if hasSearched && !loading}<span class="tab-count">{threads.length}</span>{/if}
+        123分享社区 {#if hasSearched && !communityLoading}<span class="tab-count">{threads.length}</span>{/if}
       </button>
     </div>
   {/if}
@@ -255,7 +273,7 @@
     <div class="banner banner-error">{currentError}</div>
   {/if}
 
-  {#if loading}
+  {#if currentLoading}
     <div class="loading">
       <div class="loading-bar"></div>
       <p>正在搜索…</p>
