@@ -632,4 +632,45 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].locations[0].file_name, "legacy-32999.mkv");
     }
+
+    #[tokio::test]
+    async fn file_index_search_does_not_keep_fts_content_or_like_indexes() {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+        let repo = repo().await;
+        repo.record_files(&[FileIndexRecordInput {
+            size: 100,
+            hash_type: "md5".into(),
+            hash_value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            file_name: "movie.mkv".into(),
+            file_path: "/Movies".into(),
+            description: Some("desc".into()),
+        }])
+        .await
+        .unwrap();
+
+        let names = repo
+            .db
+            .query_all_raw(Statement::from_string(
+                DbBackend::Sqlite,
+                String::from(
+                    "SELECT name FROM sqlite_master WHERE name IN (
+                        'file_location_fts_content',
+                        'idx-file-location-name',
+                        'idx-file-location-path'
+                    )",
+                ),
+            ))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.try_get::<String>("", "name").unwrap())
+            .collect::<Vec<_>>();
+        assert!(names.is_empty(), "{names:?}");
+
+        let results = repo.search_files("movie", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "movie.mkv");
+        assert_eq!(results[0].locations[0].descriptions, vec!["desc"]);
+    }
 }
