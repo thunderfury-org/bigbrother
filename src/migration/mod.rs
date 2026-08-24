@@ -11,6 +11,7 @@ mod m20260527_000000_add_llm_fields_to_file_description;
 mod m20260602_000000_create_table_subscription;
 mod m20260602_000001_drop_table_keyword;
 mod m20260818_000000_add_subscription_display_fields;
+mod m20260824_000000_index_file_location_description_by_description;
 
 pub struct Migrator;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260602_000000_create_table_subscription::Migration),
             Box::new(m20260602_000001_drop_table_keyword::Migration),
             Box::new(m20260818_000000_add_subscription_display_fields::Migration),
+            Box::new(m20260824_000000_index_file_location_description_by_description::Migration),
         ]
     }
 }
