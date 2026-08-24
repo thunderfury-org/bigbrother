@@ -3,8 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, TransactionSession, TransactionTrait,
-    sea_query::{Expr, ExprTrait, Query},
+    QueryFilter, QueryOrder, QuerySelect, TransactionSession, TransactionTrait, sea_query::Query,
 };
 
 use crate::{
@@ -293,19 +292,21 @@ fn token_matches(token: &str) -> Condition {
         .add(file_location::Column::FileName.contains(token))
         .add(file_location::Column::FilePath.contains(token))
         .add(
+            // Nested IN filters descriptions first. A join from the link table
+            // makes SQLite load description text once per link row.
             file_location::Column::Id.in_subquery(
                 Query::select()
                     .column(file_location_description::Column::FileLocationId)
                     .from(file_location_description::Entity)
-                    .inner_join(
-                        file_description::Entity,
-                        Expr::col((
-                            file_location_description::Entity,
-                            file_location_description::Column::FileDescriptionId,
-                        ))
-                        .equals((file_description::Entity, file_description::Column::Id)),
+                    .and_where(
+                        file_location_description::Column::FileDescriptionId.in_subquery(
+                            Query::select()
+                                .column(file_description::Column::Id)
+                                .from(file_description::Entity)
+                                .and_where(file_description::Column::Description.contains(token))
+                                .to_owned(),
+                        ),
                     )
-                    .and_where(file_description::Column::Description.contains(token))
                     .to_owned(),
             ),
         )
