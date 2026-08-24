@@ -83,26 +83,31 @@ where
 
 pub async fn backfill_file_location_fts<C>(db: &C) -> AppResult<()>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
-    let missing_ids = super::file_location_fts::missing_location_ids(db).await?;
-    if missing_ids.is_empty() {
-        return Ok(());
-    }
+    const BATCH_SIZE: u64 = 500;
+    let txn = db.begin().await?;
+    loop {
+        let missing_ids = super::file_location_fts::missing_location_ids(&txn, BATCH_SIZE).await?;
+        if missing_ids.is_empty() {
+            break;
+        }
 
-    let locations = load_locations_in_order(db, &missing_ids).await?;
-    let descriptions = load_descriptions_by_location_ids(db, &missing_ids).await?;
-    for location in locations {
-        let descs = descriptions.get(&location.id).cloned().unwrap_or_default();
-        super::file_location_fts::upsert_location_fts(
-            db,
-            location.id,
-            &location.file_name,
-            &location.file_path,
-            &descs,
-        )
-        .await?;
+        let locations = load_locations_in_order(&txn, &missing_ids).await?;
+        let descriptions = load_descriptions_by_location_ids(&txn, &missing_ids).await?;
+        for location in locations {
+            let descs = descriptions.get(&location.id).cloned().unwrap_or_default();
+            super::file_location_fts::upsert_location_fts(
+                &txn,
+                location.id,
+                &location.file_name,
+                &location.file_path,
+                &descs,
+            )
+            .await?;
+        }
     }
+    txn.commit().await?;
     Ok(())
 }
 

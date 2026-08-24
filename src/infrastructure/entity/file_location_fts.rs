@@ -72,22 +72,23 @@ where
     Ok(())
 }
 
-pub async fn missing_location_ids<C>(db: &C) -> AppResult<Vec<i64>>
+pub async fn missing_location_ids<C>(db: &C, limit: u64) -> AppResult<Vec<i64>>
 where
     C: ConnectionTrait,
 {
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = db
-        .query_all_raw(Statement::from_string(
+        .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            String::from(
-                r#"
+            r#"
             SELECT fl.id
             FROM file_location fl
             WHERE NOT EXISTS (
                 SELECT 1 FROM file_location_fts fts WHERE fts.rowid = fl.id
             )
+            LIMIT ?
             "#,
-            ),
+            [limit.into()],
         ))
         .await?;
     rows.into_iter()

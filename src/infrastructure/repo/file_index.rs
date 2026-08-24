@@ -583,4 +583,53 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].locations[0].file_name, "legacy.mkv");
     }
+
+    #[tokio::test]
+    async fn search_files_backfills_more_locations_than_sqlite_variable_limit() {
+        use chrono::Utc;
+        use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait};
+
+        use crate::{
+            application::file_index::location_hash,
+            infrastructure::entity::{file_index::backfill_file_location_fts, model},
+        };
+
+        let repo = repo().await;
+        let now = Utc::now();
+        let index = model::file_index::ActiveModel {
+            size: ActiveValue::Set(100),
+            hash_type: ActiveValue::Set("md5".into()),
+            hash_value: ActiveValue::Set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+            create_time: ActiveValue::Set(now),
+            update_time: ActiveValue::Set(now),
+            ..Default::default()
+        }
+        .insert(&repo.db)
+        .await
+        .unwrap();
+
+        const COUNT: usize = 33_000;
+        let mut sql = String::from(
+            "INSERT INTO file_location (file_index_id, file_name, file_path, location_hash, create_time, update_time) VALUES ",
+        );
+        for i in 0..COUNT {
+            if i > 0 {
+                sql.push(',');
+            }
+            let name = format!("legacy-{i}.mkv");
+            let path = "/Archive";
+            let hash = location_hash(path, &name);
+            sql.push_str(&format!(
+                "({index_id}, '{name}', '{path}', '{hash}', datetime('now'), datetime('now'))",
+                index_id = index.id,
+            ));
+        }
+        repo.db.execute_unprepared(&sql).await.unwrap();
+
+        backfill_file_location_fts(&repo.db).await.unwrap();
+
+        let results = repo.search_files("legacy-32999", 20).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].locations[0].file_name, "legacy-32999.mkv");
+    }
 }
