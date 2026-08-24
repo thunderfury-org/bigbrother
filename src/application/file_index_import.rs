@@ -7,12 +7,12 @@ use crate::{
             ImportedMedia, MediaIdentifier, MediaImporter, MetadataLookup,
             identify::{IdentifyOutcome, UnmatchedFile},
         },
-        recorded_import::RecordedImportService,
+        recorded_import::{RecordedImportService, import_outcome_from},
     },
     domain::{
         import::inner::{Media, MediaFile},
         import::policy::{insert_movie_media, insert_tv_media},
-        import_record::{ImportSource, ImportSourceKind},
+        import_record::{ImportSource, ImportSourceKind, RecordSummary, summarize},
     },
     error::{AppError, AppResult},
 };
@@ -29,6 +29,8 @@ pub struct ImportFileResult {
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<RecordSummary>,
 }
 
 impl ImportFileResult {
@@ -50,34 +52,18 @@ impl ImportFileResult {
         }
     }
 
-    pub(crate) fn from_imported(id: i64, item: &ImportedMedia) -> Self {
-        match item {
-            ImportedMedia::Movie {
-                title, year, size, ..
-            } => Self {
-                id,
-                status: "succeeded".into(),
-                title: Some(title.clone()),
-                year: Some(year.clone()),
-                size: Some(*size),
-                error: None,
-            },
-            ImportedMedia::Tv { name, year, .. } => Self {
-                id,
-                status: "succeeded".into(),
-                title: Some(name.clone()),
-                year: Some(year.clone()),
-                size: None,
-                error: None,
-            },
-            ImportedMedia::Skipped { .. } => Self {
-                id,
-                status: "skipped".into(),
-                title: Some("skipped".into()),
-                year: Some(String::new()),
-                size: None,
-                error: None,
-            },
+    pub(crate) fn from_imported(id: i64, imported: &[ImportedMedia]) -> Self {
+        let outcomes = imported.iter().map(import_outcome_from).collect::<Vec<_>>();
+        let (summary, status) = summarize(&outcomes);
+        let (title, year, size) = summary.display_fields();
+        Self {
+            id,
+            status: status.as_str().to_owned(),
+            title,
+            year,
+            size,
+            error: None,
+            summary: Some(summary),
         }
     }
 }
@@ -163,15 +149,11 @@ impl FileIndexImportService {
                 .await
             {
                 Ok(imported) => {
-                    let sample = imported
-                        .iter()
-                        .find(|item| !matches!(item, ImportedMedia::Skipped { .. }))
-                        .or(imported.first());
                     for file_id in file_ids {
-                        let result = if let Some(item) = sample {
-                            ImportFileResult::from_imported(file_id, item)
-                        } else {
+                        let result = if imported.is_empty() {
                             ImportFileResult::skipped(file_id, "no media matched")
+                        } else {
+                            ImportFileResult::from_imported(file_id, &imported)
                         };
                         by_id.insert(file_id, result);
                     }
@@ -326,7 +308,7 @@ mod tests {
     use crate::domain::{
         import::inner::{Media, MediaFile},
         import::{MovieDetail, TvDetail},
-        import_record::{ImportSourceKind, ImportStatus},
+        import_record::{ImportSourceKind, ImportStatus, SummaryItem},
     };
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
@@ -736,6 +718,23 @@ mod tests {
         assert_eq!(results[0].title.as_deref(), Some("Movie"));
         assert_eq!(results[0].year.as_deref(), Some("2024"));
         assert_eq!(results[0].size, Some(1_000_000));
+        match &results[0].summary.as_ref().expect("movie summary").items[..] {
+            [
+                SummaryItem::Movie {
+                    title,
+                    year,
+                    size,
+                    succeeded,
+                    ..
+                },
+            ] => {
+                assert_eq!(title, "Movie");
+                assert_eq!(year, "2024");
+                assert_eq!(*size, 1_000_000);
+                assert!(*succeeded);
+            }
+            other => panic!("expected movie summary, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -758,6 +757,8 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, "skipped");
+        let summary = results[0].summary.as_ref().expect("skipped summary");
+        assert_eq!(summary.skipped_files, vec!["test.mkv"]);
     }
 
     #[tokio::test]
@@ -776,6 +777,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, "skipped");
         assert_eq!(results[0].error.as_deref(), Some("no media matched"));
+        assert!(results[0].summary.is_none());
     }
 
     #[tokio::test]
@@ -795,6 +797,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, "skipped");
         assert_eq!(results[0].error.as_deref(), Some("no media matched"));
+        assert!(results[0].summary.is_none());
         assert!(import_repo.created.lock().unwrap().is_empty());
     }
 
@@ -815,6 +818,7 @@ mod tests {
         assert_eq!(results[0].id, 1);
         assert_eq!(results[0].status, "failed");
         assert!(results[0].error.as_deref().unwrap().contains("timeout"));
+        assert!(results[0].summary.is_none());
     }
 
     #[tokio::test]
@@ -849,6 +853,67 @@ mod tests {
                 .iter()
                 .all(|r| r.title.as_deref() == Some("Breaking Bad"))
         );
+        for result in &results {
+            match &result.summary.as_ref().expect("tv summary").items[..] {
+                [
+                    SummaryItem::Tv {
+                        name,
+                        season,
+                        episodes,
+                        ..
+                    },
+                ] => {
+                    assert_eq!(name, "Breaking Bad");
+                    assert_eq!(*season, 1);
+                    assert_eq!(episodes.len(), 2);
+                }
+                other => panic!("expected tv summary, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn tv_partial_failure_reports_partially_failed_summary() {
+        let service = service_with_records(vec![tv_record(1, "Show")]);
+        let importer = FakeImporter {
+            make_result: Box::new(|| {
+                Ok(vec![ImportedMedia::Tv {
+                    name: "Show".into(),
+                    year: "2025".into(),
+                    season: 1,
+                    episodes: vec![1],
+                    missing_episodes: vec![],
+                    max_episode_number: 2,
+                    total_size: 2048,
+                    number_of_episodes: 2,
+                    cost: Duration::from_millis(30),
+                    has_failed: true,
+                    failed_episodes: vec![2],
+                }])
+            }),
+        };
+        let recorded = RecordedImportService::new(FakeImportRepo::default());
+        let identifier = GroupingIdentifier {
+            tmdb_id: 99,
+            name: "Show".into(),
+        };
+
+        let results = service
+            .import_from_fingerprints(&[1], &identifier, &importer, &recorded)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "partially_failed");
+        match &results[0].summary.as_ref().expect("tv summary").items[..] {
+            [SummaryItem::Tv { name, episodes, .. }] => {
+                assert_eq!(name, "Show");
+                assert_eq!(episodes.len(), 2);
+                assert!(episodes.iter().any(|ep| ep.episode == 1 && ep.succeeded));
+                assert!(episodes.iter().any(|ep| ep.episode == 2 && !ep.succeeded));
+            }
+            other => panic!("expected tv summary, got {other:?}"),
+        }
     }
 
     #[tokio::test]

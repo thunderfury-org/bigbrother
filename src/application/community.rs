@@ -5,9 +5,7 @@ use crate::{
         ports::{CommunityCatalogHandle, CommunityThread, ShareResolver},
         recorded_import::{RecordedImportService, import_outcome_from},
     },
-    domain::import_record::{
-        ImportSource, ImportSourceKind, RecordSummary, SummaryItem, summarize,
-    },
+    domain::import_record::{ImportSource, ImportSourceKind, RecordSummary, summarize},
     error::AppResult,
 };
 
@@ -63,7 +61,7 @@ impl CommunityImportResult {
     ) -> Self {
         let outcomes = imported.iter().map(import_outcome_from).collect::<Vec<_>>();
         let (summary, status) = summarize(&outcomes);
-        let (title, year, size) = display_fields(&summary);
+        let (title, year, size) = summary.display_fields();
         Self {
             tid,
             thread_title,
@@ -75,22 +73,6 @@ impl CommunityImportResult {
             summary: Some(summary),
             error: None,
         }
-    }
-}
-
-fn display_fields(summary: &RecordSummary) -> (Option<String>, Option<String>, Option<u64>) {
-    match summary.items.first() {
-        Some(SummaryItem::Movie {
-            title, year, size, ..
-        }) => (Some(title.clone()), Some(year.clone()), Some(*size)),
-        Some(SummaryItem::Tv {
-            name,
-            year,
-            total_size,
-            ..
-        }) => (Some(name.clone()), Some(year.clone()), Some(*total_size)),
-        Some(SummaryItem::Skipped { .. }) => (None, None, None),
-        None => (None, None, None),
     }
 }
 

@@ -1,4 +1,4 @@
-import type { ImportListItem, ImportRecordError, ImportSummaryItem } from './api';
+import type { ImportListItem, ImportRecordError, ImportSummary, ImportSummaryItem } from './api';
 
 export function formatEpisodes(episodes: number[]): string {
   if (episodes.length === 0) return '';
@@ -53,4 +53,93 @@ export function formatSeasonLabel(season: number): string {
 
 function formatEpisode(episode: number): string {
   return `E${String(episode).padStart(2, '0')}`;
+}
+
+export function formatCost(ms: number | null | undefined): string {
+  if (!ms) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function formatSize(bytes: number | null | undefined): string {
+  if (bytes == null) return '—';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = Number(bytes);
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+export function statusLabel(status: string): string {
+  switch (status) {
+    case 'running':
+      return '处理中';
+    case 'succeeded':
+      return '成功';
+    case 'partially_failed':
+      return '部分失败';
+    case 'failed':
+      return '失败';
+    case 'skipped':
+      return '跳过';
+    default:
+      return status;
+  }
+}
+
+export type TvSummaryItem = Extract<ImportSummaryItem, { type: 'tv' }>;
+export type MovieSummaryItem = Extract<ImportSummaryItem, { type: 'movie' }>;
+
+export type ImportSummaryGroup =
+  | { type: 'movie'; title: string; item: MovieSummaryItem }
+  | { type: 'tv'; title: string; items: TvSummaryItem[] }
+  | { type: 'skipped'; files: string[] };
+
+export function formatMediaTitle(title: string, year?: string | null): string {
+  return year ? `${title} (${year})` : title;
+}
+
+export function groupSummaryItems(summary: ImportSummary): ImportSummaryGroup[] {
+  const groups: ImportSummaryGroup[] = [];
+  const skippedFromItems: string[] = [];
+
+  for (const item of summary.items) {
+    if (item.type === 'movie') {
+      groups.push({
+        type: 'movie',
+        title: formatMediaTitle(item.title, item.year),
+        item,
+      });
+      continue;
+    }
+    if (item.type === 'tv') {
+      const title = formatMediaTitle(item.name, item.year);
+      const last = groups.at(-1);
+      if (last?.type === 'tv' && last.title === title) {
+        last.items.push(item);
+      } else {
+        groups.push({ type: 'tv', title, items: [item] });
+      }
+      continue;
+    }
+    skippedFromItems.push(...item.files);
+  }
+
+  const skipped = summary.skipped_files.length > 0 ? summary.skipped_files : skippedFromItems;
+  if (skipped.length > 0) {
+    groups.push({ type: 'skipped', files: skipped });
+  }
+  return groups;
+}
+
+export function formatTvOutcome(item: TvSummaryItem): string {
+  const parts: string[] = [];
+  const succeeded = succeededEpisodes(item);
+  const failed = failedEpisodes(item);
+  if (succeeded.length > 0) parts.push(formatEpisodes(succeeded));
+  if (failed.length > 0) parts.push(`失败 ${formatEpisodes(failed)}`);
+  return parts.join(' · ');
 }

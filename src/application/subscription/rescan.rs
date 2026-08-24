@@ -186,7 +186,7 @@ fn results_for_files(
                 ImportFileResult::failed(*file_id, message.clone())
             } else if imported_file_ids.contains(file_id) {
                 if let Some(item) = sample {
-                    ImportFileResult::from_imported(*file_id, item)
+                    ImportFileResult::from_imported(*file_id, std::slice::from_ref(item))
                 } else {
                     ImportFileResult::skipped(*file_id, "no media matched")
                 }
