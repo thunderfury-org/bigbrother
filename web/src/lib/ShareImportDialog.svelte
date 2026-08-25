@@ -14,6 +14,15 @@
   let formError = $state('');
   let result: ShareImportResult | null = $state(null);
 
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   function openDialog() {
     open = true;
     importing = false;
@@ -75,6 +84,7 @@
   <div
     class="modal-backdrop"
     role="presentation"
+    use:portal
     onclick={(event) => {
       if (event.target === event.currentTarget) closeDialog();
     }}
@@ -138,13 +148,12 @@
           <form class="share-form" onsubmit={(event) => { event.preventDefault(); void submit(); }}>
             <label class="field">
               <span class="field-label">分享链接</span>
-              <textarea
-                class="input share-url-input"
+              <input
+                class="input"
                 bind:value={url}
                 placeholder="https://www.123684.com/s/xxxx?pwd= 或 189 / 115 分享链接"
-                rows="3"
                 disabled={importing}
-              ></textarea>
+              />
             </label>
             <label class="field">
               <span class="field-label">备注（可选）</span>
@@ -181,13 +190,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-
-  .share-url-input {
-    width: 100%;
-    min-height: 88px;
-    resize: vertical;
-    line-height: 1.45;
   }
 
   .dialog-actions {
