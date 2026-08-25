@@ -24,6 +24,7 @@
   let searching = $state(false);
   let candidates: CandidateItem[] = $state([]);
   let searchError = $state('');
+  let addError = $state('');
   let hasSearched = $state(false);
   let mediaFilter: MediaFilter = $state('all');
   let addingKey = $state<string | null>(null);
@@ -33,6 +34,7 @@
   let rescanError = $state('');
 
   let confirmDeleteId = $state<number | null>(null);
+  let deletingId = $state<number | null>(null);
 
   const visibleCandidates = $derived(
     mediaFilter === 'all' ? candidates : candidates.filter((c) => c.media_type === mediaFilter)
@@ -54,10 +56,12 @@
   function openAdd() {
     closeRescan();
     addOpen = true;
+    addError = '';
   }
 
   function closeAdd() {
     addOpen = false;
+    addError = '';
   }
 
   async function doSearch() {
@@ -65,6 +69,7 @@
     if (!q) return;
     searching = true;
     searchError = '';
+    addError = '';
     hasSearched = true;
     try {
       const resp = await searchCandidates(q);
@@ -83,7 +88,7 @@
 
   async function addCandidate(c: CandidateItem) {
     addingKey = candidateKey(c);
-    errorMessage = '';
+    addError = '';
     try {
       await createSubscription({
         tmdb_id: c.tmdb_id,
@@ -96,7 +101,7 @@
       });
       await load();
     } catch (err) {
-      errorMessage = err instanceof ApiError ? `添加失败 ${err.status}: ${err.body}` : String(err);
+      addError = err instanceof ApiError ? `添加失败 ${err.status}: ${err.body}` : String(err);
     } finally {
       addingKey = null;
     }
@@ -107,6 +112,8 @@
   }
 
   async function doDelete(id: number) {
+    if (deletingId != null) return;
+    deletingId = id;
     errorMessage = '';
     try {
       await deleteSubscription(id);
@@ -114,6 +121,8 @@
       await load();
     } catch (err) {
       errorMessage = err instanceof ApiError ? `删除失败 ${err.status}: ${err.body}` : String(err);
+    } finally {
+      deletingId = null;
     }
   }
 
@@ -253,7 +262,7 @@
             <button
               type="button"
               class="btn btn-ghost btn-sm"
-              disabled={rescanningId === item.id}
+              disabled={rescanningId === item.id || deletingId != null}
               onclick={() => doRescan(item.id)}
             >
               {rescanningId === item.id ? '重扫中…' : '重扫'}
@@ -262,13 +271,15 @@
               <button
                 type="button"
                 class="btn btn-danger btn-sm"
+                disabled={deletingId === item.id}
                 onclick={() => doDelete(item.id)}
               >
-                确认删除
+                {deletingId === item.id ? '删除中…' : '确认删除'}
               </button>
               <button
                 type="button"
                 class="btn btn-ghost btn-sm"
+                disabled={deletingId === item.id}
                 onclick={() => { confirmDeleteId = null; }}
               >
                 取消
@@ -277,6 +288,7 @@
               <button
                 type="button"
                 class="btn btn-danger-ghost btn-sm"
+                disabled={deletingId != null}
                 onclick={() => { confirmDeleteId = item.id; }}
               >
                 删除
@@ -344,6 +356,10 @@
 
         {#if searchError}
           <div class="banner banner-error">{searchError}</div>
+        {/if}
+
+        {#if addError}
+          <div class="banner banner-error">{addError}</div>
         {/if}
 
         {#if searching}
