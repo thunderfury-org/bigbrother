@@ -1,8 +1,21 @@
 # Changelog
+## [0.6.0] - 2026-08-25
+### Bug Fixes
+
+- (app) surface add error in drawer, guard deletion, and fix search/nav states (#171)
+
+### Features
+
+- (app) import share urls from the web console (#173)
+- (app) revamp web console with cinematic dark theme and poster grid (#172)
 ## [0.5.0] - 2026-08-24
 ### Bug Fixes
 
 - (app) search file descriptions without scanning every link (#161)
+
+### Chores
+
+- (app) release v0.5.0 (#170)
 
 ### Features
 
