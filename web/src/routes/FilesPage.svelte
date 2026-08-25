@@ -20,7 +20,6 @@
 
   let keyword = $state('');
   let limit = $state(50);
-  let lastQuery = $state('');
   let items: FileSearchItem[] = $state([]);
   let threads: CommunityThread[] = $state([]);
   let fileLoading = $state(false);
@@ -41,8 +40,8 @@
 
   function run() {
     const q = keyword.trim();
+    if (!q) return;
     const seq = ++searchSeq;
-    lastQuery = q;
     hasSearched = true;
     fileLoading = true;
     communityLoading = true;
@@ -86,7 +85,6 @@
   function reset() {
     keyword = '';
     limit = 50;
-    lastQuery = '';
     items = [];
     threads = [];
     hasSearched = false;
@@ -197,7 +195,7 @@
 <section>
   <header class="page-header">
     <h1 class="page-title">搜索</h1>
-    {#if hasSearched && !currentLoading && !currentError && lastQuery}
+    {#if hasSearched && !currentLoading && !currentError}
       <span class="page-count">{currentCount} 条结果</span>
     {/if}
   </header>
@@ -222,7 +220,7 @@
         <option value={200}>200</option>
       </select>
     </label>
-    <button type="submit" class="btn btn-primary" disabled={importing}>搜索</button>
+    <button type="submit" class="btn btn-primary" disabled={importing || !keyword.trim()}>搜索</button>
     <button type="button" onclick={reset} class="btn btn-ghost" disabled={importing}>重置</button>
   </form>
 
@@ -278,7 +276,7 @@
       <div class="loading-bar"></div>
       <p>正在搜索…</p>
     </div>
-  {:else if !hasSearched || !lastQuery}
+  {:else if !hasSearched}
     <div class="empty">输入关键字开始搜索</div>
   {:else if activeTab === 'files' && items.length === 0}
     <div class="empty">没有匹配的文件</div>

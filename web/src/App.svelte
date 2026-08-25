@@ -30,15 +30,36 @@
               <Inbox size={15} />
               <span>导入历史</span>
             </Link>
-            <Link to="/files" class="nav-link">
+            <Link
+              to="/files"
+              getProps={({ location }) => ({
+                class: location.pathname.startsWith('/files')
+                  ? 'nav-link is-active'
+                  : 'nav-link',
+              })}
+            >
               <Search size={15} />
               <span>搜索</span>
             </Link>
-            <Link to="/media" class="nav-link">
+            <Link
+              to="/media"
+              getProps={({ location }) => ({
+                class: location.pathname.startsWith('/media')
+                  ? 'nav-link is-active'
+                  : 'nav-link',
+              })}
+            >
               <FolderTree size={15} />
               <span>媒体目录</span>
             </Link>
-            <Link to="/subscriptions" class="nav-link">
+            <Link
+              to="/subscriptions"
+              getProps={({ location }) => ({
+                class: location.pathname.startsWith('/subscriptions')
+                  ? 'nav-link is-active'
+                  : 'nav-link',
+              })}
+            >
               <ListPlus size={15} />
               <span>订阅管理</span>
             </Link>
