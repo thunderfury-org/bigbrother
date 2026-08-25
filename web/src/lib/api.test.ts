@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ApiError, deleteMediaDirs, getImport, importCommunityThreads, listImports, listMediaDirs, searchCommunityThreads, searchFiles, searchMediaDirs } from './api';
+import { ApiError, deleteMediaDirs, getImport, importCommunityThreads, importShareUrl, listImports, listMediaDirs, searchCommunityThreads, searchFiles, searchMediaDirs } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -123,6 +123,45 @@ describe('importCommunityThreads', () => {
     expect(url).toBe('/api/community/threads/import');
     expect(init).toMatchObject({ method: 'POST' });
     expect(JSON.parse(String(init?.body))).toEqual({ tids: [50570, 28311] });
+  });
+});
+
+
+describe('importShareUrl', () => {
+  test('posts url and optional description', async () => {
+    const fetchMock = stubFetchOnce({ url: 'https://www.123684.com/s/share-key', status: 'succeeded' });
+
+    const result = await importShareUrl('https://www.123684.com/s/share-key', 'operator note');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/shares/import');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      url: 'https://www.123684.com/s/share-key',
+      description: 'operator note',
+    });
+    expect(result.status).toBe('succeeded');
+  });
+
+  test('omits description when not provided', async () => {
+    const fetchMock = stubFetchOnce({ url: 'https://cloud.189.cn/t/share189', status: 'skipped' });
+
+    await importShareUrl('https://cloud.189.cn/t/share189');
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      url: 'https://cloud.189.cn/t/share189',
+    });
+  });
+
+  test('rejects non-2xx with ApiError', async () => {
+    stubFetchPlainOnce('url must not be empty', { status: 400 });
+
+    await expect(importShareUrl('  ')).rejects.toMatchObject({
+      status: 400,
+      body: 'url must not be empty',
+    });
   });
 });
 

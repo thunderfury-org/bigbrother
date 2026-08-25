@@ -9,6 +9,7 @@
   import MediaDirsPage from './routes/MediaDirsPage.svelte';
   import SubscriptionsPage from './routes/SubscriptionsPage.svelte';
   import ToastContainer from './lib/ToastContainer.svelte';
+  import ShareImportDialog from './lib/ShareImportDialog.svelte';
 
   export let url = '';
 </script>
@@ -70,10 +71,7 @@
             </Link>
           </div>
           <div class="header-right">
-            <div class="status-indicator">
-              <span class="pulse-dot"></span>
-              <span>控制台就绪</span>
-            </div>
+            <ShareImportDialog />
           </div>
         </nav>
       </div>
@@ -193,24 +191,6 @@
     gap: 12px;
   }
 
-  .status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 9999px;
-    background: rgba(16, 185, 129, 0.1);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-
-  .status-indicator .pulse-dot {
-    background: #34d399;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
-  }
-
   .main {
     max-width: 1360px;
     width: 100%;
@@ -229,7 +209,7 @@
     }
 
     .header-right {
-      display: none;
+      justify-content: flex-end;
     }
 
     .nav-links {
