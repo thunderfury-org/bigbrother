@@ -1,6 +1,13 @@
 <script lang="ts">
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
+  import CheckSquare from '@lucide/svelte/icons/check-square';
+  import Square from '@lucide/svelte/icons/square';
+  import Download from '@lucide/svelte/icons/download';
+  import User from '@lucide/svelte/icons/user';
+  import Clock from '@lucide/svelte/icons/clock';
+  import MessageSquare from '@lucide/svelte/icons/message-square';
   import {
     ApiError,
     searchFiles,
@@ -13,10 +20,9 @@
     type CommunityImportResult,
   } from '../lib/api';
   import ImportSummaryItems from '../lib/ImportSummaryItems.svelte';
-  import {
-    formatSize,
-    statusLabel,
-  } from '../lib/importDisplay';
+  import Skeleton from '../lib/Skeleton.svelte';
+  import { toasts } from '../lib/toast.svelte';
+  import { formatSize, statusLabel } from '../lib/importDisplay';
 
   let keyword = $state('');
   let limit = $state(50);
@@ -24,8 +30,6 @@
   let threads: CommunityThread[] = $state([]);
   let fileLoading = $state(false);
   let communityLoading = $state(false);
-  let fileError = $state('');
-  let communityError = $state('');
   let hasSearched = $state(false);
   let activeTab: 'files' | 'community' = $state('files');
   let searchSeq = 0;
@@ -34,7 +38,6 @@
   let importing = $state(false);
   let importOpen = $state(false);
   let importLabel = $state('');
-  let importError = $state('');
   let importFileResults: ImportFileResult[] | null = $state(null);
   let importCommunityResults: CommunityImportResult[] | null = $state(null);
 
@@ -45,8 +48,6 @@
     hasSearched = true;
     fileLoading = true;
     communityLoading = true;
-    fileError = '';
-    communityError = '';
     selectedIds = new Set();
     items = [];
     threads = [];
@@ -59,7 +60,8 @@
       .catch((err) => {
         if (seq !== searchSeq) return;
         items = [];
-        fileError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+        const msg = err instanceof ApiError ? `文件搜索失败: ${err.body}` : String(err);
+        toasts.error(msg);
       })
       .finally(() => {
         if (seq !== searchSeq) return;
@@ -74,7 +76,8 @@
       .catch((err) => {
         if (seq !== searchSeq) return;
         threads = [];
-        communityError = err instanceof ApiError ? `加载失败 ${err.status}: ${err.body}` : String(err);
+        const msg = err instanceof ApiError ? `社区搜索失败: ${err.body}` : String(err);
+        toasts.error(msg);
       })
       .finally(() => {
         if (seq !== searchSeq) return;
@@ -88,8 +91,6 @@
     items = [];
     threads = [];
     hasSearched = false;
-    fileError = '';
-    communityError = '';
     fileLoading = false;
     communityLoading = false;
     searchSeq += 1;
@@ -108,7 +109,7 @@
   }
 
   function selectAll() {
-    selectedIds = new Set(items.map(item => item.id));
+    selectedIds = new Set(items.map((item) => item.id));
   }
 
   function deselectAll() {
@@ -128,7 +129,6 @@
     importOpen = true;
     importing = true;
     importLabel = label;
-    importError = '';
     importFileResults = null;
     importCommunityResults = null;
   }
@@ -137,7 +137,6 @@
     if (importing) return;
     importOpen = false;
     importLabel = '';
-    importError = '';
     importFileResults = null;
     importCommunityResults = null;
   }
@@ -149,8 +148,10 @@
       const resp = await importFiles(ids);
       importFileResults = resp.results;
       selectedIds = new Set();
+      toasts.success(`已完成 ${ids.length} 个文件的导入解析`);
     } catch (err) {
-      importError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
+      const msg = err instanceof ApiError ? `导入失败: ${err.body}` : String(err);
+      toasts.error(msg);
     } finally {
       importing = false;
     }
@@ -162,8 +163,10 @@
     try {
       const resp = await importCommunityThreads([thread.tid]);
       importCommunityResults = resp.results;
+      toasts.success(`已完成帖子「${thread.title}」的导入`);
     } catch (err) {
-      importError = err instanceof ApiError ? `导入失败 ${err.status}: ${err.body}` : String(err);
+      const msg = err instanceof ApiError ? `导入失败: ${err.body}` : String(err);
+      toasts.error(msg);
     } finally {
       importing = false;
     }
@@ -171,15 +174,12 @@
 
   function importSelectedFiles() {
     const ids = Array.from(selectedIds);
-    const label = ids.length === 1
-      ? fileLabelById(ids[0])
-      : `${ids.length} 个文件`;
+    const label = ids.length === 1 ? fileLabelById(ids[0]) : `${ids.length} 个文件`;
     return runFileImport(ids, label);
   }
 
   $effect(() => {
     if (!importOpen) return;
-    void importing;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeImport();
     };
@@ -187,17 +187,18 @@
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const currentError = $derived(activeTab === 'files' ? fileError : communityError);
   const currentCount = $derived(activeTab === 'files' ? items.length : threads.length);
   const currentLoading = $derived(activeTab === 'files' ? fileLoading : communityLoading);
 </script>
 
 <section>
   <header class="page-header">
-    <h1 class="page-title">搜索</h1>
-    {#if hasSearched && !currentLoading && !currentError}
-      <span class="page-count">{currentCount} 条结果</span>
-    {/if}
+    <h1 class="page-title">
+      搜索中心
+      {#if hasSearched && !currentLoading}
+        <span class="page-count">{currentCount} 条结果</span>
+      {/if}
+    </h1>
   </header>
 
   <form class="toolbar" onsubmit={(e) => { e.preventDefault(); run(); }}>
@@ -206,22 +207,27 @@
       <input
         type="text"
         bind:value={keyword}
-        placeholder="输入文件名、路径、描述或片名…"
+        placeholder="输入文件名、路径、描述或片名关键字…"
         class="input"
         disabled={importing}
       />
     </div>
     <label class="field">
-      <span class="field-label">条数</span>
+      <span class="field-label">条数限制</span>
       <select bind:value={limit} class="select" disabled={importing}>
-        <option value={20}>20</option>
-        <option value={50}>50</option>
-        <option value={100}>100</option>
-        <option value={200}>200</option>
+        <option value={20}>20 条</option>
+        <option value={50}>50 条</option>
+        <option value={100}>100 条</option>
+        <option value={200}>200 条</option>
       </select>
     </label>
-    <button type="submit" class="btn btn-primary" disabled={importing || !keyword.trim()}>搜索</button>
-    <button type="button" onclick={reset} class="btn btn-ghost" disabled={importing}>重置</button>
+    <button type="submit" class="btn btn-primary" disabled={importing || !keyword.trim()}>
+      <Search size={15} />
+      <span>搜索</span>
+    </button>
+    <button type="button" onclick={reset} class="btn btn-ghost" disabled={importing}>
+      重置
+    </button>
   </form>
 
   {#if hasSearched}
@@ -252,9 +258,15 @@
   {#if activeTab === 'files' && items.length > 0}
     <div class="work-band">
       <div class="work-band-left">
-        <button type="button" onclick={selectAll} class="btn btn-ghost btn-sm" disabled={importing}>全选</button>
-        <button type="button" onclick={deselectAll} class="btn btn-ghost btn-sm" disabled={importing}>取消</button>
-        <span class="work-count">{selectedIds.size} 已选</span>
+        <button type="button" onclick={selectAll} class="btn btn-ghost btn-sm" disabled={importing}>
+          <CheckSquare size={13} />
+          <span>全选</span>
+        </button>
+        <button type="button" onclick={deselectAll} class="btn btn-ghost btn-sm" disabled={importing}>
+          <Square size={13} />
+          <span>取消</span>
+        </button>
+        <span class="work-count">{selectedIds.size} 项已选择</span>
       </div>
       <button
         type="button"
@@ -262,35 +274,38 @@
         disabled={selectedIds.size === 0 || importing}
         class="btn btn-primary btn-sm"
       >
-        导入选中 ({selectedIds.size})
+        <Download size={13} />
+        <span>导入选中 ({selectedIds.size})</span>
       </button>
     </div>
   {/if}
 
-  {#if currentError}
-    <div class="banner banner-error">{currentError}</div>
-  {/if}
-
   {#if currentLoading}
-    <div class="loading">
-      <div class="loading-bar"></div>
-      <p>正在搜索…</p>
+    <div class="data-table-wrap" style="padding: 16px;">
+      {#each Array(5) as _, i (i)}
+        <div style="display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--color-bb-line);">
+          <Skeleton width="40px" height="20px" />
+          <Skeleton width="180px" height="20px" />
+          <Skeleton width="300px" height="20px" />
+          <Skeleton width="70px" height="20px" />
+        </div>
+      {/each}
     </div>
   {:else if !hasSearched}
-    <div class="empty">输入关键字开始搜索</div>
+    <div class="empty">输入关键字回车或点击搜索开始检索文件与社区资源</div>
   {:else if activeTab === 'files' && items.length === 0}
-    <div class="empty">没有匹配的文件</div>
+    <div class="empty">文件索引中未找到与「{keyword}」匹配的内容</div>
   {:else if activeTab === 'community' && threads.length === 0}
-    <div class="empty">没有匹配的帖子</div>
+    <div class="empty">123分享社区中未找到与「{keyword}」匹配的帖子</div>
   {:else if activeTab === 'files'}
     <div class="data-table-wrap">
       <table class="data-table">
         <thead>
           <tr>
             <th class="col-check"></th>
-            <th>哈希</th>
-            <th>大小</th>
-            <th>位置</th>
+            <th>哈希 / 标识</th>
+            <th>文件大小</th>
+            <th>文件名与位置描述</th>
             <th class="col-action"></th>
           </tr>
         </thead>
@@ -298,14 +313,13 @@
           {#each items as item (item.id)}
             <tr class:is-selected={selectedIds.has(item.id)}>
               <td class="col-check">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(item.id)}
-                    disabled={importing}
-                    onchange={() => toggleSelect(item.id)}
-                  />
-                </label>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(item.id)}
+                  disabled={importing}
+                  onchange={() => toggleSelect(item.id)}
+                  aria-label="选择文件"
+                />
               </td>
               <td>
                 <div class="cell-stack">
@@ -313,7 +327,9 @@
                     <span class="hash-type">{item.hash_type}</span>
                     {item.hash_value.slice(0, 16)}…
                   </span>
-                  <span class="mono cell-sub" title="{item.hash_type}:{item.hash_value}">{item.hash_value}</span>
+                  <span class="mono cell-sub" title="{item.hash_type}:{item.hash_value}">
+                    {item.hash_value}
+                  </span>
                 </div>
               </td>
               <td class="mono">{formatSize(item.size)}</td>
@@ -322,7 +338,7 @@
                   <div class="cell-stack" style="margin-bottom: 8px;">
                     <span class="cell-title">{loc.file_name}</span>
                     {#if loc.file_path}
-                      <span class="mono cell-sub">{loc.file_path}</span>
+                      <span class="mono cell-sub text-slate-400">{loc.file_path}</span>
                     {/if}
                     {#if loc.descriptions.length}
                       <div>
@@ -341,7 +357,8 @@
                   disabled={importing}
                   onclick={() => runFileImport([item.id], fileLabel(item))}
                 >
-                  导入
+                  <Download size={13} />
+                  <span>导入</span>
                 </button>
               </td>
             </tr>
@@ -354,8 +371,8 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th>帖子</th>
-            <th>作者</th>
+            <th>帖子标题与标签</th>
+            <th>发布者</th>
             <th>时间</th>
             <th>评论</th>
             <th class="col-action"></th>
@@ -366,7 +383,9 @@
             <tr>
               <td>
                 <div class="cell-stack">
-                  <a class="cell-title" href={thread.url} target="_blank" rel="noreferrer">{thread.title}</a>
+                  <a class="cell-title" href={thread.url} target="_blank" rel="noreferrer">
+                    {thread.title} <ExternalLink size={12} class="inline text-slate-400" />
+                  </a>
                   {#if thread.tags.length}
                     <div>
                       {#each thread.tags as tag}
@@ -376,9 +395,24 @@
                   {/if}
                 </div>
               </td>
-              <td>{thread.author}</td>
-              <td class="cell-sub">{thread.posted_at}</td>
-              <td class="mono">{thread.comments}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 4px; color: var(--color-bb-muted); font-size: 12px;">
+                  <User size={13} />
+                  <span>{thread.author}</span>
+                </div>
+              </td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 4px; color: var(--color-bb-muted); font-size: 12px;">
+                  <Clock size={13} />
+                  <span>{thread.posted_at}</span>
+                </div>
+              </td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 4px; font-size: 12px;" class="mono">
+                  <MessageSquare size={13} class="text-slate-400" />
+                  <span>{thread.comments}</span>
+                </div>
+              </td>
               <td class="col-action">
                 <button
                   type="button"
@@ -386,7 +420,8 @@
                   disabled={importing}
                   onclick={() => runCommunityImport(thread)}
                 >
-                  导入
+                  <Download size={13} />
+                  <span>导入</span>
                 </button>
               </td>
             </tr>
@@ -413,7 +448,7 @@
         aria-labelledby="import-dialog-title"
       >
         <header class="modal-header">
-          <h2 id="import-dialog-title" class="modal-title">{importing ? '导入中' : '导入结果'}</h2>
+          <h2 id="import-dialog-title" class="modal-title">{importing ? '正在导入中' : '导入结果'}</h2>
           <button
             type="button"
             class="drawer-close"
@@ -428,15 +463,16 @@
           {#if importing}
             <div class="loading">
               <div class="loading-bar"></div>
-              <p>正在导入 {importLabel}，请保持此页打开</p>
+              <p>正在导入 {importLabel}，请稍候…</p>
             </div>
-          {:else if importError}
-            <div class="banner banner-error">{importError}</div>
           {:else if importFileResults && importFileResults.length > 0}
             {#each importFileResults as result (result.id)}
               <div class="import-summary" data-status={result.status}>
                 <div class="result-row">
-                  <span class="status status-{result.status}">{statusLabel(result.status)}</span>
+                  <span class="status status-{result.status}">
+                    <span class="pulse-dot"></span>
+                    {statusLabel(result.status)}
+                  </span>
                   {#if !result.summary}
                     <span class="cell-title">{fileLabelById(result.id)}</span>
                   {/if}
@@ -445,10 +481,10 @@
                   <ImportSummaryItems summary={result.summary} />
                 {/if}
                 {#if result.summary}
-                  <div class="mono cell-sub">{fileLabelById(result.id)}</div>
+                  <div class="mono cell-sub text-slate-400" style="margin-top: 6px;">{fileLabelById(result.id)}</div>
                 {/if}
                 {#if result.error}
-                  <div class="banner-error">{result.error}</div>
+                  <div class="banner-error" style="margin-top: 8px;">{result.error}</div>
                 {/if}
               </div>
             {/each}
@@ -456,7 +492,10 @@
             {#each importCommunityResults as result, index (`${result.tid}-${index}`)}
               <div class="import-summary" data-status={result.status}>
                 <div class="result-row">
-                  <span class="status status-{result.status}">{statusLabel(result.status)}</span>
+                  <span class="status status-{result.status}">
+                    <span class="pulse-dot"></span>
+                    {statusLabel(result.status)}
+                  </span>
                   {#if !result.summary}
                     <span class="cell-title">{result.thread_title}</span>
                   {/if}
@@ -465,10 +504,10 @@
                   <ImportSummaryItems summary={result.summary} />
                 {/if}
                 {#if result.share_url}
-                  <div class="mono cell-sub">{result.share_url}</div>
+                  <div class="mono cell-sub text-slate-400" style="margin-top: 6px;">{result.share_url}</div>
                 {/if}
                 {#if result.error}
-                  <div class="banner-error">{result.error}</div>
+                  <div class="banner-error" style="margin-top: 8px;">{result.error}</div>
                 {/if}
               </div>
             {/each}

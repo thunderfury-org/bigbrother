@@ -8,26 +8,42 @@
   import FilesPage from './routes/FilesPage.svelte';
   import MediaDirsPage from './routes/MediaDirsPage.svelte';
   import SubscriptionsPage from './routes/SubscriptionsPage.svelte';
+  import ToastContainer from './lib/ToastContainer.svelte';
 
   export let url = '';
 </script>
 
 <div class="shell">
+  <ToastContainer />
   <Router {url}>
     <header class="header">
       <div class="header-inner">
         <nav class="nav">
-          <Link to="/imports" class="logo">BigBrother</Link>
+          <Link to="/subscriptions" class="brand">
+            <div class="logo-badge">B</div>
+            <span class="logo-text">BigBrother</span>
+          </Link>
           <div class="nav-links">
             <Link
-              to="/imports"
+              to="/subscriptions"
               getProps={({ location }) => ({
-                class: location.pathname === '/' || location.pathname.startsWith('/imports')
+                class: location.pathname === '/' || location.pathname.startsWith('/subscriptions')
                   ? 'nav-link is-active'
                   : 'nav-link',
               })}
             >
-              <Inbox size={15} />
+              <ListPlus size={16} />
+              <span>订阅管理</span>
+            </Link>
+            <Link
+              to="/imports"
+              getProps={({ location }) => ({
+                class: location.pathname.startsWith('/imports')
+                  ? 'nav-link is-active'
+                  : 'nav-link',
+              })}
+            >
+              <Inbox size={16} />
               <span>导入历史</span>
             </Link>
             <Link
@@ -38,8 +54,8 @@
                   : 'nav-link',
               })}
             >
-              <Search size={15} />
-              <span>搜索</span>
+              <Search size={16} />
+              <span>搜索中心</span>
             </Link>
             <Link
               to="/media"
@@ -49,31 +65,26 @@
                   : 'nav-link',
               })}
             >
-              <FolderTree size={15} />
+              <FolderTree size={16} />
               <span>媒体目录</span>
             </Link>
-            <Link
-              to="/subscriptions"
-              getProps={({ location }) => ({
-                class: location.pathname.startsWith('/subscriptions')
-                  ? 'nav-link is-active'
-                  : 'nav-link',
-              })}
-            >
-              <ListPlus size={15} />
-              <span>订阅管理</span>
-            </Link>
+          </div>
+          <div class="header-right">
+            <div class="status-indicator">
+              <span class="pulse-dot"></span>
+              <span>控制台就绪</span>
+            </div>
           </div>
         </nav>
       </div>
     </header>
 
     <main class="main">
+      <Route path="/subscriptions"><SubscriptionsPage /></Route>
       <Route path="/imports/*"><ImportsPage /></Route>
       <Route path="/files"><FilesPage /></Route>
       <Route path="/media"><MediaDirsPage /></Route>
-      <Route path="/subscriptions"><SubscriptionsPage /></Route>
-      <Route path="/"><ImportsPage /></Route>
+      <Route path="/"><SubscriptionsPage /></Route>
     </main>
   </Router>
 </div>
@@ -84,18 +95,22 @@
     background: var(--color-bb-paper);
     color: var(--color-bb-ink);
     font-family: var(--font-sans);
+    display: flex;
+    flex-direction: column;
   }
 
   .header {
     position: sticky;
     top: 0;
     z-index: 40;
-    background: var(--color-bb-surface);
+    background: rgba(17, 23, 34, 0.85);
+    backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--color-bb-line);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   }
 
   .header-inner {
-    max-width: 1280px;
+    max-width: 1360px;
     margin: 0 auto;
     padding: 0 24px;
   }
@@ -103,62 +118,123 @@
   .nav {
     display: flex;
     align-items: center;
-    gap: 28px;
-    min-height: 52px;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 60px;
   }
 
-  :global(.logo) {
-    flex-shrink: 0;
-    font-size: 18px;
-    font-weight: 800;
-    color: var(--color-bb-ink);
+  :global(.brand) {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     text-decoration: none;
+    flex-shrink: 0;
   }
 
-  :global(.logo):hover {
-    color: var(--color-bb-mark);
+  .logo-badge {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 900;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+  }
+
+  .logo-text {
+    font-size: 16px;
+    font-weight: 750;
+    color: #ffffff;
+    letter-spacing: -0.3px;
   }
 
   .nav-links {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 8px;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--color-bb-line);
   }
 
   :global(.nav-link) {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 2px;
-    border-bottom: 2px solid transparent;
-    font-size: 14px;
-    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--color-bb-muted);
     text-decoration: none;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   :global(.nav-link):hover {
-    color: var(--color-bb-ink);
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.05);
   }
 
-  :global(.nav-link[aria-current="page"]),
   :global(.nav-link.is-active) {
-    color: var(--color-bb-ink);
-    border-bottom-color: var(--color-bb-mark);
+    color: #ffffff;
+    background: var(--color-bb-panel);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+
+  .status-indicator .pulse-dot {
+    background: #34d399;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
   }
 
   .main {
-    max-width: 1280px;
+    max-width: 1360px;
+    width: 100%;
     margin: 0 auto;
     padding: 24px 24px 64px;
+    flex: 1;
   }
 
   @media (max-width: 768px) {
     .nav {
       flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
+      align-items: stretch;
+      gap: 12px;
       padding: 12px 0;
+      min-height: auto;
+    }
+
+    .header-right {
+      display: none;
+    }
+
+    .nav-links {
+      overflow-x: auto;
+      justify-content: flex-start;
     }
   }
 </style>
