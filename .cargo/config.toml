@@ -1,0 +1,4 @@
+# teloxide -> aquamarine -> proc-macro-error2@2.0.1 re-exports private proc_macro
+# (rustc future-incompat E0365). No upstream release yet.
+[future-incompat-report]
+frequency = "never"

@@ -173,6 +173,7 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route("/api/imports/{id}", get(get_import))
         .route("/api/files", get(search_files))
         .route("/api/files/import", post(import_files))
+        .route("/api/shares/import", post(super::share::import_share))
         .route(
             "/api/community/threads",
             get(super::community::search_threads),

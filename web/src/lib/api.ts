@@ -171,6 +171,31 @@ export async function importFiles(ids: number[]): Promise<ImportFilesResponse> {
   return (await res.json()) as ImportFilesResponse;
 }
 
+export interface ShareImportResult {
+  url: string;
+  status: string;
+  title?: string;
+  year?: string;
+  size?: number;
+  summary?: ImportSummary;
+  error?: string;
+}
+
+export async function importShareUrl(url: string, description?: string): Promise<ShareImportResult> {
+  const payload: { url: string; description?: string } = { url };
+  if (description) payload.description = description;
+  const res = await fetch('/api/shares/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  return (await res.json()) as ShareImportResult;
+}
+
 
 export interface CommunityThreadPage {
   items: CommunityThread[];

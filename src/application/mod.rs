@@ -9,5 +9,6 @@ pub mod media_source_observation;
 pub mod ports;
 pub mod recorded_import;
 pub mod resolve_download_url;
+pub mod share_import;
 pub mod subscription;
 pub mod sync_strm;
