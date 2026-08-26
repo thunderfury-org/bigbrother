@@ -45,6 +45,10 @@ impl LibraryUpdateNotifier for EmbyLibraryUpdateNotifier {
             })
             .collect::<Vec<_>>();
         self.client.report_media_updated(&payload).await?;
+        tracing::info!(
+            count = updates.len(),
+            "Notified Emby of library media updates"
+        );
         Ok(())
     }
 }
