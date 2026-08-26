@@ -3,7 +3,10 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 
 use crate::{
-    application::import_local_store::ImportLocalStore,
+    application::{
+        import_local_store::ImportLocalStore,
+        ports::{LibraryUpdateNotifierHandle, NoopLibraryUpdateNotifier},
+    },
     error::AppResult,
     infrastructure::{
         cache::Cache,
@@ -11,6 +14,7 @@ use crate::{
         community::Pan1CommunityCatalog,
         fs::tokio_file_store::TokioFileStore,
         import::gateway::{PanLibraryGateway, TmdbMetadataGateway},
+        library_update::EmbyLibraryUpdateNotifier,
         repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
             subscription::SeaOrmSubscriptionRepository,
@@ -115,6 +119,27 @@ impl CliContext {
         self.library_gateway.clone()
     }
 
+    pub(super) fn library_update_notifier(&self) -> LibraryUpdateNotifierHandle {
+        let emby = self.config.get_emby_config();
+        if !emby.is_enabled() {
+            return std::sync::Arc::new(NoopLibraryUpdateNotifier);
+        }
+
+        let (Some(server_url), Some(api_key)) = (emby.get_server_url(), emby.get_api_key()) else {
+            tracing::warn!(
+                "emby.enable is true but server_url or api_key is missing; library update notify disabled"
+            );
+            return std::sync::Arc::new(NoopLibraryUpdateNotifier);
+        };
+
+        std::sync::Arc::new(EmbyLibraryUpdateNotifier::new(
+            server_url,
+            api_key.to_owned(),
+            emby.get_local_prefix().to_owned(),
+            emby.get_emby_prefix().to_owned(),
+        ))
+    }
+
     pub(super) fn share_resolver(&self) -> ShareResolverRuntimeService {
         ShareResolverRuntimeService::new(
             Pan123ShareService::new(self.pan123()),
@@ -134,6 +159,7 @@ impl CliContext {
                     .get_media_server_config()
                     .get_strm_download_url(),
             ),
+            self.library_update_notifier(),
         ))
     }
 

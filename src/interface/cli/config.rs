@@ -6,6 +6,7 @@ use crate::error::AppError;
 #[serde(default, rename_all = "snake_case")]
 struct AppConfig {
     pub media_server: MediaServerConfig,
+    pub emby: EmbyConfig,
     pub emby_proxy: EmbyProxyConfig,
     pub console: ConsoleConfig,
     pub pan115: Pan115Config,
@@ -24,6 +25,22 @@ pub struct MediaServerConfig {
     pub port: Option<u16>,
     pub advertise_base_url: Option<String>,
     pub strm_path_prefix: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct EmbyConfig {
+    pub enable: bool,
+    pub server_url: Option<String>,
+    pub api_key: Option<String>,
+    pub path_mapping: EmbyPathMappingConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct EmbyPathMappingConfig {
+    pub local_prefix: String,
+    pub emby_prefix: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -156,6 +173,10 @@ impl Manager {
         &self.app_config.media_server
     }
 
+    pub fn get_emby_config(&self) -> &EmbyConfig {
+        &self.app_config.emby
+    }
+
     pub fn get_emby_proxy_config(&self) -> &EmbyProxyConfig {
         &self.app_config.emby_proxy
     }
@@ -263,6 +284,31 @@ impl MediaServerConfig {
     }
 }
 
+impl EmbyConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enable
+    }
+
+    pub fn get_server_url(&self) -> Option<String> {
+        self.server_url
+            .as_ref()
+            .map(|url| url.trim_end_matches('/').to_owned())
+            .filter(|url| !url.is_empty())
+    }
+
+    pub fn get_api_key(&self) -> Option<&str> {
+        self.api_key.as_deref().filter(|value| !value.is_empty())
+    }
+
+    pub fn get_local_prefix(&self) -> &str {
+        self.path_mapping.local_prefix.as_str()
+    }
+
+    pub fn get_emby_prefix(&self) -> &str {
+        self.path_mapping.emby_prefix.as_str()
+    }
+}
+
 impl EmbyProxyConfig {
     pub fn is_enabled(&self) -> bool {
         self.enable
@@ -355,6 +401,49 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn emby_notify_defaults_to_disabled() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let emby = config.get_emby_config();
+
+        assert!(!emby.is_enabled());
+        assert_eq!(emby.get_server_url(), None);
+        assert_eq!(emby.get_api_key(), None);
+        assert_eq!(emby.get_local_prefix(), "");
+        assert_eq!(emby.get_emby_prefix(), "");
+    }
+
+    #[test]
+    fn emby_notify_parses_enabled_config() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+emby:
+  enable: true
+  server_url: http://emby.example:8096/
+  api_key: secret
+  path_mapping:
+    local_prefix: /data/media
+    emby_prefix: /media
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let emby = config.get_emby_config();
+
+        assert!(emby.is_enabled());
+        assert_eq!(
+            emby.get_server_url().as_deref(),
+            Some("http://emby.example:8096")
+        );
+        assert_eq!(emby.get_api_key(), Some("secret"));
+        assert_eq!(emby.get_local_prefix(), "/data/media");
+        assert_eq!(emby.get_emby_prefix(), "/media");
     }
 
     #[test]

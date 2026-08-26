@@ -3,7 +3,10 @@ use std::sync::Arc;
 use crate::{
     application::{
         import_local_store::ImportLocalStore,
-        ports::{LibraryGateway, LibraryGatewayHandle},
+        ports::{
+            LibraryGateway, LibraryGatewayHandle, LibraryMediaUpdate, LibraryMediaUpdateKind,
+            LibraryUpdateNotifierHandle, notify_library_updates,
+        },
     },
     domain::import::inner::Media,
     error::AppResult,
@@ -29,17 +32,20 @@ pub(crate) struct TransferWorkflow {
     pub(super) library_gateway: LibraryGatewayHandle,
     pub(super) local: ImportLocalStore,
     pub(super) metadata_lookup: MetadataLookup,
+    pub(super) notifier: LibraryUpdateNotifierHandle,
 }
 
 impl TransferWorkflow {
     pub(crate) fn new(
         library_gateway: impl LibraryGateway + 'static,
         local: ImportLocalStore,
+        notifier: LibraryUpdateNotifierHandle,
     ) -> Self {
         Self {
             library_gateway: Arc::new(library_gateway),
             local,
             metadata_lookup: MetadataLookup::default(),
+            notifier,
         }
     }
 
@@ -49,6 +55,10 @@ impl TransferWorkflow {
 
     pub(super) fn library_gateway(&self) -> &dyn LibraryGateway {
         self.library_gateway.as_ref()
+    }
+
+    pub(super) async fn queue_library_update(&self, path: String, kind: LibraryMediaUpdateKind) {
+        notify_library_updates(self.notifier.as_ref(), &[LibraryMediaUpdate { path, kind }]).await;
     }
 }
 

@@ -24,7 +24,7 @@ BigBrother is a Rust app for importing media from cloud shares into a local libr
 
 The application reads configuration from `<data-dir>/config/config.yaml`. If the file does not exist, the app starts with empty defaults, but bot, import, and sync features will not work until required values are set.
 
-Copy [`config/config.yaml`](config/config.yaml) to `./data/config/config.yaml` or another `--data-dir` location and fill in the sections you need: `pan123`, `pan115`, `pan189`, `tmdb`, `telegram`, `library`, `media_server`, `console`, `emby_proxy`, and `openai`.
+Copy [`config/config.yaml`](config/config.yaml) to `./data/config/config.yaml` or another `--data-dir` location and fill in the sections you need: `pan123`, `pan115`, `pan189`, `tmdb`, `telegram`, `library`, `media_server`, `console`, `emby`, `emby_proxy`, and `openai`.
 
 ## Running
 
@@ -43,6 +43,7 @@ On startup, BigBrother:
 - starts the event bus and cache cleanup task
 - starts the web console when `console.enable` is true (default bind `0.0.0.0:3200`)
 - starts the Emby proxy when `emby_proxy.enable` is true
+- notifies Emby of local STRM/subtitle changes when `emby.enable` is true
 
 ## Telegram bot usage
 

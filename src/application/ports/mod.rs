@@ -1,5 +1,6 @@
 pub mod community;
 pub mod import;
+pub mod library_update;
 pub mod notify;
 pub mod share;
 
@@ -9,6 +10,10 @@ pub use community::{
 pub use import::{
     LibraryGateway, LibraryGatewayHandle, MetadataCatalog, MetadataCatalogHandle, TitleExtractor,
     TitleExtractorHandle,
+};
+pub use library_update::{
+    LibraryMediaUpdate, LibraryMediaUpdateKind, LibraryUpdateNotifier, LibraryUpdateNotifierHandle,
+    NoopLibraryUpdateNotifier, notify_library_updates,
 };
 pub use notify::{Message, MessageSender};
 pub use share::{ShareResolver, ShareResolverHandle};

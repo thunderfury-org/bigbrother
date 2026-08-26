@@ -34,6 +34,16 @@ library:
   remote_path: ""
   local_path: ""
 
+# 本地 STRM/字幕变更后主动通知 Emby 做增量扫描。默认关闭。
+# server_url 填 Emby 源站（不含 /emby 路径）。path_mapping 用于本机路径与 Emby 容器路径不一致的场景。
+emby:
+  enable: false
+  server_url: http://127.0.0.1:8096
+  api_key: ""
+  path_mapping:
+    local_prefix: ""
+    emby_prefix: ""
+
 emby_proxy:
   enable: false
   host: 0.0.0.0

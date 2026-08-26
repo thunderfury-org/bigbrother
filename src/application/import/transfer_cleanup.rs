@@ -1,4 +1,7 @@
+use crate::application::ports::LibraryMediaUpdateKind;
 use crate::domain::import::inner::MediaFile;
+use crate::error::AppResult;
+use tracing::info;
 
 use super::{
     TransferWorkflow,
@@ -6,8 +9,6 @@ use super::{
         build_local_cleanup_paths, collect_library_file_ids, files_pending_cleanup,
     },
 };
-use crate::error::AppResult;
-use tracing::info;
 
 impl TransferWorkflow {
     pub(super) async fn cleanup_replaced_movie_files(
@@ -80,6 +81,8 @@ impl TransferWorkflow {
                 self.local()
                     .remove_local_file_if_exists(local_file_path.as_str())
                     .await?;
+                self.queue_library_update(local_file_path, LibraryMediaUpdateKind::Deleted)
+                    .await;
             }
         }
 
