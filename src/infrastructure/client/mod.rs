@@ -1,3 +1,4 @@
+pub mod emby;
 pub mod openai;
 pub mod pan1;
 pub mod pan115;

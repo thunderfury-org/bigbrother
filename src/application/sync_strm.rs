@@ -11,7 +11,10 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-use super::ports::{FileStore, FileStoreHandle, LibraryGateway, LibraryGatewayHandle};
+use super::ports::{
+    FileStore, FileStoreHandle, LibraryGateway, LibraryGatewayHandle, LibraryMediaUpdate,
+    LibraryMediaUpdateKind, LibraryUpdateNotifierHandle, notify_library_updates,
+};
 
 #[derive(Debug, Clone)]
 pub struct SyncStrmConfig {
@@ -24,6 +27,7 @@ pub struct SyncStrmConfig {
 pub struct SyncStrmService {
     remote: LibraryGatewayHandle,
     file_store: FileStoreHandle,
+    notifier: LibraryUpdateNotifierHandle,
     config: SyncStrmConfig,
 }
 
@@ -32,10 +36,12 @@ impl SyncStrmService {
         remote: impl LibraryGateway + 'static,
         file_store: impl FileStore + 'static,
         config: SyncStrmConfig,
+        notifier: LibraryUpdateNotifierHandle,
     ) -> Self {
         Self {
             remote: std::sync::Arc::new(remote),
             file_store: std::sync::Arc::new(file_store),
+            notifier,
             config,
         }
     }
@@ -132,33 +138,58 @@ impl SyncStrmService {
     }
 
     async fn execute_plan(&self, plan: SyncPlan) -> AppResult<()> {
+        let mut updates = Vec::new();
+        let result = self.apply_plan(plan, &mut updates).await;
+        notify_library_updates(self.notifier.as_ref(), &updates).await;
+        result
+    }
+
+    async fn apply_plan(
+        &self,
+        plan: SyncPlan,
+        updates: &mut Vec<LibraryMediaUpdate>,
+    ) -> AppResult<()> {
         for file in plan.files {
-            match file.kind {
+            let kind = match file.kind {
                 PlannedFileKind::Strm {
                     remote_path,
                     file_id,
                 } => {
                     self.sync_strm_file(&remote_path, file_id, file.local_path.as_str())
-                        .await?;
+                        .await?
                 }
                 PlannedFileKind::Subtitle {
                     file_id,
                     remote_size,
                 } => {
                     self.sync_subtitle_file(file_id, remote_size, file.local_path.as_str())
-                        .await?;
+                        .await?
                 }
+            };
+            if let Some(kind) = kind {
+                updates.push(LibraryMediaUpdate {
+                    path: file.local_path,
+                    kind,
+                });
             }
         }
 
         for stale_file in plan.stale_files {
             self.file_store.remove_file(stale_file.as_str()).await?;
             info!("Deleted stale local file: {stale_file}");
+            updates.push(LibraryMediaUpdate {
+                path: stale_file,
+                kind: LibraryMediaUpdateKind::Deleted,
+            });
         }
 
         for stale_dir in plan.stale_dirs {
             self.file_store.remove_dir_all(stale_dir.as_str()).await?;
             info!("Deleted stale local directory: {stale_dir}");
+            updates.push(LibraryMediaUpdate {
+                path: stale_dir,
+                kind: LibraryMediaUpdateKind::Deleted,
+            });
         }
 
         Ok(())
@@ -169,7 +200,7 @@ impl SyncStrmService {
         remote_file_path: &str,
         file_id: i64,
         local_path: &str,
-    ) -> AppResult<()> {
+    ) -> AppResult<Option<LibraryMediaUpdateKind>> {
         let expected_url = format!(
             "{}{}?file_id={}",
             self.config.strm_download_url, remote_file_path, file_id
@@ -177,13 +208,13 @@ impl SyncStrmService {
 
         if let Some(existing) = self.file_store.read_to_string_if_exists(local_path).await? {
             if existing == expected_url {
-                return Ok(());
+                return Ok(None);
             }
             self.file_store
                 .write(local_path, expected_url.as_bytes())
                 .await?;
             info!("Strm file updated: {local_path}");
-            return Ok(());
+            return Ok(Some(LibraryMediaUpdateKind::Modified));
         }
 
         self.file_store.ensure_parent_dir(local_path).await?;
@@ -191,7 +222,7 @@ impl SyncStrmService {
             .write(local_path, expected_url.as_bytes())
             .await?;
         info!("Strm file created: {local_path}");
-        Ok(())
+        Ok(Some(LibraryMediaUpdateKind::Created))
     }
 
     async fn sync_subtitle_file(
@@ -199,16 +230,16 @@ impl SyncStrmService {
         file_id: i64,
         remote_size: u64,
         local_path: &str,
-    ) -> AppResult<()> {
+    ) -> AppResult<Option<LibraryMediaUpdateKind>> {
         if let Some(size) = self.file_store.metadata_len_if_exists(local_path).await? {
             if size == remote_size {
-                return Ok(());
+                return Ok(None);
             }
             self.remote
                 .download_library_file(file_id, local_path)
                 .await?;
             info!("Subtitle file updated: {local_path}");
-            return Ok(());
+            return Ok(Some(LibraryMediaUpdateKind::Modified));
         }
 
         self.file_store.ensure_parent_dir(local_path).await?;
@@ -216,7 +247,7 @@ impl SyncStrmService {
             .download_library_file(file_id, local_path)
             .await?;
         info!("Subtitle file created: {local_path}");
-        Ok(())
+        Ok(Some(LibraryMediaUpdateKind::Created))
     }
 }
 
@@ -232,7 +263,10 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use crate::application::ports::{LocalEntry, MediaDirectoryRecord};
+    use crate::application::ports::{
+        LocalEntry, MediaDirectoryRecord, NoopLibraryUpdateNotifier,
+        library_update::test_support::RecordingLibraryUpdateNotifier,
+    };
     use crate::domain::import::LibraryFile;
     use crate::domain::share::FileHash;
 
@@ -387,6 +421,10 @@ mod tests {
         }
     }
 
+    fn noop_notifier() -> LibraryUpdateNotifierHandle {
+        Arc::new(NoopLibraryUpdateNotifier)
+    }
+
     #[tokio::test]
     async fn execute_syncs_expected_files_and_removes_stale_entries() {
         let remote = FakeRemote::default();
@@ -459,6 +497,7 @@ mod tests {
             }],
         );
 
+        let notifier = RecordingLibraryUpdateNotifier::default();
         let service = SyncStrmService::new(
             remote.clone(),
             file_store.clone(),
@@ -467,6 +506,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            Arc::new(notifier.clone()),
         );
 
         service.execute().await.unwrap();
@@ -498,6 +538,32 @@ mod tests {
                         && content == "https://host/d/remote/Movie.2024.1080p.WEB-DL.mkv?file_id=3"
                 )
         );
+        assert_eq!(
+            notifier.batches(),
+            vec![vec![
+                LibraryMediaUpdate {
+                    path: "/local/Movie.2024.1080p.WEB-DL.strm".to_string(),
+                    kind: LibraryMediaUpdateKind::Created,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/show/《LV1魔王與獨居廢勇者》#7 (簡中字幕)【Ani-One Asia】.zh-Hans.srt"
+                        .to_string(),
+                    kind: LibraryMediaUpdateKind::Created,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/show/old.srt".to_string(),
+                    kind: LibraryMediaUpdateKind::Deleted,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/stale.strm".to_string(),
+                    kind: LibraryMediaUpdateKind::Deleted,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/obsolete".to_string(),
+                    kind: LibraryMediaUpdateKind::Deleted,
+                },
+            ]]
+        );
     }
 
     #[tokio::test]
@@ -510,6 +576,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            noop_notifier(),
         );
 
         let error = service.execute().await.unwrap_err();
@@ -556,6 +623,7 @@ mod tests {
             .unwrap()
             .insert("/local/Movie.2024.1080p.WEB-DL.zh.srt".to_string(), 8);
 
+        let notifier = RecordingLibraryUpdateNotifier::default();
         let service = SyncStrmService::new(
             remote.clone(),
             file_store.clone(),
@@ -564,6 +632,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            Arc::new(notifier.clone()),
         );
 
         service.execute().await.unwrap();
@@ -571,6 +640,7 @@ mod tests {
         assert!(file_store.writes.lock().unwrap().is_empty());
         assert!(file_store.ensured.lock().unwrap().is_empty());
         assert!(remote.downloads.lock().unwrap().is_empty());
+        assert!(notifier.batches().is_empty());
     }
 
     #[tokio::test]
@@ -601,6 +671,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            noop_notifier(),
         );
 
         let error = service.execute().await.unwrap_err();
@@ -640,6 +711,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            noop_notifier(),
         );
 
         let error = service.execute().await.unwrap_err();
@@ -675,6 +747,7 @@ mod tests {
                 local_path: "/local".to_string(),
                 strm_download_url: "https://host/d".to_string(),
             },
+            noop_notifier(),
         );
 
         let error = service.execute().await.unwrap_err();
@@ -682,5 +755,107 @@ mod tests {
         assert!(
             matches!(error, AppError::Internal(message) if message.contains("remove dir failed"))
         );
+    }
+    #[tokio::test]
+    async fn execute_notifies_modified_strm_and_subtitle() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![
+                LibraryFile {
+                    file_id: 3,
+                    file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
+                    is_dir: false,
+                    size: 100,
+                    hash: String::new(),
+                },
+                LibraryFile {
+                    file_id: 4,
+                    file_name: "Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
+                    is_dir: false,
+                    size: 8,
+                    hash: String::new(),
+                },
+            ],
+        );
+
+        let file_store = FakeFileStore::default();
+        file_store.strings.lock().unwrap().insert(
+            "/local/Movie.2024.1080p.WEB-DL.strm".to_string(),
+            "stale-url".to_string(),
+        );
+        file_store
+            .sizes
+            .lock()
+            .unwrap()
+            .insert("/local/Movie.2024.1080p.WEB-DL.zh.srt".to_string(), 1);
+
+        let notifier = RecordingLibraryUpdateNotifier::default();
+        let service = SyncStrmService::new(
+            remote,
+            file_store,
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+            Arc::new(notifier.clone()),
+        );
+
+        service.execute().await.unwrap();
+
+        assert_eq!(
+            notifier.flat_updates(),
+            vec![
+                LibraryMediaUpdate {
+                    path: "/local/Movie.2024.1080p.WEB-DL.strm".to_string(),
+                    kind: LibraryMediaUpdateKind::Modified,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/Movie.2024.1080p.WEB-DL.zh.srt".to_string(),
+                    kind: LibraryMediaUpdateKind::Modified,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_succeeds_when_library_notify_fails() {
+        let remote = FakeRemote::default();
+        remote
+            .root_ids
+            .lock()
+            .unwrap()
+            .insert("/remote".to_string(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![LibraryFile {
+                file_id: 3,
+                file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
+                is_dir: false,
+                size: 100,
+                hash: String::new(),
+            }],
+        );
+
+        let notifier = RecordingLibraryUpdateNotifier::failing();
+        let service = SyncStrmService::new(
+            remote,
+            FakeFileStore::default(),
+            SyncStrmConfig {
+                remote_path: "/remote".to_string(),
+                local_path: "/local".to_string(),
+                strm_download_url: "https://host/d".to_string(),
+            },
+            Arc::new(notifier.clone()),
+        );
+
+        service.execute().await.unwrap();
+        assert_eq!(notifier.flat_updates().len(), 1);
     }
 }

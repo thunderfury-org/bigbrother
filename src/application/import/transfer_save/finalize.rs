@@ -1,5 +1,6 @@
 use super::TransferWorkflow;
 use crate::application::import::transfer_support::{log_file_saved, remote_child_path};
+use crate::application::ports::LibraryMediaUpdateKind;
 use crate::error::AppResult;
 use tracing::info;
 
@@ -15,6 +16,8 @@ impl TransferWorkflow {
             .write_strm_file(remote_file_path, extension, file_id)
             .await?;
         info!("Strm file {} created", local_file_path);
+        self.queue_library_update(local_file_path, LibraryMediaUpdateKind::Created)
+            .await;
         Ok(())
     }
 
@@ -49,6 +52,8 @@ impl TransferWorkflow {
             .download_library_file(file_id, local_file_path.as_str())
             .await?;
         info!("Subtitle file {} downloaded", local_file_path);
+        self.queue_library_update(local_file_path, LibraryMediaUpdateKind::Created)
+            .await;
         Ok(true)
     }
 }

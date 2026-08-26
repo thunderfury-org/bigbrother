@@ -1,7 +1,10 @@
 use crate::{
     application::{
         import_local_store::ImportLocalStore,
-        ports::{LibraryGateway, LibraryGatewayHandle, MediaDirectoryRecord},
+        ports::{
+            LibraryGateway, LibraryGatewayHandle, LibraryMediaUpdate, LibraryMediaUpdateKind,
+            LibraryUpdateNotifierHandle, MediaDirectoryRecord, notify_library_updates,
+        },
     },
     error::{AppError, AppResult},
 };
@@ -31,6 +34,7 @@ pub struct MediaDirDeleteItem {
 pub struct DeleteMediaService {
     library: LibraryGatewayHandle,
     local: ImportLocalStore,
+    notifier: LibraryUpdateNotifierHandle,
     root_path: String,
 }
 
@@ -39,10 +43,12 @@ impl DeleteMediaService {
         library: impl LibraryGateway + 'static,
         local: ImportLocalStore,
         root_path: String,
+        notifier: LibraryUpdateNotifierHandle,
     ) -> Self {
         Self {
             library: std::sync::Arc::new(library),
             local,
+            notifier,
             root_path,
         }
     }
@@ -85,7 +91,16 @@ impl DeleteMediaService {
             .local_path_for_remote(candidate.remote_path.as_str());
         self.local
             .remove_local_dir_if_exists(local_path.as_str())
-            .await
+            .await?;
+        notify_library_updates(
+            self.notifier.as_ref(),
+            &[LibraryMediaUpdate {
+                path: local_path,
+                kind: LibraryMediaUpdateKind::Deleted,
+            }],
+        )
+        .await;
+        Ok(())
     }
 
     pub async fn list_children(&self, parent_id: Option<i64>) -> AppResult<Vec<MediaDirEntry>> {
@@ -137,15 +152,29 @@ impl DeleteMediaService {
             .collect::<Vec<_>>();
         self.library.trash_library_files(&dir_ids).await?;
 
+        let mut updates = Vec::new();
+        let mut result = Ok(());
         for candidate in &candidates {
             let local_path = self
                 .local
                 .local_path_for_remote(candidate.remote_path.as_str());
-            self.local
+            match self
+                .local
                 .remove_local_dir_if_exists(local_path.as_str())
-                .await?;
+                .await
+            {
+                Ok(()) => updates.push(LibraryMediaUpdate {
+                    path: local_path,
+                    kind: LibraryMediaUpdateKind::Deleted,
+                }),
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
         }
-        Ok(())
+        notify_library_updates(self.notifier.as_ref(), &updates).await;
+        result
     }
 }
 
@@ -244,7 +273,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::application::ports::{FileStore, LocalEntry, MediaDirectoryRecord};
+    use crate::application::ports::{
+        FileStore, LocalEntry, MediaDirectoryRecord, NoopLibraryUpdateNotifier,
+        library_update::test_support::RecordingLibraryUpdateNotifier,
+    };
     use crate::domain::import::LibraryFile;
     use crate::domain::share::FileHash;
 
@@ -387,6 +419,7 @@ mod tests {
             },
             local_store(RecordingFileStore::default()),
             "/remote".to_string(),
+            std::sync::Arc::new(NoopLibraryUpdateNotifier),
         );
 
         let candidates = service.search_candidates("bad").await.unwrap();
@@ -413,6 +446,7 @@ mod tests {
             },
             local_store(RecordingFileStore::default()),
             "/remote".to_string(),
+            std::sync::Arc::new(NoopLibraryUpdateNotifier),
         );
 
         let candidates = service.search_candidates("bad").await.unwrap();
@@ -424,10 +458,12 @@ mod tests {
     async fn delete_candidate_trashes_remote_dir_and_local_dir() {
         let library = FakeLibraryGateway::default();
         let file_store = RecordingFileStore::default();
+        let notifier = RecordingLibraryUpdateNotifier::default();
         let service = DeleteMediaService::new(
             library.clone(),
             local_store(file_store.clone()),
             "/remote".to_string(),
+            std::sync::Arc::new(notifier.clone()),
         );
         let candidate = MediaDeleteCandidate {
             dir_id: 77,
@@ -444,6 +480,13 @@ mod tests {
             &[String::from(
                 "/local/电影/欧美/Inception (2010) {tmdb-27205}"
             )]
+        );
+        assert_eq!(
+            notifier.flat_updates(),
+            vec![LibraryMediaUpdate {
+                path: "/local/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
+                kind: LibraryMediaUpdateKind::Deleted,
+            }]
         );
     }
 
@@ -501,6 +544,7 @@ mod tests {
             library.clone(),
             local_store(RecordingFileStore::default()),
             "/remote".to_string(),
+            std::sync::Arc::new(NoopLibraryUpdateNotifier),
         );
 
         let root_entries = service.list_children(None).await.unwrap();
@@ -549,6 +593,7 @@ mod tests {
             FakeLibraryGateway::default(),
             local_store(RecordingFileStore::default()),
             "/remote".to_string(),
+            std::sync::Arc::new(NoopLibraryUpdateNotifier),
         );
 
         let err = service.list_children(None).await.unwrap_err();
@@ -559,10 +604,12 @@ mod tests {
     async fn delete_dirs_trashes_all_ids_once_and_removes_local_dirs() {
         let library = FakeLibraryGateway::default();
         let file_store = RecordingFileStore::default();
+        let notifier = RecordingLibraryUpdateNotifier::default();
         let service = DeleteMediaService::new(
             library.clone(),
             local_store(file_store.clone()),
             "/remote".to_string(),
+            std::sync::Arc::new(notifier.clone()),
         );
 
         service
@@ -587,6 +634,39 @@ mod tests {
                 String::from("/local/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}"),
             ]
         );
+        assert_eq!(
+            notifier.batches(),
+            vec![vec![
+                LibraryMediaUpdate {
+                    path: "/local/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
+                    kind: LibraryMediaUpdateKind::Deleted,
+                },
+                LibraryMediaUpdate {
+                    path: "/local/电视剧/欧美/Breaking Bad (2008) {tmdb-1396}".to_string(),
+                    kind: LibraryMediaUpdateKind::Deleted,
+                },
+            ]]
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_candidate_succeeds_when_library_notify_fails() {
+        let notifier = RecordingLibraryUpdateNotifier::failing();
+        let service = DeleteMediaService::new(
+            FakeLibraryGateway::default(),
+            local_store(RecordingFileStore::default()),
+            "/remote".to_string(),
+            std::sync::Arc::new(notifier.clone()),
+        );
+        let candidate = MediaDeleteCandidate {
+            dir_id: 77,
+            remote_path: "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
+            relative_path: "电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
+            display_name: "Inception (2010) {tmdb-27205}".to_string(),
+        };
+
+        service.delete_candidate(&candidate).await.unwrap();
+        assert_eq!(notifier.flat_updates().len(), 1);
     }
 
     #[tokio::test]
@@ -596,6 +676,7 @@ mod tests {
             library.clone(),
             local_store(RecordingFileStore::default()),
             "/remote".to_string(),
+            std::sync::Arc::new(NoopLibraryUpdateNotifier),
         );
 
         let empty = service.delete_dirs(&[]).await.unwrap_err();

@@ -13,7 +13,11 @@ use super::identify::MediaIdentifyService;
 use super::*;
 use crate::application::{
     import_local_store::ImportLocalStore,
-    ports::{FileStore, LibraryGateway, LocalEntry, MetadataCatalog, TitleExtractor},
+    ports::{
+        FileStore, LibraryGateway, LibraryMediaUpdate, LibraryMediaUpdateKind,
+        LibraryUpdateNotifier, LocalEntry, MetadataCatalog, NoopLibraryUpdateNotifier,
+        TitleExtractor, library_update::test_support::RecordingLibraryUpdateNotifier,
+    },
 };
 use crate::domain::import::{
     LibraryFile, MovieDetail, SearchMovieResult, SearchTvResult, TvDetail,
@@ -34,8 +38,26 @@ impl TestImportService {
         metadata_catalog: impl MetadataCatalog + 'static,
         local_store: ImportLocalStore,
     ) -> Self {
+        Self::with_notifier(
+            library_gateway,
+            metadata_catalog,
+            local_store,
+            NoopLibraryUpdateNotifier,
+        )
+    }
+
+    pub fn with_notifier(
+        library_gateway: impl LibraryGateway + 'static,
+        metadata_catalog: impl MetadataCatalog + 'static,
+        local_store: ImportLocalStore,
+        notifier: impl LibraryUpdateNotifier + 'static,
+    ) -> Self {
         Self {
-            transfer: TransferWorkflow::new(library_gateway, local_store),
+            transfer: TransferWorkflow::new(
+                library_gateway,
+                local_store,
+                std::sync::Arc::new(notifier),
+            ),
             identify_service: MediaIdentifyService::new(metadata_catalog, FakeTitleExtractor),
             metadata_lookup: MetadataLookup::default(),
         }
@@ -1161,6 +1183,183 @@ async fn import_from_raw_files_returns_error_when_local_cleanup_fails_on_overwri
 
     assert!(matches!(error, crate::error::AppError::Internal(_)));
     assert!(error.to_string().contains("remove local file failed"));
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_notifies_created_strm_and_subtitle() {
+    let local_dir = unique_temp_dir();
+    let notifier = RecordingLibraryUpdateNotifier::default();
+    let service = TestImportService::with_notifier(
+        FakeLibraryGateway::default(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+        notifier.clone(),
+    );
+    service
+        .import_from_raw_files(vec![
+            raw_file(
+                "Inception.2010.1080p.mkv",
+                "0123456789abcdef0123456789abcdef",
+                1234,
+            ),
+            raw_file(
+                "Inception.2010.1080p.zh.srt",
+                "fedcba9876543210fedcba9876543210",
+                12,
+            ),
+        ])
+        .await
+        .unwrap();
+
+    let movie_dir = local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}");
+    assert_eq!(
+        notifier.batches(),
+        vec![vec![
+            LibraryMediaUpdate {
+                path: movie_dir
+                    .join("Inception.2010.1080p.zh.srt")
+                    .to_string_lossy()
+                    .into_owned(),
+                kind: LibraryMediaUpdateKind::Created,
+            },
+            LibraryMediaUpdate {
+                path: movie_dir
+                    .join("Inception.2010.1080p.strm")
+                    .to_string_lossy()
+                    .into_owned(),
+                kind: LibraryMediaUpdateKind::Created,
+            },
+        ]]
+    );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_notifies_created_and_deleted_when_replacing_movie() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
+    {
+        let mut state = gateway.state.lock().unwrap();
+        state.dir_ids_by_path.insert(movie_path.clone(), 77);
+        state.files_by_dir_id.insert(
+            77,
+            vec![existing_library_file(
+                601,
+                "Inception.2010.720p.mkv",
+                900,
+                "hash-existing-small",
+            )],
+        );
+    }
+
+    let old_local_dir = local_dir.join("电影/欧美/Inception (2010) {tmdb-27205}");
+    fs::create_dir_all(&old_local_dir).unwrap();
+    fs::write(old_local_dir.join("Inception.2010.720p.strm"), "old").unwrap();
+
+    let notifier = RecordingLibraryUpdateNotifier::default();
+    let service = TestImportService::with_notifier(
+        gateway,
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+        notifier.clone(),
+    );
+    service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        notifier.flat_updates(),
+        vec![
+            LibraryMediaUpdate {
+                path: old_local_dir
+                    .join("Inception.2010.1080p.strm")
+                    .to_string_lossy()
+                    .into_owned(),
+                kind: LibraryMediaUpdateKind::Created,
+            },
+            LibraryMediaUpdate {
+                path: old_local_dir
+                    .join("Inception.2010.720p.strm")
+                    .to_string_lossy()
+                    .into_owned(),
+                kind: LibraryMediaUpdateKind::Deleted,
+            },
+        ]
+    );
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_skips_notify_when_existing_movie_is_kept() {
+    let local_dir = unique_temp_dir();
+    let gateway = FakeLibraryGateway::default();
+    let movie_path = "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string();
+    {
+        let mut state = gateway.state.lock().unwrap();
+        state.dir_ids_by_path.insert(movie_path, 99);
+        state.files_by_dir_id.insert(
+            99,
+            vec![existing_library_file(
+                501,
+                "Inception.2010.2160p.mkv",
+                4321,
+                "hash-existing-large",
+            )],
+        );
+    }
+    let notifier = RecordingLibraryUpdateNotifier::default();
+    let service = TestImportService::with_notifier(
+        gateway,
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+        notifier.clone(),
+    );
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
+
+    assert!(imported.is_empty());
+    assert!(notifier.batches().is_empty());
+
+    let _ = fs::remove_dir_all(local_dir);
+}
+
+#[tokio::test]
+async fn import_succeeds_when_library_notify_fails() {
+    let local_dir = unique_temp_dir();
+    let notifier = RecordingLibraryUpdateNotifier::failing();
+    let service = TestImportService::with_notifier(
+        FakeLibraryGateway::default(),
+        FakeMetadataCatalog,
+        local_store_for(&local_dir),
+        notifier.clone(),
+    );
+    let imported = service
+        .import_from_raw_files(vec![raw_file(
+            "Inception.2010.1080p.mkv",
+            "0123456789abcdef0123456789abcdef",
+            1234,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(imported.len(), 1);
+    assert_eq!(notifier.flat_updates().len(), 1);
 
     let _ = fs::remove_dir_all(local_dir);
 }

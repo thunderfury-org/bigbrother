@@ -99,6 +99,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
         MediaDownloadUrlService::new(cache.clone(), library_gateway.clone()),
     ));
 
+    let library_update_notifier = ctx.library_update_notifier();
     let delete_media_service = DeleteMediaService::new(
         library_gateway.clone(),
         ImportLocalStore::new(
@@ -108,6 +109,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
             library.strm_download_url.clone(),
         ),
         library.remote_path.clone(),
+        library_update_notifier.clone(),
     );
 
     // Telegram bot runtime
@@ -118,6 +120,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
             library_gateway.clone(),
             TokioFileStore,
             library.clone(),
+            library_update_notifier,
         ),
         delete_media_service: delete_media_service.clone(),
         event_bus: event_bus.clone(),

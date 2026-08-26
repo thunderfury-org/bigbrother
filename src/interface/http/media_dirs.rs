@@ -272,6 +272,7 @@ mod tests {
                 "http://d".into(),
             ),
             "/remote".into(),
+            std::sync::Arc::new(crate::application::ports::NoopLibraryUpdateNotifier),
         )
     }
 
