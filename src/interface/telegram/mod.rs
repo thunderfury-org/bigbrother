@@ -1,21 +1,12 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-use teloxide::{prelude::*, sugar::request::RequestReplyExt};
-use tokio::sync::RwLock;
+use teloxide::prelude::*;
 use tracing::{error, info};
 
 use crate::{
-    application::delete_media::MediaDeleteCandidate,
     application::ports::{Message as OutboundMessage, MessageSender},
     infrastructure::event_bus::EventBus,
-    interface::runtime::{DeleteMediaServiceRuntime, NotifyService},
+    interface::runtime::NotifyService,
 };
 
-mod cmd;
 pub(crate) mod delivery;
 pub mod export;
 pub mod file_index;
@@ -31,35 +22,16 @@ enum SourceHandling {
     Process { confirm: String },
 }
 
-struct BotServices {
-    notify: NotifyService,
-    delete_media: DeleteMediaServiceRuntime,
-    event_bus: EventBus,
-    delete_media_cache: DeleteMediaCandidateCache,
-}
-
-#[derive(Clone)]
-struct DeleteMediaCandidateCache {
-    ttl: Duration,
-    inner: Arc<RwLock<HashMap<i64, CachedDeleteMediaCandidate>>>,
-}
-
-#[derive(Clone)]
-struct CachedDeleteMediaCandidate {
-    candidate: MediaDeleteCandidate,
-    expires_at: Instant,
-}
-
 #[derive(Clone)]
 pub(crate) struct BotRuntime {
     pub user_id: UserId,
-    services: Arc<BotServices>,
+    notify: NotifyService,
+    event_bus: EventBus,
 }
 
 pub(crate) struct BotRuntimeArgs {
     pub user_id: UserId,
     pub notify_service: NotifyService,
-    pub delete_media_service: DeleteMediaServiceRuntime,
     pub event_bus: EventBus,
 }
 
@@ -67,93 +39,23 @@ impl BotRuntime {
     pub(crate) fn new(args: BotRuntimeArgs) -> Self {
         Self {
             user_id: args.user_id,
-            services: Arc::new(BotServices {
-                notify: args.notify_service,
-                delete_media: args.delete_media_service,
-                event_bus: args.event_bus,
-                delete_media_cache: DeleteMediaCandidateCache::new(Duration::from_secs(15 * 60)),
-            }),
+            notify: args.notify_service,
+            event_bus: args.event_bus,
         }
     }
 
     fn notify_service(&self) -> &NotifyService {
-        &self.services.notify
-    }
-
-    fn delete_media_service(&self) -> &DeleteMediaServiceRuntime {
-        &self.services.delete_media
+        &self.notify
     }
 
     fn event_bus(&self) -> &EventBus {
-        &self.services.event_bus
+        &self.event_bus
     }
-
-    async fn cache_delete_media_candidates(&self, candidates: &[MediaDeleteCandidate]) {
-        self.services
-            .delete_media_cache
-            .insert_all(candidates)
-            .await;
-    }
-
-    async fn get_delete_media_candidate(&self, dir_id: i64) -> Option<MediaDeleteCandidate> {
-        self.services.delete_media_cache.get(dir_id).await
-    }
-
-    async fn remove_delete_media_candidate(&self, dir_id: i64) {
-        self.services.delete_media_cache.remove(dir_id).await;
-    }
-}
-
-impl DeleteMediaCandidateCache {
-    fn new(ttl: Duration) -> Self {
-        Self {
-            ttl,
-            inner: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    async fn insert_all(&self, candidates: &[MediaDeleteCandidate]) {
-        let expires_at = Instant::now() + self.ttl;
-        let mut guard = self.inner.write().await;
-        prune_expired(&mut guard);
-        for candidate in candidates {
-            guard.insert(
-                candidate.dir_id,
-                CachedDeleteMediaCandidate {
-                    candidate: candidate.clone(),
-                    expires_at,
-                },
-            );
-        }
-    }
-
-    async fn get(&self, dir_id: i64) -> Option<MediaDeleteCandidate> {
-        let mut guard = self.inner.write().await;
-        prune_expired(&mut guard);
-        guard.get(&dir_id).map(|entry| entry.candidate.clone())
-    }
-
-    async fn remove(&self, dir_id: i64) {
-        self.inner.write().await.remove(&dir_id);
-    }
-}
-
-fn prune_expired(entries: &mut HashMap<i64, CachedDeleteMediaCandidate>) {
-    let now = Instant::now();
-    entries.retain(|_, entry| entry.expires_at > now);
 }
 
 pub(crate) async fn run(bot: teloxide::Bot, runtime: BotRuntime) {
-    cmd::create_commands_in_background(&bot);
-
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
-        .branch(Update::filter_callback_query().endpoint(cmd::handle_callback_query))
-        .branch(
-            Update::filter_message()
-                .filter_command::<cmd::Command>()
-                .endpoint(cmd::handle_command),
-        )
         .branch(Update::filter_message().endpoint(handle_message));
 
     Dispatcher::builder(bot, handler)
@@ -213,18 +115,11 @@ async fn handle_channel_post(runtime: BotRuntime, msg: Message) -> ResponseResul
     Ok(())
 }
 
-async fn handle_message(runtime: BotRuntime, bot: Bot, msg: Message) -> ResponseResult<()> {
+async fn handle_message(runtime: BotRuntime, msg: Message) -> ResponseResult<()> {
     info!("Received message from {:?}", msg.chat);
 
     if msg.from.as_ref().is_none_or(|u| u.id != runtime.user_id) {
         info!("Ignoring message from unauthorized user: {:?}", msg.from);
-        return Ok(());
-    }
-
-    if cmd::is_delete_media_usage_request(&msg) {
-        bot.send_message(msg.chat.id, cmd::delete_media_usage())
-            .reply_to(msg.id)
-            .await?;
         return Ok(());
     }
 
@@ -377,18 +272,37 @@ mod tests {
         assert_eq!(decide_source_handling(true, &[]), SourceHandling::Ignore);
     }
 
-    #[test]
-    fn mixed_supported_and_unsupported_inputs_only_process_supported_sources() {
-        let msg: Message = serde_json::from_value(json!({
+    fn private_text_message(text: &str) -> Message {
+        serde_json::from_value(json!({
             "message_id": 1,
             "date": 1_700_000_000,
             "chat": {
                 "id": 42,
                 "type": "private"
             },
-            "text": "https://115.com/s/share-id?rc=abc\nhttps://www.themoviedb.org/tv/314784"
+            "text": text
         }))
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn former_slash_commands_are_treated_as_plain_text_without_media_sources() {
+        for text in ["/help", "/delete_media foo"] {
+            let sources = extract_media_sources(&private_text_message(text));
+            assert!(sources.is_empty(), "{text}");
+            assert_eq!(
+                decide_source_handling(false, &sources),
+                SourceHandling::NotifyNoValidMediaSource,
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_supported_and_unsupported_inputs_only_process_supported_sources() {
+        let msg = private_text_message(
+            "https://115.com/s/share-id?rc=abc\nhttps://www.themoviedb.org/tv/314784",
+        );
 
         let sources = extract_media_sources(&msg);
         let handling = decide_source_handling(false, &sources);

@@ -43,7 +43,6 @@ lingua = { version = "1.7.2", default-features = false, features = [
 teloxide = { version = "0.17.0", default-features = false, features = [
   "ctrlc_handler",
   "rustls",
-  "macros",
 ] }
 futures = "0.3"
 async-trait = "0.1"
