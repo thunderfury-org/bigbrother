@@ -8,7 +8,7 @@ use crate::{
         import_local_store::ImportLocalStore,
         media_source_observation::ProcessObservationService,
         recorded_import::RecordedImportService,
-        sync_strm::{LibrarySyncController, SyncStrmConfig, SyncStrmService},
+        sync_strm::{SyncStrmConfig, SyncStrmService},
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -19,6 +19,7 @@ use crate::{
         http,
         http::console::{self, ConsoleContext},
         http::media::{self, MediaServerContext},
+        library_sync::LibrarySyncController,
         runtime::MediaDownloadUrlService,
         telegram::{
             self,

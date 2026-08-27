@@ -22,7 +22,6 @@ use crate::{
             ShareResolverHandle,
         },
         recorded_import::RecordedImportService,
-        sync_strm::LibrarySyncController,
     },
     domain::import_record::{
         EpisodeOutcome, ImportSourceKind, ImportStatus, RecordSummary, SummaryItem,
@@ -33,6 +32,7 @@ use crate::{
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
     interface::import::format_episodes,
+    interface::library_sync::LibrarySyncController,
     interface::runtime::{IdentifyService, ImportService, SubscriptionService},
 };
 

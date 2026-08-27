@@ -1,7 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
     domain::{
@@ -66,91 +65,6 @@ impl SyncReport {
             Some(LibraryMediaUpdateKind::Deleted) => self.deleted += 1,
             None => self.unchanged += 1,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LibrarySyncState {
-    Idle,
-    Running {
-        started_at: DateTime<Utc>,
-    },
-    Succeeded {
-        started_at: DateTime<Utc>,
-        finished_at: DateTime<Utc>,
-        report: SyncReport,
-    },
-    Failed {
-        started_at: DateTime<Utc>,
-        finished_at: DateTime<Utc>,
-        message: String,
-    },
-}
-
-#[derive(Clone)]
-pub struct LibrarySyncController {
-    service: Arc<SyncStrmService>,
-    state: Arc<Mutex<LibrarySyncState>>,
-}
-
-impl LibrarySyncController {
-    pub fn new(service: SyncStrmService) -> Self {
-        Self {
-            service: Arc::new(service),
-            state: Arc::new(Mutex::new(LibrarySyncState::Idle)),
-        }
-    }
-
-    pub fn snapshot(&self) -> LibrarySyncState {
-        self.state
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .clone()
-    }
-
-    pub fn try_start(&self) -> bool {
-        let started_at = Utc::now();
-        {
-            let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
-            if matches!(*state, LibrarySyncState::Running { .. }) {
-                return false;
-            }
-            *state = LibrarySyncState::Running { started_at };
-        }
-
-        let service = self.service.clone();
-        let state = self.state.clone();
-        tokio::spawn(async move {
-            info!("Starting library strm sync");
-            let result = service.execute().await;
-            let finished_at = Utc::now();
-            let mut guard = state.lock().unwrap_or_else(|err| err.into_inner());
-            *guard = match result {
-                Ok(report) => {
-                    info!(
-                        created = report.created,
-                        modified = report.modified,
-                        deleted = report.deleted,
-                        unchanged = report.unchanged,
-                        "Library strm sync completed"
-                    );
-                    LibrarySyncState::Succeeded {
-                        started_at,
-                        finished_at,
-                        report,
-                    }
-                }
-                Err(err) => {
-                    error!(error = %err, "Library strm sync failed");
-                    LibrarySyncState::Failed {
-                        started_at,
-                        finished_at,
-                        message: err.to_string(),
-                    }
-                }
-            };
-        });
-        true
     }
 }
 
@@ -391,7 +305,6 @@ mod tests {
         dirs: Arc<Mutex<HashMap<i64, Vec<LibraryFile>>>>,
         downloads: Arc<Mutex<Vec<(i64, String)>>>,
         fail_download: Arc<Mutex<bool>>,
-        list_hold: Option<Arc<tokio::sync::Mutex<()>>>,
     }
 
     #[async_trait::async_trait]
@@ -401,9 +314,6 @@ mod tests {
         }
 
         async fn list_library_files(&self, dir_id: i64) -> AppResult<Vec<LibraryFile>> {
-            if let Some(hold) = &self.list_hold {
-                let _guard = hold.lock().await;
-            }
             Ok(self
                 .dirs
                 .lock()
@@ -1010,124 +920,5 @@ mod tests {
             }
         );
         assert_eq!(notifier.flat_updates().len(), 1);
-    }
-
-    fn movie_service(remote: FakeRemote, file_store: FakeFileStore) -> SyncStrmService {
-        SyncStrmService::new(
-            remote,
-            file_store,
-            SyncStrmConfig {
-                remote_path: "/remote".to_string(),
-                local_path: "/local".to_string(),
-                strm_download_url: "https://host/d".to_string(),
-            },
-            noop_notifier(),
-        )
-    }
-
-    fn movie_remote() -> FakeRemote {
-        let remote = FakeRemote::default();
-        remote
-            .root_ids
-            .lock()
-            .unwrap()
-            .insert("/remote".to_string(), 1);
-        remote.dirs.lock().unwrap().insert(
-            1,
-            vec![LibraryFile {
-                file_id: 3,
-                file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
-                is_dir: false,
-                size: 100,
-                hash: String::new(),
-            }],
-        );
-        remote
-    }
-
-    async fn wait_until_not_running(controller: &LibrarySyncController) -> LibrarySyncState {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        loop {
-            let snapshot = controller.snapshot();
-            if !matches!(snapshot, LibrarySyncState::Running { .. }) {
-                return snapshot;
-            }
-            if std::time::Instant::now() > deadline {
-                panic!("timed out waiting for library sync to finish");
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    }
-
-    #[tokio::test]
-    async fn controller_rejects_second_start_while_running() {
-        let hold = Arc::new(tokio::sync::Mutex::new(()));
-        let permit = hold.lock().await;
-        let mut remote = movie_remote();
-        remote.list_hold = Some(hold.clone());
-        let controller =
-            LibrarySyncController::new(movie_service(remote, FakeFileStore::default()));
-
-        assert!(matches!(controller.snapshot(), LibrarySyncState::Idle));
-        assert!(controller.try_start());
-        assert!(matches!(
-            controller.snapshot(),
-            LibrarySyncState::Running { .. }
-        ));
-        assert!(!controller.try_start());
-
-        drop(permit);
-        let snapshot = wait_until_not_running(&controller).await;
-        match snapshot {
-            LibrarySyncState::Succeeded { report, .. } => {
-                assert_eq!(
-                    report,
-                    SyncReport {
-                        created: 1,
-                        modified: 0,
-                        deleted: 0,
-                        unchanged: 0,
-                    }
-                );
-            }
-            other => panic!("expected succeeded, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn controller_records_failure_and_allows_retry() {
-        let remote = FakeRemote::default();
-        let controller =
-            LibrarySyncController::new(movie_service(remote.clone(), FakeFileStore::default()));
-
-        assert!(controller.try_start());
-        let snapshot = wait_until_not_running(&controller).await;
-        match snapshot {
-            LibrarySyncState::Failed { message, .. } => {
-                assert!(message.contains("remote path not found"));
-            }
-            other => panic!("expected failed, got {other:?}"),
-        }
-
-        remote
-            .root_ids
-            .lock()
-            .unwrap()
-            .insert("/remote".to_string(), 1);
-        remote.dirs.lock().unwrap().insert(
-            1,
-            vec![LibraryFile {
-                file_id: 3,
-                file_name: "Movie.2024.1080p.WEB-DL.mkv".to_string(),
-                is_dir: false,
-                size: 100,
-                hash: String::new(),
-            }],
-        );
-        assert!(controller.try_start());
-        assert!(matches!(
-            wait_until_not_running(&controller).await,
-            LibrarySyncState::Succeeded { .. }
-        ));
     }
 }

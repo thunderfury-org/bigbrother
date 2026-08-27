@@ -6,7 +6,10 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::application::sync_strm::{LibrarySyncState, SyncReport};
+use crate::{
+    application::sync_strm::SyncReport,
+    interface::library_sync::{LibrarySyncState, StartSync},
+};
 
 use super::console::{ConsoleContext, json_response};
 
@@ -34,13 +37,12 @@ pub(super) async fn start_library_sync(State(ctx): State<ConsoleContext>) -> Res
     let Some(sync) = ctx.library_sync.as_ref() else {
         return unavailable();
     };
-    let started = sync.try_start();
-    let status = if started {
-        StatusCode::ACCEPTED
-    } else {
-        StatusCode::CONFLICT
-    };
-    json_response(status, &to_response(sync.snapshot()))
+    match sync.try_start() {
+        StartSync::Started(state) => json_response(StatusCode::ACCEPTED, &to_response(state)),
+        StartSync::AlreadyRunning(state) => {
+            json_response(StatusCode::CONFLICT, &to_response(state))
+        }
+    }
 }
 
 fn unavailable() -> Response {
@@ -81,13 +83,13 @@ fn to_response(state: LibrarySyncState) -> LibrarySyncResponse {
         LibrarySyncState::Failed {
             started_at,
             finished_at,
-            message,
+            error,
         } => with_report(
             "failed",
             started_at,
             finished_at,
             SyncReport::default(),
-            Some(message),
+            Some(error.to_string()),
         ),
     }
 }
@@ -126,14 +128,17 @@ mod tests {
         application::{
             file_index::FileIndexService,
             ports::{FileStore, LibraryGateway, LocalEntry, MediaDirectoryRecord},
-            sync_strm::{LibrarySyncController, SyncStrmConfig, SyncStrmService},
+            sync_strm::{SyncStrmConfig, SyncStrmService},
         },
         domain::{import::LibraryFile, share::FileHash},
         error::AppResult,
         infrastructure::repo::{
             file_index::SeaOrmFileIndexRepository, import_record::SeaOrmImportRecordRepository,
         },
-        interface::http::console::{ConsoleContext, new_router},
+        interface::{
+            http::console::{ConsoleContext, new_router},
+            library_sync::LibrarySyncController,
+        },
         migration::{Migrator, MigratorTrait},
     };
 
@@ -358,7 +363,8 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let body = json_body(response).await;
-        assert!(body["status"] == "running" || body["status"] == "succeeded");
+        assert_eq!(body["status"], "running");
+        assert!(body["finished_at"].is_null());
 
         let body = wait_until_not_running(&router).await;
         assert_eq!(body["status"], "succeeded");
@@ -390,5 +396,49 @@ mod tests {
         assert_eq!(second.status(), StatusCode::CONFLICT);
         let body = json_body(second).await;
         assert_eq!(body["status"], "running");
+    }
+
+    #[tokio::test]
+    async fn post_library_sync_failure_allows_retry() {
+        let remote = FakeRemote::default();
+        let router = router_with_sync(remote.clone()).await;
+
+        let response = router
+            .clone()
+            .oneshot(request("POST", "/api/library/sync"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+        let body = wait_until_not_running(&router).await;
+        assert_eq!(body["status"], "failed");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("remote path not found")
+        );
+
+        remote.root_ids.lock().unwrap().insert("/remote".into(), 1);
+        remote.dirs.lock().unwrap().insert(
+            1,
+            vec![LibraryFile {
+                file_id: 3,
+                file_name: "Movie.2024.1080p.WEB-DL.mkv".into(),
+                is_dir: false,
+                size: 100,
+                hash: String::new(),
+            }],
+        );
+
+        let response = router
+            .clone()
+            .oneshot(request("POST", "/api/library/sync"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = wait_until_not_running(&router).await;
+        assert_eq!(body["status"], "succeeded");
+        assert_eq!(body["created"], 1);
     }
 }
