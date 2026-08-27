@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tracing::info;
 
 use crate::{
@@ -39,16 +41,35 @@ impl SyncStrmService {
         notifier: LibraryUpdateNotifierHandle,
     ) -> Self {
         Self {
-            remote: std::sync::Arc::new(remote),
-            file_store: std::sync::Arc::new(file_store),
+            remote: Arc::new(remote),
+            file_store: Arc::new(file_store),
             notifier,
             config,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SyncReport {
+    pub created: u32,
+    pub modified: u32,
+    pub deleted: u32,
+    pub unchanged: u32,
+}
+
+impl SyncReport {
+    fn record_change(&mut self, kind: Option<LibraryMediaUpdateKind>) {
+        match kind {
+            Some(LibraryMediaUpdateKind::Created) => self.created += 1,
+            Some(LibraryMediaUpdateKind::Modified) => self.modified += 1,
+            Some(LibraryMediaUpdateKind::Deleted) => self.deleted += 1,
+            None => self.unchanged += 1,
+        }
+    }
+}
+
 impl SyncStrmService {
-    pub async fn execute(&self) -> AppResult<()> {
+    pub async fn execute(&self) -> AppResult<SyncReport> {
         let remote_path = self.config.remote_path.clone();
         let root_id = self
             .remote
@@ -137,17 +158,20 @@ impl SyncStrmService {
         Ok(nodes)
     }
 
-    async fn execute_plan(&self, plan: SyncPlan) -> AppResult<()> {
+    async fn execute_plan(&self, plan: SyncPlan) -> AppResult<SyncReport> {
         let mut updates = Vec::new();
-        let result = self.apply_plan(plan, &mut updates).await;
+        let mut report = SyncReport::default();
+        let result = self.apply_plan(plan, &mut updates, &mut report).await;
         notify_library_updates(self.notifier.as_ref(), &updates).await;
-        result
+        result?;
+        Ok(report)
     }
 
     async fn apply_plan(
         &self,
         plan: SyncPlan,
         updates: &mut Vec<LibraryMediaUpdate>,
+        report: &mut SyncReport,
     ) -> AppResult<()> {
         for file in plan.files {
             let kind = match file.kind {
@@ -166,6 +190,7 @@ impl SyncStrmService {
                         .await?
                 }
             };
+            report.record_change(kind);
             if let Some(kind) = kind {
                 updates.push(LibraryMediaUpdate {
                     path: file.local_path,
@@ -177,6 +202,7 @@ impl SyncStrmService {
         for stale_file in plan.stale_files {
             self.file_store.remove_file(stale_file.as_str()).await?;
             info!("Deleted stale local file: {stale_file}");
+            report.deleted += 1;
             updates.push(LibraryMediaUpdate {
                 path: stale_file,
                 kind: LibraryMediaUpdateKind::Deleted,
@@ -186,6 +212,7 @@ impl SyncStrmService {
         for stale_dir in plan.stale_dirs {
             self.file_store.remove_dir_all(stale_dir.as_str()).await?;
             info!("Deleted stale local directory: {stale_dir}");
+            report.deleted += 1;
             updates.push(LibraryMediaUpdate {
                 path: stale_dir,
                 kind: LibraryMediaUpdateKind::Deleted,
@@ -509,7 +536,16 @@ mod tests {
             Arc::new(notifier.clone()),
         );
 
-        service.execute().await.unwrap();
+        let report = service.execute().await.unwrap();
+        assert_eq!(
+            report,
+            SyncReport {
+                created: 2,
+                modified: 0,
+                deleted: 3,
+                unchanged: 0,
+            }
+        );
 
         assert_eq!(
             file_store.removed_files.lock().unwrap().as_slice(),
@@ -635,7 +671,16 @@ mod tests {
             Arc::new(notifier.clone()),
         );
 
-        service.execute().await.unwrap();
+        let report = service.execute().await.unwrap();
+        assert_eq!(
+            report,
+            SyncReport {
+                created: 0,
+                modified: 0,
+                deleted: 0,
+                unchanged: 2,
+            }
+        );
 
         assert!(file_store.writes.lock().unwrap().is_empty());
         assert!(file_store.ensured.lock().unwrap().is_empty());
@@ -807,7 +852,16 @@ mod tests {
             Arc::new(notifier.clone()),
         );
 
-        service.execute().await.unwrap();
+        let report = service.execute().await.unwrap();
+        assert_eq!(
+            report,
+            SyncReport {
+                created: 0,
+                modified: 2,
+                deleted: 0,
+                unchanged: 0,
+            }
+        );
 
         assert_eq!(
             notifier.flat_updates(),
@@ -855,7 +909,16 @@ mod tests {
             Arc::new(notifier.clone()),
         );
 
-        service.execute().await.unwrap();
+        let report = service.execute().await.unwrap();
+        assert_eq!(
+            report,
+            SyncReport {
+                created: 1,
+                modified: 0,
+                deleted: 0,
+                unchanged: 0,
+            }
+        );
         assert_eq!(notifier.flat_updates().len(), 1);
     }
 }

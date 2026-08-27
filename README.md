@@ -52,7 +52,6 @@ The bot accepts direct commands from the configured `telegram.user_id` and can a
 Supported commands:
 
 - `/help`
-- `/sync_strm`
 - `/delete_media`
 
 Supported message inputs:
@@ -63,7 +62,7 @@ Supported message inputs:
 
 ## STRM redirect flow
 
-`/sync_strm` scans `library.remote_path` on Pan123 and mirrors video entries into `library.local_path` as `.strm` files. Each generated file points to the local redirect server:
+When the web console is enabled, the 媒体目录 page can sync `library.remote_path` on Pan123 into `library.local_path` as `.strm` files. Each generated file points to the local redirect server:
 
 ```text
 http://<advertise-base-url>/<strm-path-prefix>/<remote/path>?file_id=<id>

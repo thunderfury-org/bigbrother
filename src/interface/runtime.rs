@@ -6,7 +6,6 @@ use crate::{
         media_source_observation::ProcessObservationService,
         resolve_download_url::ResolveDownloadUrlService,
         subscription::manage::ManageSubscriptionsService,
-        sync_strm::SyncStrmService,
     },
     infrastructure::{
         client::{pan115, pan123, pan189},
@@ -20,7 +19,6 @@ pub type ShareResolverRuntimeService =
 pub type ImportService = TransferWorkflow;
 pub type IdentifyService = MediaIdentifyService;
 pub type NotifyService = EventBusPublisher;
-pub type SyncService = SyncStrmService;
 pub type MediaDownloadUrlService = ResolveDownloadUrlService;
 pub type DeleteMediaServiceRuntime = DeleteMediaService;
 pub type FileIndexRuntimeService = FileIndexService;

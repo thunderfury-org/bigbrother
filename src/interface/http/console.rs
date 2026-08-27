@@ -32,6 +32,7 @@ use crate::{
     },
     interface::http::console_assets::{AssetFile, resolve_asset},
     interface::import::format_episodes,
+    interface::library_sync::LibrarySyncController,
     interface::runtime::{IdentifyService, ImportService, SubscriptionService},
 };
 
@@ -62,6 +63,7 @@ pub(crate) struct ConsoleContext {
     pub(super) delete_media_service: Option<Arc<DeleteMediaService>>,
     pub(super) community_catalog: Option<CommunityCatalogHandle>,
     pub(super) share_resolver: Option<ShareResolverHandle>,
+    pub(super) library_sync: Option<Arc<LibrarySyncController>>,
 }
 
 impl ConsoleContext {
@@ -76,6 +78,7 @@ impl ConsoleContext {
         delete_media_service: DeleteMediaService,
         community_catalog: CommunityCatalogHandle,
         share_resolver: ShareResolverHandle,
+        library_sync: LibrarySyncController,
     ) -> Self {
         let repo = Arc::new(repo);
         let recorded_import = Arc::new(RecordedImportService::new(repo.as_ref().clone()));
@@ -90,6 +93,7 @@ impl ConsoleContext {
             delete_media_service: Some(Arc::new(delete_media_service)),
             community_catalog: Some(community_catalog),
             share_resolver: Some(share_resolver),
+            library_sync: Some(Arc::new(library_sync)),
         }
     }
 
@@ -109,6 +113,7 @@ impl ConsoleContext {
             delete_media_service: None,
             community_catalog: None,
             share_resolver: None,
+            library_sync: None,
         }
     }
 
@@ -130,6 +135,7 @@ impl ConsoleContext {
             delete_media_service: None,
             community_catalog: None,
             share_resolver: None,
+            library_sync: None,
         }
     }
 
@@ -150,6 +156,7 @@ impl ConsoleContext {
             delete_media_service: Some(Arc::new(delete_media_service)),
             community_catalog: None,
             share_resolver: None,
+            library_sync: None,
         }
     }
 
@@ -161,6 +168,17 @@ impl ConsoleContext {
     ) -> Self {
         let mut ctx = Self::new_without_import(repo, file_index_service);
         ctx.community_catalog = Some(community_catalog);
+        ctx
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_library_sync(
+        repo: SeaOrmImportRecordRepository,
+        file_index_service: FileIndexService,
+        library_sync: LibrarySyncController,
+    ) -> Self {
+        let mut ctx = Self::new_without_import(repo, file_index_service);
+        ctx.library_sync = Some(Arc::new(library_sync));
         ctx
     }
 }
@@ -196,6 +214,11 @@ pub(crate) fn new_router(ctx: ConsoleContext) -> Router {
         .route(
             "/api/media-dirs/delete",
             post(media_dirs::delete_media_dirs),
+        )
+        .route("/api/library/sync", get(super::library::get_library_sync))
+        .route(
+            "/api/library/sync",
+            post(super::library::start_library_sync),
         )
         .fallback(get(static_handler))
         .with_state(ctx)

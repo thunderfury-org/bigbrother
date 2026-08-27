@@ -7,11 +7,15 @@
   import CheckSquare from '@lucide/svelte/icons/check-square';
   import Square from '@lucide/svelte/icons/square';
   import AlertTriangle from '@lucide/svelte/icons/triangle-alert';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import {
     ApiError,
     deleteMediaDirs,
+    getLibrarySync,
     listMediaDirs,
     searchMediaDirs,
+    startLibrarySync,
+    type LibrarySyncStatus,
     type MediaDirItem,
   } from '../lib/api';
   import Skeleton from '../lib/Skeleton.svelte';
@@ -28,6 +32,13 @@
   let selected = $state(new Map<number, string>());
   let confirming = $state(false);
   let deleting = $state(false);
+
+  let syncStatus = $state<LibrarySyncStatus | null>(null);
+  let confirmingSync = $state(false);
+  let startingSync = $state(false);
+  let seenRunning = $state(false);
+
+  const syncing = $derived(syncStatus?.status === 'running' || startingSync);
 
   const currentParentId = $derived(crumbs[crumbs.length - 1]?.dir_id ?? null);
   const deletableItems = $derived(items.filter((item) => item.deletable));
@@ -158,16 +169,73 @@
     }
   }
 
+  function formatSyncTime(value: string | null): string {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
+  }
+
+  function syncSummary(status: LibrarySyncStatus): string {
+    return `新建 ${status.created} · 更新 ${status.modified} · 删除 ${status.deleted} · 未变化 ${status.unchanged}`;
+  }
+
+  function applySyncStatus(next: LibrarySyncStatus) {
+    if (next.status === 'running') seenRunning = true;
+    const finished = seenRunning && (next.status === 'succeeded' || next.status === 'failed');
+    if (finished && next.status === 'succeeded') {
+      toasts.success(`本地库同步完成：${syncSummary(next)}`);
+      seenRunning = false;
+    }
+    if (finished && next.status === 'failed') {
+      toasts.error(`本地库同步失败: ${next.error || '未知错误'}`);
+      seenRunning = false;
+    }
+    syncStatus = next;
+  }
+
+  async function refreshSync() {
+    try {
+      applySyncStatus(await getLibrarySync());
+    } catch (err) {
+      const msg = err instanceof ApiError ? `读取同步状态失败: ${err.body}` : String(err);
+      toasts.error(msg);
+    }
+  }
+
+  async function confirmSync() {
+    confirmingSync = false;
+    startingSync = true;
+    seenRunning = true;
+    try {
+      applySyncStatus(await startLibrarySync());
+    } catch (err) {
+      seenRunning = syncStatus?.status === 'running';
+      const msg = err instanceof ApiError ? `启动同步失败: ${err.body}` : String(err);
+      toasts.error(msg);
+    } finally {
+      startingSync = false;
+    }
+  }
+
   $effect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && confirming) {
-        confirming = false;
-      }
+      if (event.key === 'Escape' && confirming) confirming = false;
+      if (event.key === 'Escape' && confirmingSync) confirmingSync = false;
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  $effect(() => {
+    if (syncStatus?.status !== 'running') return;
+    const id = setInterval(() => {
+      void refreshSync();
+    }, 1000);
+    return () => clearInterval(id);
+  });
+
+  void refreshSync();
   loadBrowse(null);
 </script>
 
@@ -179,6 +247,17 @@
         <span class="page-count">{items.length} 项</span>
       {/if}
     </h1>
+    <div class="page-actions">
+      <button
+        type="button"
+        class="btn btn-primary"
+        disabled={syncing}
+        onclick={() => { confirmingSync = true; }}
+      >
+        <RefreshCw size={15} />
+        <span>{syncing ? '同步中…' : '同步本地库'}</span>
+      </button>
+    </div>
   </header>
 
   <form class="toolbar" onsubmit={(e) => { e.preventDefault(); search(); }}>
@@ -199,6 +278,41 @@
       重置
     </button>
   </form>
+
+  {#if confirmingSync}
+    <div class="panel" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.06);">
+      <div class="panel-header">
+        <h3 class="panel-title" style="display: flex; align-items: center; gap: 6px;">
+          <RefreshCw size={16} />
+          <span>确认同步本地库</span>
+        </h3>
+      </div>
+      <p class="confirm-copy">将按远程库对账本地 STRM 和字幕。远程没有的本地文件会被删除。</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-primary btn-sm" onclick={confirmSync} disabled={syncing}>
+          <RefreshCw size={13} />
+          <span>{syncing ? '同步中…' : '确认同步'}</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick={() => { confirmingSync = false; }} disabled={startingSync}>
+          取消
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  {#if syncStatus?.status === 'running'}
+    <div class="panel">
+      <p class="confirm-copy">正在同步本地库{syncStatus.started_at ? `，开始于 ${formatSyncTime(syncStatus.started_at)}` : '…'}</p>
+    </div>
+  {:else if syncStatus?.status === 'succeeded'}
+    <div class="panel">
+      <p class="confirm-copy">上次同步{syncStatus.finished_at ? ` ${formatSyncTime(syncStatus.finished_at)}` : ''}：{syncSummary(syncStatus)}</p>
+    </div>
+  {:else if syncStatus?.status === 'failed'}
+    <div class="panel" style="border-color: rgba(244, 63, 94, 0.4); background: rgba(244, 63, 94, 0.05);">
+      <p class="confirm-copy">上次同步失败{syncStatus.finished_at ? ` ${formatSyncTime(syncStatus.finished_at)}` : ''}：{syncStatus.error || '未知错误'}</p>
+    </div>
+  {/if}
 
   {#if mode === 'browse'}
     <nav class="crumbs" aria-label="目录路径">
