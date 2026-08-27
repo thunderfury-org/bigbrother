@@ -47,12 +47,7 @@ On startup, BigBrother:
 
 ## Telegram bot usage
 
-The bot accepts direct commands from the configured `telegram.user_id` and can also monitor channel posts against stored subscriptions.
-
-Supported commands:
-
-- `/help`
-- `/delete_media`
+The bot accepts direct messages from the configured `telegram.user_id` and can also monitor channel posts against stored subscriptions.
 
 Supported message inputs:
 

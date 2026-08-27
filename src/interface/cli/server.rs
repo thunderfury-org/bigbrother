@@ -117,7 +117,6 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
         notify_service: EventBusPublisher::new(event_bus.clone()),
-        delete_media_service: delete_media_service.clone(),
         event_bus: event_bus.clone(),
     });
 

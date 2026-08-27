@@ -81,28 +81,6 @@ impl DeleteMediaService {
         Ok(candidates)
     }
 
-    pub async fn delete_candidate(&self, candidate: &MediaDeleteCandidate) -> AppResult<()> {
-        self.library
-            .trash_library_files(&[candidate.dir_id])
-            .await?;
-
-        let local_path = self
-            .local
-            .local_path_for_remote(candidate.remote_path.as_str());
-        self.local
-            .remove_local_dir_if_exists(local_path.as_str())
-            .await?;
-        notify_library_updates(
-            self.notifier.as_ref(),
-            &[LibraryMediaUpdate {
-                path: local_path,
-                kind: LibraryMediaUpdateKind::Deleted,
-            }],
-        )
-        .await;
-        Ok(())
-    }
-
     pub async fn list_children(&self, parent_id: Option<i64>) -> AppResult<Vec<MediaDirEntry>> {
         let dir_id = match parent_id {
             Some(id) => id,
@@ -454,42 +432,6 @@ mod tests {
         assert!(candidates.is_empty());
     }
 
-    #[tokio::test]
-    async fn delete_candidate_trashes_remote_dir_and_local_dir() {
-        let library = FakeLibraryGateway::default();
-        let file_store = RecordingFileStore::default();
-        let notifier = RecordingLibraryUpdateNotifier::default();
-        let service = DeleteMediaService::new(
-            library.clone(),
-            local_store(file_store.clone()),
-            "/remote".to_string(),
-            std::sync::Arc::new(notifier.clone()),
-        );
-        let candidate = MediaDeleteCandidate {
-            dir_id: 77,
-            remote_path: "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
-            relative_path: "电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
-            display_name: "Inception (2010) {tmdb-27205}".to_string(),
-        };
-
-        service.delete_candidate(&candidate).await.unwrap();
-
-        assert_eq!(library.trashed.lock().unwrap().as_slice(), &[vec![77]]);
-        assert_eq!(
-            file_store.removed_dirs.lock().unwrap().as_slice(),
-            &[String::from(
-                "/local/电影/欧美/Inception (2010) {tmdb-27205}"
-            )]
-        );
-        assert_eq!(
-            notifier.flat_updates(),
-            vec![LibraryMediaUpdate {
-                path: "/local/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
-                kind: LibraryMediaUpdateKind::Deleted,
-            }]
-        );
-    }
-
     fn dir_file(file_id: i64, file_name: &str) -> LibraryFile {
         LibraryFile {
             file_id,
@@ -650,7 +592,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_candidate_succeeds_when_library_notify_fails() {
+    async fn delete_dirs_succeeds_when_library_notify_fails() {
         let notifier = RecordingLibraryUpdateNotifier::failing();
         let service = DeleteMediaService::new(
             FakeLibraryGateway::default(),
@@ -658,14 +600,14 @@ mod tests {
             "/remote".to_string(),
             std::sync::Arc::new(notifier.clone()),
         );
-        let candidate = MediaDeleteCandidate {
-            dir_id: 77,
-            remote_path: "/remote/电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
-            relative_path: "电影/欧美/Inception (2010) {tmdb-27205}".to_string(),
-            display_name: "Inception (2010) {tmdb-27205}".to_string(),
-        };
 
-        service.delete_candidate(&candidate).await.unwrap();
+        service
+            .delete_dirs(&[MediaDirDeleteItem {
+                dir_id: 77,
+                relative_path: "电影/欧美/Inception (2010) {tmdb-27205}".into(),
+            }])
+            .await
+            .unwrap();
         assert_eq!(notifier.flat_updates().len(), 1);
     }
 
