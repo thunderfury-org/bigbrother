@@ -8,7 +8,7 @@ use crate::{
         import_local_store::ImportLocalStore,
         media_source_observation::ProcessObservationService,
         recorded_import::RecordedImportService,
-        sync_strm::{SyncStrmConfig, SyncStrmService},
+        sync_strm::{LibrarySyncController, SyncStrmConfig, SyncStrmService},
     },
     error::{AppError, AppResult},
     infrastructure::{
@@ -116,12 +116,6 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
     let bot_runtime = telegram::BotRuntime::new(telegram::BotRuntimeArgs {
         user_id,
         notify_service: EventBusPublisher::new(event_bus.clone()),
-        sync_service: SyncStrmService::new(
-            library_gateway.clone(),
-            TokioFileStore,
-            library.clone(),
-            library_update_notifier,
-        ),
         delete_media_service: delete_media_service.clone(),
         event_bus: event_bus.clone(),
     });
@@ -154,7 +148,7 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 config.api_key.clone(),
                 config.advertise_base_url.clone(),
                 config.strm_path_prefix.clone(),
-                MediaDownloadUrlService::new(cache.clone(), library_gateway),
+                MediaDownloadUrlService::new(cache.clone(), library_gateway.clone()),
             )
             .expect("validated emby proxy config"),
         )
@@ -180,6 +174,12 @@ pub(super) async fn run(data_dir: &str) -> AppResult<()> {
                 delete_media_service,
                 std::sync::Arc::new(ctx.community_catalog()),
                 std::sync::Arc::new(ctx.share_resolver()),
+                LibrarySyncController::new(SyncStrmService::new(
+                    library_gateway.clone(),
+                    TokioFileStore,
+                    library.clone(),
+                    library_update_notifier.clone(),
+                )),
             ))),
         )
     } else {

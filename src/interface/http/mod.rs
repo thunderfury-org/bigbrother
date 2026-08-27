@@ -8,6 +8,7 @@ pub(crate) mod community;
 pub(crate) mod console;
 pub(crate) mod console_assets;
 pub(crate) mod emby_proxy;
+pub(crate) mod library;
 pub(crate) mod log;
 pub(crate) mod media;
 pub(crate) mod media_dirs;

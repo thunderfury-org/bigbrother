@@ -375,3 +375,32 @@ export async function deleteMediaDirs(items: MediaDirDeleteItem[]): Promise<void
     throw new ApiError(res.status, body);
   }
 }
+
+// ── Library sync ──
+
+export type LibrarySyncStatusName = 'idle' | 'running' | 'succeeded' | 'failed';
+
+export interface LibrarySyncStatus {
+  status: LibrarySyncStatusName;
+  started_at: string | null;
+  finished_at: string | null;
+  created: number;
+  modified: number;
+  deleted: number;
+  unchanged: number;
+  error?: string;
+}
+
+export async function getLibrarySync(): Promise<LibrarySyncStatus> {
+  return fetchJson<LibrarySyncStatus>('/api/library/sync');
+}
+
+export async function startLibrarySync(): Promise<LibrarySyncStatus> {
+  const res = await fetch('/api/library/sync', { method: 'POST' });
+  if (res.ok || res.status === 409) {
+    return (await res.json()) as LibrarySyncStatus;
+  }
+  const body = await res.text();
+  throw new ApiError(res.status, body);
+}
+

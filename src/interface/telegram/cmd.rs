@@ -19,8 +19,6 @@ pub(super) enum Command {
     Help,
     #[command(description = "搜索并删除媒体目录")]
     DeleteMedia(String),
-    #[command(description = "同步远程库到本地")]
-    SyncStrm,
 }
 
 pub(super) fn create_commands_in_background(bot: &Bot) {
@@ -62,7 +60,6 @@ pub(super) async fn handle_command(
                 .await?;
         }
         Command::DeleteMedia(keyword) => delete_media_cmd(&runtime, &bot, &msg, &keyword).await?,
-        Command::SyncStrm => sync_strm_cmd(&runtime, &bot, &msg).await?,
     }
     Ok(())
 }
@@ -273,26 +270,4 @@ fn parse_delete_media_action(data: &str) -> Option<(i64, bool)> {
 fn parse_callback_dir_id(data: &str, prefix: &str) -> Option<i64> {
     data.strip_prefix(prefix)
         .and_then(|v| v.parse::<i64>().ok())
-}
-
-async fn sync_strm_cmd(runtime: &BotRuntime, bot: &Bot, msg: &Message) -> ResponseResult<()> {
-    info!("Starting strm sync");
-    bot.send_message(msg.chat.id, "开始同步远程库，请稍候...")
-        .reply_to(msg.id)
-        .await?;
-    match runtime.sync_service().execute().await {
-        Ok(()) => {
-            info!("Strm sync completed successfully");
-            bot.send_message(msg.chat.id, "同步完成")
-                .reply_to(msg.id)
-                .await?;
-        }
-        Err(e) => {
-            error!("Failed to sync strm: {}", e);
-            bot.send_message(msg.chat.id, "同步失败")
-                .reply_to(msg.id)
-                .await?;
-        }
-    }
-    Ok(())
 }

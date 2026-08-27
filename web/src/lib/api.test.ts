@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ApiError, deleteMediaDirs, getImport, importCommunityThreads, importShareUrl, listImports, listMediaDirs, searchCommunityThreads, searchFiles, searchMediaDirs } from './api';
+import { ApiError, deleteMediaDirs, getImport, getLibrarySync, importCommunityThreads, importShareUrl, listImports, listMediaDirs, searchCommunityThreads, searchFiles, searchMediaDirs, startLibrarySync } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -222,6 +222,67 @@ describe('deleteMediaDirs', () => {
     ).rejects.toMatchObject({
       status: 400,
       body: 'not a media directory',
+    });
+  });
+});
+
+
+describe('librarySync', () => {
+  test('getLibrarySync calls GET /api/library/sync', async () => {
+    const payload = {
+      status: 'idle',
+      started_at: null,
+      finished_at: null,
+      created: 0,
+      modified: 0,
+      deleted: 0,
+      unchanged: 0,
+    };
+    const fetchMock = stubFetchOnce(payload);
+
+    await expect(getLibrarySync()).resolves.toEqual(payload);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/library/sync');
+  });
+
+  test('startLibrarySync accepts 202 running payload', async () => {
+    const payload = {
+      status: 'running',
+      started_at: '2026-08-27T12:00:00Z',
+      finished_at: null,
+      created: 0,
+      modified: 0,
+      deleted: 0,
+      unchanged: 0,
+    };
+    const fetchMock = stubFetchOnce(payload, { status: 202 });
+
+    await expect(startLibrarySync()).resolves.toEqual(payload);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/library/sync');
+    expect(init).toMatchObject({ method: 'POST' });
+  });
+
+  test('startLibrarySync treats 409 as current running status', async () => {
+    const payload = {
+      status: 'running',
+      started_at: '2026-08-27T12:00:00Z',
+      finished_at: null,
+      created: 0,
+      modified: 0,
+      deleted: 0,
+      unchanged: 0,
+    };
+    stubFetchOnce(payload, { status: 409 });
+
+    await expect(startLibrarySync()).resolves.toEqual(payload);
+  });
+
+  test('startLibrarySync rejects other errors', async () => {
+    stubFetchPlainOnce('library sync service not available', { status: 503 });
+
+    await expect(startLibrarySync()).rejects.toMatchObject({
+      status: 503,
+      body: 'library sync service not available',
     });
   });
 });
