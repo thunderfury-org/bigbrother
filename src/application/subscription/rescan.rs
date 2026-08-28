@@ -1,21 +1,67 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::application::file_index::FileIndexService;
-use crate::application::file_index_import::{
-    ImportFileResult, identify_files_with_fallback, media_file_ids,
-};
+use crate::application::file_index_import::identify_files_with_fallback;
 use crate::application::import::MetadataLookup;
 use crate::application::import::{ImportedMedia, MediaIdentifier, MediaImporter};
 use crate::application::ports::{SubscriptionRecord, SubscriptionRepository};
-use crate::application::recorded_import::RecordedImportService;
+use crate::application::recorded_import::{RecordedImportService, import_outcome_from};
 use crate::application::subscription::import_filter::media_matches_subscription;
 use crate::domain::import::inner::Media;
-use crate::domain::import_record::{ImportSource, ImportSourceKind};
+use crate::domain::import_record::{ImportSource, ImportSourceKind, RecordSummary, summarize};
 use crate::error::{AppError, AppResult};
 
 const RESCAN_FILE_SEARCH_LIMIT: u64 = 100;
 const HIGH_RELEVANCE_MAX_RANK: i64 = 1;
+const NO_MEDIA_MATCHED: &str = "no media matched";
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct SubscriptionRescanResult {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub year: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<RecordSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl SubscriptionRescanResult {
+    fn skipped(reason: &str) -> Self {
+        Self {
+            status: "skipped".into(),
+            error: Some(reason.into()),
+            ..Default::default()
+        }
+    }
+
+    fn failed(message: String) -> Self {
+        Self {
+            status: "failed".into(),
+            error: Some(message),
+            ..Default::default()
+        }
+    }
+
+    fn from_imported(imported: &[ImportedMedia]) -> Self {
+        let outcomes = imported.iter().map(import_outcome_from).collect::<Vec<_>>();
+        let (summary, status) = summarize(&outcomes);
+        let (title, year, size) = summary.display_fields();
+        Self {
+            status: status.as_str().to_owned(),
+            title,
+            year,
+            size,
+            summary: Some(summary),
+            error: None,
+        }
+    }
+}
 
 pub(crate) async fn rescan_subscription(
     subscription_id: i64,
@@ -24,7 +70,7 @@ pub(crate) async fn rescan_subscription(
     identifier: &dyn MediaIdentifier,
     importer: &dyn MediaImporter,
     recorded: &RecordedImportService,
-) -> AppResult<Vec<ImportFileResult>> {
+) -> AppResult<SubscriptionRescanResult> {
     let subscription = sub_repo
         .get_by_id(subscription_id)
         .await?
@@ -44,7 +90,7 @@ pub(crate) async fn rescan_subscription(
     }
 
     if queries.is_empty() {
-        return Ok(Vec::new());
+        return Ok(SubscriptionRescanResult::skipped(NO_MEDIA_MATCHED));
     }
 
     let mut seen_ids = HashSet::new();
@@ -63,15 +109,14 @@ pub(crate) async fn rescan_subscription(
         }
     }
     if search_results.is_empty() {
-        return Ok(Vec::new());
+        return Ok(SubscriptionRescanResult::skipped(NO_MEDIA_MATCHED));
     }
 
     let search_ids: Vec<i64> = search_results.iter().map(|record| record.id).collect();
     let ready_files = file_index.get_import_ready_files(&search_ids).await?;
     if ready_files.is_empty() {
-        return Ok(Vec::new());
+        return Ok(SubscriptionRescanResult::skipped(NO_MEDIA_MATCHED));
     }
-    let file_ids: Vec<i64> = ready_files.iter().map(|(id, _, _)| *id).collect();
     let pending: Vec<_> = ready_files
         .into_iter()
         .map(|(_, raw_file, descriptions)| (raw_file, descriptions))
@@ -90,7 +135,6 @@ pub(crate) async fn rescan_subscription(
     let identified = identify_files_with_fallback(identifier, media_files).await;
     let failed = identified.failed;
     let filtered_groups = groups_for_subscription(&subscription, identified.groups);
-    let imported_file_ids = media_file_ids(&filtered_groups);
 
     let outcome = recorded
         .execute(source, || async {
@@ -106,19 +150,13 @@ pub(crate) async fn rescan_subscription(
         .await;
 
     match outcome {
-        Ok(imported) => Ok(results_for_files(
-            &file_ids,
-            &imported,
-            &failed,
-            &imported_file_ids,
-        )),
+        Ok(imported) if imported.is_empty() => {
+            Ok(SubscriptionRescanResult::skipped(NO_MEDIA_MATCHED))
+        }
+        Ok(imported) => Ok(SubscriptionRescanResult::from_imported(&imported)),
         Err(err) => {
             tracing::warn!(error = %err, "rescan import failed");
-            Ok(results_for_failed_batch(
-                &file_ids,
-                &failed,
-                err.to_string(),
-            ))
+            Ok(SubscriptionRescanResult::failed(err.to_string()))
         }
     }
 }
@@ -157,65 +195,6 @@ fn append_identify_failures(
         has_failed: true,
     }));
     imported
-}
-
-fn results_for_files(
-    file_ids: &[i64],
-    imported: &[ImportedMedia],
-    failed: &[(i64, AppError)],
-    imported_file_ids: &HashSet<i64>,
-) -> Vec<ImportFileResult> {
-    let failed_by_id: HashMap<i64, String> = failed
-        .iter()
-        .map(|(id, err)| (*id, err.to_string()))
-        .collect();
-    let sample = imported.iter().find(|item| {
-        !matches!(
-            item,
-            ImportedMedia::Skipped { .. }
-                | ImportedMedia::Movie {
-                    has_failed: true,
-                    ..
-                }
-        )
-    });
-    file_ids
-        .iter()
-        .map(|file_id| {
-            if let Some(message) = failed_by_id.get(file_id) {
-                ImportFileResult::failed(*file_id, message.clone())
-            } else if imported_file_ids.contains(file_id) {
-                if let Some(item) = sample {
-                    ImportFileResult::from_imported(*file_id, std::slice::from_ref(item))
-                } else {
-                    ImportFileResult::skipped(*file_id, "no media matched")
-                }
-            } else {
-                ImportFileResult::skipped(*file_id, "no media matched")
-            }
-        })
-        .collect()
-}
-
-fn results_for_failed_batch(
-    file_ids: &[i64],
-    failed: &[(i64, AppError)],
-    fallback: String,
-) -> Vec<ImportFileResult> {
-    let failed_by_id: HashMap<i64, String> = failed
-        .iter()
-        .map(|(id, err)| (*id, err.to_string()))
-        .collect();
-    file_ids
-        .iter()
-        .map(|file_id| {
-            let message = failed_by_id
-                .get(file_id)
-                .cloned()
-                .unwrap_or_else(|| fallback.clone());
-            ImportFileResult::failed(*file_id, message)
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -378,6 +357,26 @@ mod tests {
         }
     }
 
+    struct RecordingIdentifier<T> {
+        inner: T,
+        file_ids: Arc<Mutex<Vec<i64>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl<T: MediaIdentifier> MediaIdentifier for RecordingIdentifier<T> {
+        async fn identify(&self, files: Vec<MediaFile>) -> AppResult<IdentifyOutcome> {
+            *self.file_ids.lock().unwrap() =
+                files.iter().filter_map(|file| file.video.id).collect();
+            self.inner.identify(files).await
+        }
+    }
+
+    fn sorted_ids(ids: &Arc<Mutex<Vec<i64>>>) -> Vec<i64> {
+        let mut values = ids.lock().unwrap().clone();
+        values.sort_unstable();
+        values
+    }
+
     struct FakeIdentifier;
 
     #[async_trait::async_trait]
@@ -519,7 +518,8 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert!(results.is_empty());
+        assert_eq!(results.status, "skipped");
+        assert!(results.summary.is_none());
         assert!(import_repo.created.lock().unwrap().is_empty());
     }
 
@@ -558,10 +558,15 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].status, "succeeded");
-        assert_eq!(results[0].title.as_deref(), Some("Inception"));
-        assert_eq!(results[0].year.as_deref(), Some("2010"));
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(results.title.as_deref(), Some("Inception"));
+        assert_eq!(results.year.as_deref(), Some("2010"));
+        assert!(
+            results
+                .summary
+                .as_ref()
+                .is_some_and(|summary| summary.items.len() == 1)
+        );
     }
 
     struct GroupingIdentifier {
@@ -718,10 +723,17 @@ mod tests {
             other => panic!("expected one tv summary, got {other:?}"),
         }
 
-        let mut ids: Vec<i64> = results.iter().map(|r| r.id).collect();
-        ids.sort_unstable();
-        assert_eq!(ids, vec![1, 2]);
-        assert!(results.iter().all(|r| r.status == "succeeded"));
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(results.title.as_deref(), Some("Breaking Bad"));
+        let summary = results.summary.as_ref().expect("rescan summary");
+        match &summary.items[..] {
+            [SummaryItem::Tv { name, episodes, .. }] => {
+                assert_eq!(name, "Breaking Bad");
+                let nums: Vec<u32> = episodes.iter().map(|episode| episode.episode).collect();
+                assert_eq!(nums, vec![1, 2]);
+            }
+            other => panic!("expected one tv summary, got {other:?}"),
+        }
     }
 
     struct IsolateIdentifier {
@@ -808,18 +820,20 @@ mod tests {
             import_repo.finalized.lock().unwrap()[0].1.status,
             ImportStatus::PartiallyFailed
         );
-        let succeeded: Vec<i64> = results
-            .iter()
-            .filter(|r| r.status == "succeeded")
-            .map(|r| r.id)
-            .collect();
-        let failed: Vec<i64> = results
-            .iter()
-            .filter(|r| r.status == "failed")
-            .map(|r| r.id)
-            .collect();
-        assert_eq!(succeeded, vec![1]);
-        assert_eq!(failed, vec![2]);
+        assert_eq!(results.status, "partially_failed");
+        let summary = results.summary.as_ref().expect("rescan summary");
+        assert!(summary.items.iter().any(|item| matches!(
+            item,
+            SummaryItem::Tv { name, .. } if name == "Breaking Bad"
+        )));
+        assert!(summary.items.iter().any(|item| matches!(
+            item,
+            SummaryItem::Movie {
+                title,
+                succeeded: false,
+                ..
+            } if title == "file 2"
+        )));
     }
 
     struct MultiShowIdentifier;
@@ -911,11 +925,8 @@ mod tests {
         .await
         .unwrap();
 
-        let by_id: std::collections::HashMap<i64, _> =
-            results.into_iter().map(|r| (r.id, r)).collect();
-        assert_eq!(by_id[&1].status, "succeeded");
-        assert_eq!(by_id[&1].title.as_deref(), Some("Breaking Bad"));
-        assert_eq!(by_id[&2].status, "skipped");
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(results.title.as_deref(), Some("Breaking Bad"));
 
         let finalized = import_repo.finalized.lock().unwrap();
         let summary: RecordSummary = serde_json::from_str(&finalized[0].1.summary_json).unwrap();
@@ -970,10 +981,14 @@ mod tests {
             import_repo.created.lock().unwrap()[0].source,
             "subscription:1:Inception"
         );
-        let mut ids: Vec<i64> = results.iter().map(|r| r.id).collect();
-        ids.sort_unstable();
-        assert_eq!(ids, vec![1, 2]);
-        assert!(results.iter().all(|r| r.status == "succeeded"));
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(results.title.as_deref(), Some("Inception"));
+        assert!(
+            results
+                .summary
+                .as_ref()
+                .is_some_and(|summary| summary.items.len() == 1)
+        );
     }
 
     #[tokio::test]
@@ -1012,7 +1027,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(results.is_empty());
+        assert_eq!(results.status, "skipped");
+        assert!(results.summary.is_none());
         assert!(import_repo.created.lock().unwrap().is_empty());
     }
 
@@ -1065,13 +1081,17 @@ mod tests {
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
+        let file_ids = Arc::new(Mutex::new(Vec::new()));
         let results = rescan_subscription(
             1,
             &sub_repo,
             &file_index,
-            &MovieIdentifier {
-                tmdb_id: 27205,
-                title: "Inception".into(),
+            &RecordingIdentifier {
+                inner: MovieIdentifier {
+                    tmdb_id: 27205,
+                    title: "Inception".into(),
+                },
+                file_ids: file_ids.clone(),
             },
             &movie_importer(),
             &recorded,
@@ -1079,9 +1099,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].id, 3);
-        assert_eq!(results[0].status, "succeeded");
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(sorted_ids(&file_ids), vec![3]);
     }
 
     #[tokio::test]
@@ -1113,13 +1132,17 @@ mod tests {
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
+        let file_ids = Arc::new(Mutex::new(Vec::new()));
         let results = rescan_subscription(
             1,
             &sub_repo,
             &file_index,
-            &MovieIdentifier {
-                tmdb_id: 27205,
-                title: "Love Is Blind".into(),
+            &RecordingIdentifier {
+                inner: MovieIdentifier {
+                    tmdb_id: 27205,
+                    title: "Love Is Blind".into(),
+                },
+                file_ids: file_ids.clone(),
             },
             &movie_importer(),
             &recorded,
@@ -1127,10 +1150,8 @@ mod tests {
         .await
         .unwrap();
 
-        let mut ids: Vec<i64> = results.iter().map(|result| result.id).collect();
-        ids.sort_unstable();
-        assert_eq!(ids, vec![3, 4]);
-        assert!(results.iter().all(|result| result.status == "succeeded"));
+        assert_eq!(results.status, "succeeded");
+        assert_eq!(sorted_ids(&file_ids), vec![3, 4]);
     }
 
     #[tokio::test]
@@ -1168,13 +1189,17 @@ mod tests {
         let file_index = FileIndexService::new(file_repo);
         let import_repo = FakeImportRepo::default();
         let recorded = RecordedImportService::new(import_repo);
+        let file_ids = Arc::new(Mutex::new(Vec::new()));
         let results = rescan_subscription(
             1,
             &sub_repo,
             &file_index,
-            &MovieIdentifier {
-                tmdb_id: 27205,
-                title: "Inception".into(),
+            &RecordingIdentifier {
+                inner: MovieIdentifier {
+                    tmdb_id: 27205,
+                    title: "Inception".into(),
+                },
+                file_ids: file_ids.clone(),
             },
             &movie_importer(),
             &recorded,
@@ -1182,12 +1207,11 @@ mod tests {
         .await
         .unwrap();
 
-        let mut ids: Vec<i64> = results.iter().map(|result| result.id).collect();
-        ids.sort_unstable();
-        assert_eq!(results.len(), 100);
+        assert_eq!(results.status, "succeeded");
+        let ids = sorted_ids(&file_ids);
+        assert_eq!(ids.len(), 100);
         assert!(ids.contains(&200));
         assert!(!ids.contains(&100));
         assert!(!ids.contains(&201));
-        assert!(results.iter().all(|result| result.status == "succeeded"));
     }
 }

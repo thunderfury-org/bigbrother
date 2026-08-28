@@ -323,7 +323,16 @@ export async function deleteSubscription(id: number): Promise<void> {
   }
 }
 
-export async function rescanSubscription(id: number): Promise<ImportFileResult[]> {
+export interface SubscriptionRescanResult {
+  status: string;
+  title?: string;
+  year?: string;
+  size?: number;
+  summary?: ImportSummary;
+  error?: string;
+}
+
+export async function rescanSubscription(id: number): Promise<SubscriptionRescanResult> {
   const res = await fetch(`/api/subscriptions/${encodeURIComponent(id)}/rescan`, {
     method: 'POST',
   });
@@ -331,7 +340,7 @@ export async function rescanSubscription(id: number): Promise<ImportFileResult[]
     const body = await res.text();
     throw new ApiError(res.status, body);
   }
-  return (await res.json()) as ImportFileResult[];
+  return (await res.json()) as SubscriptionRescanResult;
 }
 
 // ── Media dirs ──
