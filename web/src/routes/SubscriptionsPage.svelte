@@ -16,9 +16,11 @@
     rescanSubscription,
     type SubscriptionItem,
     type CandidateItem,
-    type ImportFileResult,
+    type SubscriptionRescanResult,
   } from '../lib/api';
   import { toasts } from '../lib/toast.svelte';
+  import { statusLabel } from '../lib/importDisplay';
+  import ImportSummaryItems from '../lib/ImportSummaryItems.svelte';
   import Skeleton from '../lib/Skeleton.svelte';
 
   type MediaFilter = 'all' | 'movie' | 'tv';
@@ -39,7 +41,7 @@
   let addingKey = $state<string | null>(null);
 
   let rescanningId = $state<number | null>(null);
-  let rescanResults: ImportFileResult[] | null = $state(null);
+  let rescanResult: SubscriptionRescanResult | null = $state(null);
   let rescanError = $state('');
 
   let confirmDeleteId = $state<number | null>(null);
@@ -142,14 +144,19 @@
   async function doRescan(item: SubscriptionItem) {
     addOpen = false;
     rescanningId = item.id;
-    rescanResults = null;
+    rescanResult = null;
     rescanError = '';
     const title = displayTitle(item);
     toasts.info(`已下发「${title}」重扫任务`);
     try {
-      rescanResults = await rescanSubscription(item.id);
-      if (rescanResults && rescanResults.length > 0) {
-        toasts.success(`「${title}」重扫完成，返回 ${rescanResults.length} 个结果`);
+      const result = await rescanSubscription(item.id);
+      rescanResult = result;
+      if (result.status === 'failed') {
+        toasts.error(`「${title}」重扫失败${result.error ? `: ${result.error}` : ''}`);
+      } else if (result.status === 'partially_failed') {
+        toasts.warning(`「${title}」重扫完成，部分失败`);
+      } else if (result.summary) {
+        toasts.success(`「${title}」重扫完成`);
       } else {
         toasts.info(`「${title}」重扫完成，未发现新文件`);
       }
@@ -162,7 +169,7 @@
   }
 
   function closeRescan() {
-    rescanResults = null;
+    rescanResult = null;
     rescanError = '';
   }
 
@@ -186,15 +193,6 @@
     return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
   }
 
-  function rescanStatusLabel(status: string): string {
-    switch (status) {
-      case 'succeeded': return '成功';
-      case 'failed': return '失败';
-      case 'skipped': return '跳过';
-      default: return status;
-    }
-  }
-
   function posterUrl(path: string | null | undefined, size: 'w92' | 'w185' | 'w300' = 'w300'): string | null {
     if (!path) return null;
     return `https://image.tmdb.org/t/p/${size}${path}`;
@@ -213,7 +211,7 @@
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (addOpen) closeAdd();
-        if (rescanResults || rescanError) closeRescan();
+        if (rescanResult || rescanError) closeRescan();
         if (confirmDeleteId != null) confirmDeleteId = null;
       }
     };
@@ -613,7 +611,7 @@
   {/if}
 
   <!-- Rescan Results Drawer -->
-  {#if rescanResults || rescanError}
+  {#if rescanResult || rescanError}
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="drawer-backdrop" onclick={closeRescan} role="presentation"></div>
     <aside class="drawer">
@@ -627,22 +625,24 @@
       <div class="drawer-body">
         {#if rescanError}
           <div class="banner banner-error">{rescanError}</div>
-        {:else if rescanResults}
-          {#if rescanResults.length === 0}
-            <div class="empty">没有找到匹配的新文件</div>
-          {:else}
-            {#each rescanResults as r (r.id)}
-              <div class="rescan-item">
-                <span class="status status-{r.status}">
+        {:else if rescanResult}
+          {#if rescanResult.summary}
+            <div class="import-summary" data-status={rescanResult.status}>
+              <div class="result-row">
+                <span class="status status-{rescanResult.status}">
                   <span class="pulse-dot"></span>
-                  {rescanStatusLabel(r.status)}
+                  {statusLabel(rescanResult.status)}
                 </span>
-                <span class="cell-title">{r.title ?? '—'}{r.year ? ` (${r.year})` : ''}</span>
-                {#if r.error}
-                  <span class="banner-error" style="width: 100%; margin-top: 4px;">{r.error}</span>
+                {#if rescanResult.title}
+                  <span class="cell-title">{rescanResult.title}{rescanResult.year ? ` (${rescanResult.year})` : ''}</span>
                 {/if}
               </div>
-            {/each}
+              <ImportSummaryItems summary={rescanResult.summary} />
+            </div>
+          {:else if rescanResult.status === 'failed'}
+            <div class="banner banner-error">{rescanResult.error || '重扫失败'}</div>
+          {:else}
+            <div class="empty">没有找到匹配的新文件</div>
           {/if}
         {/if}
       </div>
