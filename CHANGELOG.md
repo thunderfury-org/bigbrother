@@ -1,8 +1,27 @@
 # Changelog
+## [0.7.0] - 2026-08-28
+### Bug Fixes
+
+- (app) stop tracking web/dist (#179)
+
+### Features
+
+- (app) show subscription grid as landscape cards (#183)
+- (app) show a single summary after subscription rescan (#182)
+- (app) sync local STRM library from the web console (#178)
+- (app) notify Emby after local library file changes (#176)
+
+### Refactoring
+
+- (app) remove Telegram bot commands (#180)
 ## [0.6.0] - 2026-08-25
 ### Bug Fixes
 
 - (app) surface add error in drawer, guard deletion, and fix search/nav states (#171)
+
+### Chores
+
+- (app) release v0.6.0 (#174)
 
 ### Features
 
