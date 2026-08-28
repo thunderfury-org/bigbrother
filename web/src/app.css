@@ -332,40 +332,6 @@ textarea {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.view-toggle {
-  display: inline-flex;
-  background: var(--color-bb-surface);
-  border: 1px solid var(--color-bb-line);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.toggle-btn {
-  border: none;
-  background: transparent;
-  color: var(--color-bb-muted);
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.toggle-btn:hover {
-  color: #ffffff;
-}
-
-.toggle-btn.is-active {
-  background: var(--color-bb-panel);
-  color: #ffffff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-}
-
 a.cell-title {
   color: inherit;
   text-decoration: none;
@@ -1172,8 +1138,7 @@ a.cell-title:hover {
 /* ── Poster Grid View (Subscriptions) ── */
 .poster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 400px));
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -1186,7 +1151,7 @@ a.cell-title:hover {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  min-height: 180px;
+  height: 270px;
   max-width: 100%;
   position: relative;
 }
@@ -1199,10 +1164,9 @@ a.cell-title:hover {
 
 .poster-wrap {
   position: relative;
-  flex: 0 0 120px;
-  width: 120px;
-  align-self: stretch;
-  min-height: 180px;
+  flex: 0 0 180px;
+  width: 180px;
+  height: 100%;
   background: #0f151f;
   overflow: hidden;
 }
@@ -1217,6 +1181,7 @@ a.cell-title:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center top;
   transition: transform 0.3s ease;
 }
 
@@ -1262,6 +1227,7 @@ a.cell-title:hover {
   background: var(--color-bb-surface);
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .poster-kicker {
@@ -1286,12 +1252,21 @@ a.cell-title:hover {
   text-overflow: ellipsis;
 }
 
+.poster-kicker,
+.poster-title,
+.poster-sub-title,
+.poster-actions {
+  flex-shrink: 0;
+}
+
 .poster-meta .media-overview {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
   margin-top: 2px;
-  overflow: visible;
-  -webkit-line-clamp: unset;
-  -webkit-box-orient: unset;
+  flex: 1;
+  min-height: 0;
 }
 
 .poster-sub {
@@ -1447,13 +1422,16 @@ a.cell-title:hover {
 
 @media (max-width: 768px) {
   .poster-card {
-    min-height: 150px;
+    height: 198px;
   }
 
   .poster-wrap {
-    flex-basis: 100px;
-    width: 100px;
-    min-height: 150px;
+    flex-basis: 132px;
+    width: 132px;
+  }
+
+  .poster-meta .media-overview {
+    -webkit-line-clamp: 3;
   }
 
   .toolbar,
@@ -1493,6 +1471,7 @@ a.cell-title:hover {
   .media-row .row-actions .btn {
     flex: 1;
   }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
