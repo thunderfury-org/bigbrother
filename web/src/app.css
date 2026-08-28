@@ -332,40 +332,6 @@ textarea {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.view-toggle {
-  display: inline-flex;
-  background: var(--color-bb-surface);
-  border: 1px solid var(--color-bb-line);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.toggle-btn {
-  border: none;
-  background: transparent;
-  color: var(--color-bb-muted);
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.15s ease;
-}
-
-.toggle-btn:hover {
-  color: #ffffff;
-}
-
-.toggle-btn.is-active {
-  background: var(--color-bb-panel);
-  color: #ffffff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-}
-
 a.cell-title {
   color: inherit;
   text-decoration: none;
@@ -1172,8 +1138,8 @@ a.cell-title:hover {
 /* ── Poster Grid View (Subscriptions) ── */
 .poster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
+  gap: 16px;
 }
 
 .poster-card {
@@ -1183,7 +1149,10 @@ a.cell-title:hover {
   border: 1px solid var(--color-bb-line);
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
+  height: 270px;
+  max-width: 100%;
   position: relative;
 }
 
@@ -1195,34 +1164,35 @@ a.cell-title:hover {
 
 .poster-wrap {
   position: relative;
-  width: 100%;
-  aspect-ratio: 2 / 3;
+  flex: 0 0 180px;
+  width: 180px;
+  height: 100%;
   background: #0f151f;
   overflow: hidden;
+}
+
+.poster-wrap .skeleton-placeholder {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .poster-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center top;
   transition: transform 0.3s ease;
 }
 
 .poster-card:hover .poster-img {
-  transform: scale(1.04);
-}
-
-.poster-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 40%, rgba(10, 14, 20, 0.95) 100%);
-  pointer-events: none;
+  transform: scale(1.02);
 }
 
 .poster-badge {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 8px;
+  left: 8px;
   font-size: 11px;
   font-weight: 700;
   padding: 2px 7px;
@@ -1230,6 +1200,11 @@ a.cell-title:hover {
   backdrop-filter: blur(8px);
   text-transform: uppercase;
   letter-spacing: 0.4px;
+}
+
+.poster-badge.is-static {
+  position: static;
+  backdrop-filter: none;
 }
 
 .badge-tv {
@@ -1251,6 +1226,21 @@ a.cell-title:hover {
   gap: 4px;
   background: var(--color-bb-surface);
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.poster-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.poster-kicker .media-tmdb,
+.poster-kicker .media-time {
+  flex-shrink: 0;
 }
 
 .poster-title {
@@ -1262,6 +1252,23 @@ a.cell-title:hover {
   text-overflow: ellipsis;
 }
 
+.poster-kicker,
+.poster-title,
+.poster-sub-title,
+.poster-actions {
+  flex-shrink: 0;
+}
+
+.poster-meta .media-overview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  margin-top: 2px;
+  flex: 1;
+  min-height: 0;
+}
+
 .poster-sub {
   font-size: 12px;
   color: var(--color-bb-muted);
@@ -1269,18 +1276,24 @@ a.cell-title:hover {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  min-width: 0;
 }
 
 .poster-sub-title {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.poster-sub .media-tmdb {
+  flex-shrink: 0;
+}
+
 .poster-actions {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--color-bb-line);
 }
@@ -1408,6 +1421,19 @@ a.cell-title:hover {
 }
 
 @media (max-width: 768px) {
+  .poster-card {
+    height: 198px;
+  }
+
+  .poster-wrap {
+    flex-basis: 132px;
+    width: 132px;
+  }
+
+  .poster-meta .media-overview {
+    -webkit-line-clamp: 3;
+  }
+
   .toolbar,
   .work-band,
   .drawer-search {
@@ -1445,6 +1471,7 @@ a.cell-title:hover {
   .media-row .row-actions .btn {
     flex: 1;
   }
+
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,12 +1,9 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import Plus from '@lucide/svelte/icons/plus';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import List from '@lucide/svelte/icons/list';
   import Search from '@lucide/svelte/icons/search';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import ExternalLink from '@lucide/svelte/icons/external-link';
   import {
     ApiError,
     listSubscriptions,
@@ -24,12 +21,8 @@
   import Skeleton from '../lib/Skeleton.svelte';
 
   type MediaFilter = 'all' | 'movie' | 'tv';
-  type ViewMode = 'grid' | 'list';
-
   let items: SubscriptionItem[] = $state([]);
   let loading = $state(false);
-  let viewMode: ViewMode = $state('grid');
-
   let addOpen = $state(false);
   let searchQuery = $state('');
   let searching = $state(false);
@@ -187,10 +180,10 @@
     return other && other !== primary ? other : null;
   }
 
-  function formatTimestamp(value: string | null | undefined): string {
-    if (!value) return '—';
+  function formatDate(value: string | null | undefined): string {
+    if (!value) return '';
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString();
   }
 
   function posterUrl(path: string | null | undefined, size: 'w92' | 'w185' | 'w300' = 'w300'): string | null {
@@ -233,29 +226,6 @@
       </h1>
     </div>
     <div class="page-actions">
-      <div class="view-toggle" role="group" aria-label="视图模式">
-        <button
-          type="button"
-          class="toggle-btn"
-          class:is-active={viewMode === 'grid'}
-          onclick={() => { viewMode = 'grid'; }}
-          aria-label="网格视图"
-        >
-          <LayoutGrid size={15} />
-          <span>网格</span>
-        </button>
-        <button
-          type="button"
-          class="toggle-btn"
-          class:is-active={viewMode === 'list'}
-          onclick={() => { viewMode = 'list'; }}
-          aria-label="列表视图"
-        >
-          <List size={15} />
-          <span>列表</span>
-        </button>
-      </div>
-
       <button type="button" class="btn btn-primary" onclick={openAdd}>
         <Plus size={16} />
         <span>添加订阅</span>
@@ -267,10 +237,17 @@
     <div class="poster-grid">
       {#each Array(6) as _, i (i)}
         <div class="poster-card">
-          <Skeleton height="240px" rounded="10px 10px 0 0" />
+          <div class="poster-wrap">
+            <Skeleton height="100%" width="100%" rounded="0" />
+          </div>
           <div class="poster-meta">
-            <Skeleton height="16px" width="80%" />
-            <Skeleton height="12px" width="50%" />
+            <Skeleton height="14px" width="45%" />
+            <Skeleton height="16px" width="70%" />
+            <Skeleton height="12px" width="95%" />
+            <Skeleton height="12px" width="80%" />
+            <div class="poster-actions">
+              <Skeleton height="30px" width="100%" rounded="6px" />
+            </div>
           </div>
         </div>
       {/each}
@@ -283,8 +260,7 @@
         添加第一个订阅
       </button>
     </div>
-  {:else if viewMode === 'grid'}
-    <!-- Poster Grid View -->
+  {:else}
     <div class="poster-grid">
       {#each items as item (item.id)}
         <article class="poster-card">
@@ -301,23 +277,16 @@
                 {mediaTypeLabel(item.media_type)}
               </div>
             {/if}
-            <div class="poster-overlay"></div>
-            <span
-              class="poster-badge"
-              class:badge-tv={item.media_type === 'tv'}
-              class:badge-movie={item.media_type === 'movie'}
-            >
-              {mediaTypeLabel(item.media_type)}
-            </span>
           </div>
 
           <div class="poster-meta">
-            <div class="poster-title" title={titleWithYear(displayTitle(item), item.year)}>
-              {titleWithYear(displayTitle(item), item.year)}
-            </div>
-            <div class="poster-sub">
-              <span class="poster-sub-title" title={originalTitle(item) ?? ''}>
-                {originalTitle(item) || '—'}
+            <div class="poster-kicker">
+              <span
+                class="poster-badge is-static"
+                class:badge-tv={item.media_type === 'tv'}
+                class:badge-movie={item.media_type === 'movie'}
+              >
+                {mediaTypeLabel(item.media_type)}
               </span>
               <a
                 class="media-tmdb"
@@ -328,7 +297,21 @@
               >
                 #{item.tmdb_id}
               </a>
+              {#if formatDate(item.create_time)}
+                <span class="media-time">{formatDate(item.create_time)}</span>
+              {/if}
             </div>
+            <div class="poster-title" title={titleWithYear(displayTitle(item), item.year)}>
+              {titleWithYear(displayTitle(item), item.year)}
+            </div>
+            {#if originalTitle(item)}
+              <div class="poster-sub-title" title={originalTitle(item) ?? ''}>
+                {originalTitle(item)}
+              </div>
+            {/if}
+            {#if item.overview}
+              <p class="media-overview" title={item.overview}>{item.overview}</p>
+            {/if}
 
             {#if confirmDeleteId === item.id}
               <div class="poster-actions">
@@ -374,92 +357,6 @@
                   <span>删除</span>
                 </button>
               </div>
-            {/if}
-          </div>
-        </article>
-      {/each}
-    </div>
-  {:else}
-    <!-- List View -->
-    <div class="media-list">
-      {#each items as item (item.id)}
-        <article class="media-row">
-          {#if posterUrl(item.poster_path, 'w185')}
-            <img
-              class="media-poster"
-              src={posterUrl(item.poster_path, 'w185')}
-              alt=""
-              width="48"
-              height="72"
-            />
-          {:else}
-            <div class="media-poster media-poster-fallback">{mediaTypeLabel(item.media_type)}</div>
-          {/if}
-          <div class="media-body">
-            <div class="media-kicker">
-              <span
-                class="poster-badge"
-                style="position: static;"
-                class:badge-tv={item.media_type === 'tv'}
-                class:badge-movie={item.media_type === 'movie'}
-              >
-                {mediaTypeLabel(item.media_type)}
-              </span>
-              <a
-                class="media-tmdb"
-                href={tmdbUrl(item.media_type, item.tmdb_id)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                TMDB {item.tmdb_id} <ExternalLink size={11} style="display: inline;" />
-              </a>
-              <span class="media-time">{formatTimestamp(item.create_time)}</span>
-            </div>
-            <div class="cell-title">{titleWithYear(displayTitle(item), item.year)}</div>
-            {#if originalTitle(item)}
-              <div class="cell-sub">{originalTitle(item)}</div>
-            {/if}
-            {#if item.overview}
-              <p class="media-overview">{item.overview}</p>
-            {/if}
-          </div>
-          <div class="row-actions">
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              disabled={rescanningId === item.id || deletingId != null}
-              onclick={() => doRescan(item)}
-            >
-              <RefreshCw size={13} class={rescanningId === item.id ? 'animate-spin' : ''} />
-              <span>{rescanningId === item.id ? '重扫中…' : '重扫'}</span>
-            </button>
-            {#if confirmDeleteId === item.id}
-              <button
-                type="button"
-                class="btn btn-danger btn-sm"
-                disabled={deletingId === item.id}
-                onclick={() => doDelete(item.id, displayTitle(item))}
-              >
-                {deletingId === item.id ? '删除中…' : '确认删除'}
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm"
-                disabled={deletingId === item.id}
-                onclick={() => { confirmDeleteId = null; }}
-              >
-                取消
-              </button>
-            {:else}
-              <button
-                type="button"
-                class="btn btn-danger-ghost btn-sm"
-                disabled={deletingId != null}
-                onclick={() => { confirmDeleteId = item.id; }}
-              >
-                <Trash2 size={13} />
-                <span>删除</span>
-              </button>
             {/if}
           </div>
         </article>
