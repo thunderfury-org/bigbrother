@@ -193,6 +193,12 @@
     return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
   }
 
+  function formatDate(value: string | null | undefined): string {
+    if (!value) return '';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString();
+  }
+
   function posterUrl(path: string | null | undefined, size: 'w92' | 'w185' | 'w300' = 'w300'): string | null {
     if (!path) return null;
     return `https://image.tmdb.org/t/p/${size}${path}`;
@@ -267,10 +273,17 @@
     <div class="poster-grid">
       {#each Array(6) as _, i (i)}
         <div class="poster-card">
-          <Skeleton height="240px" rounded="10px 10px 0 0" />
+          <div class="poster-wrap">
+            <Skeleton height="100%" width="100%" rounded="0" />
+          </div>
           <div class="poster-meta">
-            <Skeleton height="16px" width="80%" />
-            <Skeleton height="12px" width="50%" />
+            <Skeleton height="14px" width="45%" />
+            <Skeleton height="16px" width="70%" />
+            <Skeleton height="12px" width="95%" />
+            <Skeleton height="12px" width="80%" />
+            <div class="poster-actions">
+              <Skeleton height="30px" width="100%" rounded="6px" />
+            </div>
           </div>
         </div>
       {/each}
@@ -301,23 +314,16 @@
                 {mediaTypeLabel(item.media_type)}
               </div>
             {/if}
-            <div class="poster-overlay"></div>
-            <span
-              class="poster-badge"
-              class:badge-tv={item.media_type === 'tv'}
-              class:badge-movie={item.media_type === 'movie'}
-            >
-              {mediaTypeLabel(item.media_type)}
-            </span>
           </div>
 
           <div class="poster-meta">
-            <div class="poster-title" title={titleWithYear(displayTitle(item), item.year)}>
-              {titleWithYear(displayTitle(item), item.year)}
-            </div>
-            <div class="poster-sub">
-              <span class="poster-sub-title" title={originalTitle(item) ?? ''}>
-                {originalTitle(item) || '—'}
+            <div class="poster-kicker">
+              <span
+                class="poster-badge is-static"
+                class:badge-tv={item.media_type === 'tv'}
+                class:badge-movie={item.media_type === 'movie'}
+              >
+                {mediaTypeLabel(item.media_type)}
               </span>
               <a
                 class="media-tmdb"
@@ -328,7 +334,21 @@
               >
                 #{item.tmdb_id}
               </a>
+              {#if formatDate(item.create_time)}
+                <span class="media-time">{formatDate(item.create_time)}</span>
+              {/if}
             </div>
+            <div class="poster-title" title={titleWithYear(displayTitle(item), item.year)}>
+              {titleWithYear(displayTitle(item), item.year)}
+            </div>
+            {#if originalTitle(item)}
+              <div class="poster-sub-title" title={originalTitle(item) ?? ''}>
+                {originalTitle(item)}
+              </div>
+            {/if}
+            {#if item.overview}
+              <p class="media-overview">{item.overview}</p>
+            {/if}
 
             {#if confirmDeleteId === item.id}
               <div class="poster-actions">
