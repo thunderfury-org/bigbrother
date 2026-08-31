@@ -1,8 +1,16 @@
 # Changelog
+## [0.8.0] - 2026-08-31
+### Features
+
+- (app) support pan123 auto token renewal with credentials and dynamic auth server (#185)
 ## [0.7.0] - 2026-08-28
 ### Bug Fixes
 
 - (app) stop tracking web/dist (#179)
+
+### Chores
+
+- (app) release v0.7.0 (#184)
 
 ### Features
 
