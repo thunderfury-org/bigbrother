@@ -823,7 +823,7 @@ impl Client {
         let response: CommonResponse<WebLoginData> =
             http::post(login_url, None, None, Some(&body)).await?;
 
-        if response.code != 0 {
+        if response.code != 0 && response.code != 200 {
             return Err(RequestError::Other(format!(
                 "123pan web login failed, code: {}, message: {}",
                 response.code, response.message
@@ -1300,12 +1300,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        // 3. Web login succeeds
+        // 3. Web login succeeds (123pan web login returns code 200 on success)
         Mock::given(method("POST"))
             .and(path("/api/user/sign_in"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "code": 0,
-                "message": "ok",
+                "code": 200,
+                "message": "success",
                 "data": { "token": "jwt-web-token" }
             })))
             .expect(1)
