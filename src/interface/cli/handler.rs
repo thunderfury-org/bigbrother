@@ -391,6 +391,58 @@ async fn resolve_share_url_raw_files(
     })
 }
 
+pub(crate) async fn run_auth_pan123(data_dir: &str, force: bool) -> AppResult<()> {
+    logger::init_console();
+
+    let ctx = CliContext::new(data_dir)?;
+    let pan123 = ctx.pan123();
+    let pan123_config = ctx.config().get_pan123_config();
+
+    println!("==================================================");
+    println!("🔍 123 云盘（pan123）授权测试");
+    println!("==================================================");
+    println!("配置信息：");
+    let username = pan123_config.username.trim();
+    let masked_user = if username.len() > 7 {
+        format!("{}****{}", &username[..3], &username[username.len() - 4..])
+    } else if !username.is_empty() {
+        "***".to_string()
+    } else {
+        "(未配置)".to_string()
+    };
+    println!("  - 用户名/手机号: {}", masked_user);
+    println!("  - 鉴权服务地址: {}", pan123_config.auth_server_base_url);
+    println!("  - 强制重新授权: {}", if force { "是" } else { "否" });
+    println!("--------------------------------------------------");
+
+    if force {
+        println!("正在清除本地 Token 缓存并重新发起授权...");
+        pan123.clear_token_cache().await?;
+    }
+
+    println!("正在获取 / 验证 Access Token...");
+    let token = pan123.get_token_for_test().await?;
+
+    let masked_token = if token.len() > 20 {
+        format!("{}...{}", &token[..10], &token[token.len() - 10..])
+    } else {
+        token.clone()
+    };
+    println!("✅ Access Token 获取成功: {}", masked_token);
+
+    println!("正在调用 123 OpenAPI 接口测试连接 (根目录列表)...");
+    let files = pan123.list(0).await?;
+    println!(
+        "✅ OpenAPI 调用成功！根目录下文件/目录数量: {}",
+        files.len()
+    );
+    println!("==================================================");
+    println!("🎉 123 云盘授权验证通过！");
+    println!("==================================================");
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{format_file_size, format_share_list_output, resolve_share_url_raw_files};

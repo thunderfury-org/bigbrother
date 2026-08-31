@@ -229,6 +229,22 @@ impl Client {
         }
     }
 
+    pub async fn clear_token_cache(&self) -> RequestResult<()> {
+        let mut guard = self.token.write().await;
+        *guard = None;
+        if !self.cache_dir.is_empty() {
+            let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
+            if Path::new(&path).exists() {
+                let _ = fs::remove_file(&path);
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_token_for_test(&self) -> RequestResult<String> {
+        self.get_token().await
+    }
+
     #[cfg(test)]
     pub(crate) async fn set_token_for_test(&self, token: &str, expired_at: time::OffsetDateTime) {
         let mut guard = self.token.write().await;
