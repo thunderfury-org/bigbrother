@@ -1,3 +1,12 @@
+fn normalize_auth_server_base_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        DEFAULT_AUTH_SERVER_BASE_URL.to_owned()
+    } else {
+        trimmed.trim_end_matches("/").to_owned()
+    }
+}
+
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use base64::{Engine, engine::general_purpose};
@@ -187,15 +196,10 @@ impl Client {
         auth_server_base_url: &str,
         cache_dir: &str,
     ) -> Self {
-        let auth_server = if auth_server_base_url.trim().is_empty() {
-            DEFAULT_AUTH_SERVER_BASE_URL
-        } else {
-            auth_server_base_url.trim()
-        };
         Self {
             username: username.to_owned(),
             password: password.to_owned(),
-            auth_server_base_url: auth_server.trim_end_matches("/").to_owned(),
+            auth_server_base_url: normalize_auth_server_base_url(auth_server_base_url),
             cache_dir: cache_dir.to_owned(),
             open_api_base: OPEN_API_BASE.to_owned(),
             web_api_base: WEB_API_BASE.to_owned(),
@@ -212,15 +216,10 @@ impl Client {
         cache_dir: &str,
         open_api_base: &str,
     ) -> Self {
-        let auth_server = if auth_server_base_url.trim().is_empty() {
-            DEFAULT_AUTH_SERVER_BASE_URL
-        } else {
-            auth_server_base_url.trim()
-        };
         Self {
             username: username.to_owned(),
             password: password.to_owned(),
-            auth_server_base_url: auth_server.trim_end_matches("/").to_owned(),
+            auth_server_base_url: normalize_auth_server_base_url(auth_server_base_url),
             cache_dir: cache_dir.to_owned(),
             open_api_base: open_api_base.to_owned(),
             web_api_base: open_api_base.to_owned(),
@@ -239,10 +238,6 @@ impl Client {
             }
         }
         Ok(())
-    }
-
-    pub async fn get_token_for_test(&self) -> RequestResult<String> {
-        self.get_token().await
     }
 
     #[cfg(test)]
@@ -626,7 +621,7 @@ impl Client {
         self.process_response(response)
     }
 
-    async fn get_token(&self) -> RequestResult<String> {
+    pub async fn get_token(&self) -> RequestResult<String> {
         {
             let token_guard = self.token.read().await;
             if let Some(t) = token_guard.as_ref()
@@ -1005,7 +1000,9 @@ impl Client {
 
     async fn get_access_token(&self) -> RequestResult<CachedToken> {
         let cached_rt = self
-            .read_token_from_cache_file(TOKEN_CACHE_FILE)?
+            .read_token_from_cache_file(TOKEN_CACHE_FILE)
+            .ok()
+            .flatten()
             .map(|t| t.refresh_token)
             .filter(|s| !s.trim().is_empty());
 
@@ -1916,6 +1913,85 @@ mod tests {
             let res = handle.await.unwrap();
             assert_eq!(res.unwrap(), "concurrent-access-token");
         }
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn get_access_token_reauthorizes_when_cache_file_is_corrupted() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        // Write corrupted JSON to cache file
+        fs::create_dir_all(&cache_dir).unwrap();
+        fs::write(
+            format!("{}/{}", cache_dir, TOKEN_CACHE_FILE),
+            "invalid json content {{",
+        )
+        .unwrap();
+
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": { "token": "jwt-token" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=test_code&state=OpenList", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let callback_data = serde_json::json!({
+            "access_token": "recovered-access-token",
+            "refresh_token": "recovered-refresh-token",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let token = client.get_access_token().await.unwrap();
+        assert_eq!(token.access_token, "recovered-access-token");
+        assert_eq!(token.refresh_token, "recovered-refresh-token");
 
         let _ = fs::remove_dir_all(cache_dir);
     }

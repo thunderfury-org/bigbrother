@@ -421,7 +421,7 @@ pub(crate) async fn run_auth_pan123(data_dir: &str, force: bool) -> AppResult<()
     }
 
     println!("正在获取 / 验证 Access Token...");
-    let token = pan123.get_token_for_test().await?;
+    let token = pan123.get_token().await?;
 
     let masked_token = if token.len() > 20 {
         format!("{}...{}", &token[..10], &token[token.len() - 10..])
