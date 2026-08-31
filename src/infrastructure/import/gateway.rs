@@ -690,8 +690,9 @@ mod tests {
 
     async fn gateway(server: &MockServer) -> PanLibraryGateway {
         let client = pan123::Client::with_open_api_base(
-            &format!("{}/refresh", server.uri()),
-            "refresh-token",
+            "test-user",
+            "test-pass",
+            &server.uri(),
             &unique_cache_dir(),
             server.uri().as_str(),
         );

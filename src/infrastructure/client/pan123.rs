@@ -1,5 +1,15 @@
+fn normalize_auth_server_base_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        DEFAULT_AUTH_SERVER_BASE_URL.to_owned()
+    } else {
+        trimmed.trim_end_matches("/").to_owned()
+    }
+}
+
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
+use base64::{Engine, engine::general_purpose};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use tokio::sync::RwLock;
@@ -8,6 +18,8 @@ use super::{RequestError, RequestResult, http};
 
 const OPEN_API_BASE: &str = "https://open-api.123pan.com";
 const WEB_API_BASE: &str = "https://yun.123pan.com/b";
+const LOGIN_API_BASE: &str = "https://login.123pan.com";
+const DEFAULT_AUTH_SERVER_BASE_URL: &str = "https://api.oplist.org";
 
 const PLATFORM_KEY: &str = "Platform";
 const PLATFORM_VALUE: &str = "open_platform";
@@ -117,11 +129,11 @@ struct CachedToken {
 
 #[derive(Debug, Deserialize)]
 struct RefreshTokenResp {
-    #[serde(rename = "access_token")]
+    #[serde(default, rename = "access_token")]
     access_token: String,
-    #[serde(rename = "refresh_token")]
+    #[serde(default, rename = "refresh_token")]
     refresh_token: String,
-    #[serde(rename = "expires_in")]
+    #[serde(default, rename = "expires_in")]
     expires_in: i64,
     #[serde(default)]
     code: i32,
@@ -135,43 +147,97 @@ struct RefreshTokenResp {
     text: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct AuthRequestsResp {
+    #[serde(default)]
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebLoginData {
+    #[serde(default)]
+    token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CallbackFragmentData {
+    #[serde(default)]
+    access_token: String,
+    #[serde(default)]
+    refresh_token: String,
+    #[serde(default)]
+    message_err: String,
+}
+
+#[derive(Debug, Clone)]
+struct OAuthParams {
+    client_id: String,
+    redirect_uri: String,
+    scope: String,
+    state: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Client {
-    api_address: String,
-    initial_refresh_token: String,
+    username: String,
+    password: String,
+    auth_server_base_url: String,
     cache_dir: String,
     open_api_base: String,
     web_api_base: String,
+    login_api_base: String,
     token: Arc<RwLock<Option<CachedToken>>>,
 }
 
 impl Client {
-    pub fn new(api_address: &str, refresh_token: &str, cache_dir: &str) -> Self {
+    pub fn new(
+        username: &str,
+        password: &str,
+        auth_server_base_url: &str,
+        cache_dir: &str,
+    ) -> Self {
         Self {
-            api_address: api_address.to_owned(),
-            initial_refresh_token: refresh_token.to_owned(),
+            username: username.to_owned(),
+            password: password.to_owned(),
+            auth_server_base_url: normalize_auth_server_base_url(auth_server_base_url),
             cache_dir: cache_dir.to_owned(),
             open_api_base: OPEN_API_BASE.to_owned(),
             web_api_base: WEB_API_BASE.to_owned(),
+            login_api_base: LOGIN_API_BASE.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_open_api_base(
-        api_address: &str,
-        refresh_token: &str,
+        username: &str,
+        password: &str,
+        auth_server_base_url: &str,
         cache_dir: &str,
         open_api_base: &str,
     ) -> Self {
         Self {
-            api_address: api_address.to_owned(),
-            initial_refresh_token: refresh_token.to_owned(),
+            username: username.to_owned(),
+            password: password.to_owned(),
+            auth_server_base_url: normalize_auth_server_base_url(auth_server_base_url),
             cache_dir: cache_dir.to_owned(),
             open_api_base: open_api_base.to_owned(),
             web_api_base: open_api_base.to_owned(),
+            login_api_base: open_api_base.to_owned(),
             token: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub async fn clear_token_cache(&self) -> RequestResult<()> {
+        let mut guard = self.token.write().await;
+        *guard = None;
+        if !self.cache_dir.is_empty() {
+            let path = format!("{}/{}", self.cache_dir, TOKEN_CACHE_FILE);
+            if Path::new(&path).exists() {
+                let _ = fs::remove_file(&path);
+            }
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -368,7 +434,7 @@ impl Client {
         }
 
         let parts = folder_path
-            .split('/')
+            .split("/")
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
         let mut current_file_id = 0;
@@ -445,7 +511,7 @@ impl Client {
             return Ok(None);
         }
 
-        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let parts: Vec<&str> = path.split("/").filter(|s| !s.is_empty()).collect();
         let last_part = parts.last().unwrap();
         let search_results = self.search(last_part).await?;
 
@@ -555,7 +621,7 @@ impl Client {
         self.process_response(response)
     }
 
-    async fn get_token(&self) -> RequestResult<String> {
+    pub async fn get_token(&self) -> RequestResult<String> {
         {
             let token_guard = self.token.read().await;
             if let Some(t) = token_guard.as_ref()
@@ -566,22 +632,18 @@ impl Client {
         }
 
         let mut token_guard = self.token.write().await;
-        match token_guard.as_ref() {
-            Some(t) => {
-                if !self.is_expired(t) {
-                    return Ok(t.access_token.to_owned());
-                }
-            }
-            None => {
-                let token = self.read_token_from_cache_file(TOKEN_CACHE_FILE)?;
-                if let Some(t) = token
-                    && !self.is_expired(&t)
-                    && !t.refresh_token.is_empty()
-                {
-                    *token_guard = Some(t.clone());
-                    return Ok(t.access_token.to_owned());
-                }
-            }
+        if let Some(t) = token_guard.as_ref()
+            && !self.is_expired(t)
+        {
+            return Ok(t.access_token.to_owned());
+        }
+
+        if let Ok(Some(t)) = self.read_token_from_cache_file(TOKEN_CACHE_FILE)
+            && !self.is_expired(&t)
+            && !t.access_token.is_empty()
+        {
+            *token_guard = Some(t.clone());
+            return Ok(t.access_token.to_owned());
         }
 
         let cached = self.get_access_token().await?;
@@ -680,17 +742,216 @@ impl Client {
         token.expired_at - time::Duration::seconds(60) <= time::OffsetDateTime::now_utc()
     }
 
-    async fn get_access_token(&self) -> RequestResult<CachedToken> {
-        let rt = self
-            .read_token_from_cache_file(TOKEN_CACHE_FILE)?
-            .map(|t| t.refresh_token.clone())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| self.initial_refresh_token.clone());
-
-        let resp: RefreshTokenResp = http::get(
-            &self.api_address,
+    async fn fetch_oauth_params(&self) -> RequestResult<OAuthParams> {
+        let requests_url = format!("{}/123cloud/requests", self.auth_server_base_url);
+        let resp: AuthRequestsResp = http::get(
+            &requests_url,
             Some(vec![
-                ("refresh_ui", rt.as_str()),
+                ("client_uid", ""),
+                ("client_key", ""),
+                ("driver_txt", "123cloud_oa"),
+                ("server_use", "true"),
+            ]),
+            None,
+        )
+        .await?;
+
+        if resp.text.is_empty() {
+            return Err(RequestError::Other(
+                "failed to get 123pan oauth requests params from auth server, empty response"
+                    .to_string(),
+            ));
+        }
+
+        let parsed_url = url::Url::parse(&resp.text).map_err(|e| {
+            RequestError::Other(format!(
+                "failed to parse oauth authorize url [{}] from auth server: {}",
+                resp.text, e
+            ))
+        })?;
+
+        let mut client_id = String::new();
+        let mut redirect_uri = String::new();
+        let mut scope = "user:base,file:all:read,file:all:write".to_string();
+        let mut state = "OpenList".to_string();
+
+        for (k, v) in parsed_url.query_pairs() {
+            match k.as_ref() {
+                "client_id" => client_id = v.into_owned(),
+                "redirect_uri" => redirect_uri = v.into_owned(),
+                "scope" => scope = v.into_owned(),
+                "state" => state = v.into_owned(),
+                _ => {}
+            }
+        }
+
+        if client_id.is_empty() {
+            return Err(RequestError::Other(format!(
+                "client_id missing in oauth authorize url [{}] from auth server",
+                resp.text
+            )));
+        }
+        if redirect_uri.is_empty() {
+            return Err(RequestError::Other(format!(
+                "redirect_uri missing in oauth authorize url [{}] from auth server",
+                resp.text
+            )));
+        }
+
+        Ok(OAuthParams {
+            client_id,
+            redirect_uri,
+            scope,
+            state,
+        })
+    }
+
+    async fn login_web(&self) -> RequestResult<String> {
+        if self.username.trim().is_empty() || self.password.trim().is_empty() {
+            return Err(RequestError::Other(
+                "123pan username or password is not configured".to_string(),
+            ));
+        }
+
+        let login_url = format!("{}/api/user/sign_in", self.login_api_base);
+        let body = json!({
+            "passport": self.username.trim(),
+            "password": self.password.trim(),
+            "remember": true,
+        });
+
+        let response: CommonResponse<WebLoginData> =
+            http::post(login_url, None, None, Some(&body)).await?;
+
+        if response.code != 0 && response.code != 200 {
+            return Err(RequestError::Other(format!(
+                "123pan web login failed, code: {}, message: {}",
+                response.code, response.message
+            )));
+        }
+
+        let web_token = response
+            .data
+            .and_then(|d| d.token)
+            .filter(|t| !t.trim().is_empty())
+            .ok_or_else(|| {
+                RequestError::Other(format!(
+                    "123pan web login failed, empty token returned, message: {}",
+                    response.message
+                ))
+            })?;
+
+        Ok(web_token)
+    }
+
+    async fn reauthorize_with_credentials(&self) -> RequestResult<CachedToken> {
+        let oauth_params = self.fetch_oauth_params().await?;
+        let web_token = self.login_web().await?;
+
+        let authorize_url = format!("{}/api/v1/oauth2/user/authorize", self.open_api_base);
+        let query = vec![
+            ("client_id", oauth_params.client_id.as_str()),
+            ("redirect_uri", oauth_params.redirect_uri.as_str()),
+            ("scope", oauth_params.scope.as_str()),
+            ("state", oauth_params.state.as_str()),
+            ("response_type", "code"),
+            ("accesstoken", web_token.as_str()),
+        ];
+
+        let no_redirect_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| RequestError::Other(format!("failed to build http client: {}", e)))?;
+
+        let auth_resp = no_redirect_client
+            .get(&authorize_url)
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| {
+                RequestError::Other(format!("123pan oauth authorize request failed: {}", e))
+            })?;
+
+        let auth_loc = auth_resp
+            .headers()
+            .get("location")
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| {
+                RequestError::Other(format!(
+                    "123pan oauth authorize failed: status {}, expected 302 with Location header",
+                    auth_resp.status()
+                ))
+            })?;
+
+        let callback_url = if auth_loc.starts_with("http://") || auth_loc.starts_with("https://") {
+            auth_loc.to_string()
+        } else {
+            format!("{}{}", self.auth_server_base_url, auth_loc)
+        };
+
+        let cb_resp = no_redirect_client
+            .get(&callback_url)
+            .send()
+            .await
+            .map_err(|e| {
+                RequestError::Other(format!("123pan oauth callback request failed: {}", e))
+            })?;
+
+        let cb_loc = cb_resp
+            .headers()
+            .get("location")
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| {
+                RequestError::Other(format!(
+                    "123pan oauth callback failed: status {}, expected 302 with Location header",
+                    cb_resp.status()
+                ))
+            })?;
+
+        let fragment = if let Some(idx) = cb_loc.find('#') {
+            &cb_loc[idx + 1..]
+        } else {
+            return Err(RequestError::Other(format!(
+                "123pan oauth callback location [{}] missing fragment '#'",
+                cb_loc
+            )));
+        };
+
+        let data = decode_callback_fragment(fragment)?;
+
+        if !data.message_err.is_empty() {
+            return Err(RequestError::Other(format!(
+                "123pan oauth authorization failed, server message: {}",
+                data.message_err
+            )));
+        }
+
+        if data.access_token.is_empty() || data.refresh_token.is_empty() {
+            return Err(RequestError::Other(
+                "123pan oauth authorization failed: empty access_token or refresh_token in response"
+                    .to_string(),
+            ));
+        }
+
+        let expired_at = extract_jwt_expiration(&data.access_token)
+            .unwrap_or_else(|| time::OffsetDateTime::now_utc() + time::Duration::days(30));
+
+        Ok(CachedToken {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            expired_at,
+        })
+    }
+
+    async fn refresh_token_via_auth_server(
+        &self,
+        refresh_token: &str,
+    ) -> RequestResult<CachedToken> {
+        let renew_url = format!("{}/123cloud/renewapi", self.auth_server_base_url);
+        let resp: RefreshTokenResp = http::get(
+            &renew_url,
+            Some(vec![
+                ("refresh_ui", refresh_token),
                 ("server_use", "true"),
                 ("driver_txt", "123cloud_oa"),
             ]),
@@ -736,6 +997,75 @@ impl Client {
             expired_at: time::OffsetDateTime::now_utc() + time::Duration::seconds(resp.expires_in),
         })
     }
+
+    async fn get_access_token(&self) -> RequestResult<CachedToken> {
+        let cached_rt = self
+            .read_token_from_cache_file(TOKEN_CACHE_FILE)
+            .ok()
+            .flatten()
+            .map(|t| t.refresh_token)
+            .filter(|s| !s.trim().is_empty());
+
+        if let Some(rt) = cached_rt {
+            match self.refresh_token_via_auth_server(&rt).await {
+                Ok(token) => return Ok(token),
+                Err(e) => {
+                    tracing::warn!(
+                        "pan123 refresh token via auth server failed: {}, falling back to credentials re-authorization",
+                        e
+                    );
+                }
+            }
+        }
+
+        self.reauthorize_with_credentials().await
+    }
+}
+
+fn decode_callback_fragment(fragment: &str) -> RequestResult<CallbackFragmentData> {
+    let clean_fragment = fragment.trim().trim_start_matches("#");
+    let raw_bytes = general_purpose::STANDARD
+        .decode(clean_fragment)
+        .or_else(|_| general_purpose::URL_SAFE.decode(clean_fragment))
+        .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(clean_fragment))
+        .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(clean_fragment))
+        .map_err(|e| {
+            RequestError::Other(format!(
+                "decode callback fragment base64 failed: {}, fragment: [{}]",
+                e, clean_fragment
+            ))
+        })?;
+
+    serde_json::from_slice::<CallbackFragmentData>(&raw_bytes).map_err(|e| {
+        RequestError::Other(format!(
+            "parse callback fragment json failed: {}, raw: [{}]",
+            e,
+            String::from_utf8_lossy(&raw_bytes)
+        ))
+    })
+}
+
+fn extract_jwt_expiration(token: &str) -> Option<time::OffsetDateTime> {
+    let parts: Vec<&str> = token.split(".").collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let payload_b64 = parts[1];
+    let decoded = general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(payload_b64))
+        .or_else(|_| general_purpose::URL_SAFE.decode(payload_b64))
+        .or_else(|_| general_purpose::STANDARD.decode(payload_b64))
+        .ok()?;
+
+    #[derive(Deserialize)]
+    struct JwtPayload {
+        exp: Option<i64>,
+    }
+    let payload: JwtPayload = serde_json::from_slice(&decoded).ok()?;
+    payload
+        .exp
+        .and_then(|exp| time::OffsetDateTime::from_unix_timestamp(exp).ok())
 }
 
 #[cfg(test)]
@@ -761,8 +1091,9 @@ mod tests {
 
     async fn client(server: &MockServer) -> Client {
         let client = Client::with_open_api_base(
-            &format!("{}/refresh", server.uri()),
-            "refresh-token",
+            "test-user",
+            "test-pass",
+            &server.uri(),
             &unique_cache_dir(),
             server.uri().as_str(),
         );
@@ -794,8 +1125,9 @@ mod tests {
     #[test]
     fn process_response_maps_common_error_codes() {
         let client = Client::new(
-            "http://api.test/refresh",
-            "refresh-token",
+            "test-user",
+            "test-pass",
+            "http://api.test",
             "/tmp/pan123-tests",
         );
 
@@ -852,7 +1184,7 @@ mod tests {
     #[test]
     fn write_then_read_token_cache_file_round_trips() {
         let cache_dir = unique_cache_dir();
-        let client = Client::new("http://api.test/refresh", "refresh-token", &cache_dir);
+        let client = Client::new("test-user", "test-pass", "http://api.test", &cache_dir);
         let token = CachedToken {
             access_token: "cached-token".to_string(),
             refresh_token: "cached-refresh".to_string(),
@@ -869,6 +1201,151 @@ mod tests {
 
         assert_eq!(loaded.access_token, "cached-token");
         assert_eq!(loaded.refresh_token, "cached-refresh");
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[test]
+    fn extract_jwt_expiration_parses_exp() {
+        let header = general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
+        let payload = general_purpose::URL_SAFE_NO_PAD.encode(r#"{"uid":1,"exp":1735689600}"#);
+        let jwt = format!("{}.{}.sig", header, payload);
+
+        let exp = extract_jwt_expiration(&jwt).unwrap();
+        assert_eq!(exp.unix_timestamp(), 1735689600);
+    }
+
+    #[tokio::test]
+    async fn get_access_token_uses_cached_refresh_token_when_valid() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client =
+            Client::with_open_api_base("user", "pass", &server.uri(), &cache_dir, &server.uri());
+
+        let initial_token = CachedToken {
+            access_token: "old-access".to_string(),
+            refresh_token: "cached-refresh-token".to_string(),
+            expired_at: time::OffsetDateTime::now_utc() - time::Duration::hours(1),
+        };
+        client
+            .write_token_to_cache_file(TOKEN_CACHE_FILE, &initial_token)
+            .unwrap();
+
+        Mock::given(method("GET"))
+            .and(path("/123cloud/renewapi"))
+            .and(query_param("refresh_ui", "cached-refresh-token"))
+            .and(query_param("server_use", "true"))
+            .and(query_param("driver_txt", "123cloud_oa"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "access_token": "new-access-token",
+                "refresh_token": "new-refresh-token",
+                "expires_in": 3600
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let token = client.get_access_token().await.unwrap();
+        assert_eq!(token.access_token, "new-access-token");
+        assert_eq!(token.refresh_token, "new-refresh-token");
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn get_access_token_falls_back_to_reauthorize_when_refresh_fails() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        let initial_token = CachedToken {
+            access_token: "old-access".to_string(),
+            refresh_token: "invalid-refresh-token".to_string(),
+            expired_at: time::OffsetDateTime::now_utc() - time::Duration::hours(1),
+        };
+        client
+            .write_token_to_cache_file(TOKEN_CACHE_FILE, &initial_token)
+            .unwrap();
+
+        // 1. renewapi returns 500 (retried by reqwest_retry middleware)
+        Mock::given(method("GET"))
+            .and(path("/123cloud/renewapi"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+                "text": "refresh token is invalid or expired"
+            })))
+            .mount(&server)
+            .await;
+
+        // 2. requests endpoint gives OAuth authorize URL
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // 3. Web login succeeds (123pan web login returns code 200 on success)
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 200,
+                "message": "success",
+                "data": { "token": "jwt-web-token" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // 4. OpenAPI authorize redirects to callback with code
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .and(query_param("client_id", "cid123"))
+            .and(query_param("accesstoken", "jwt-web-token"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=test_code&state=OpenList", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // 5. Callback exchanges code and redirects to #<fragment>
+        let callback_data = serde_json::json!({
+            "access_token": "reauth-access-token",
+            "refresh_token": "reauth-refresh-token",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .and(query_param("code", "test_code"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let token = client.get_access_token().await.unwrap();
+        assert_eq!(token.access_token, "reauth-access-token");
+        assert_eq!(token.refresh_token, "reauth-refresh-token");
 
         let _ = fs::remove_dir_all(cache_dir);
     }
@@ -1237,5 +1714,285 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert!(result[0].is_dir);
         assert_eq!(result[0].file_id, 30);
+    }
+
+    #[tokio::test]
+    async fn reauthorize_fails_when_web_login_fails() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "wrong_pass",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 1,
+                "message": "账号或密码错误"
+            })))
+            .mount(&server)
+            .await;
+
+        let err = client.get_access_token().await.unwrap_err();
+        match err {
+            RequestError::Other(msg) => {
+                assert!(msg.contains("123pan web login failed"));
+                assert!(msg.contains("账号或密码错误"));
+            }
+            other => panic!("expected RequestError::Other, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn reauthorize_fails_when_callback_returns_error_message() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": { "token": "jwt-token" }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=err_code&state=OpenList", server.uri()),
+            ))
+            .mount(&server)
+            .await;
+
+        let callback_err_data = serde_json::json!({
+            "message_err": "授权失败：用户取消",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_err_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .mount(&server)
+            .await;
+
+        let err = client.get_access_token().await.unwrap_err();
+        match err {
+            RequestError::Other(msg) => {
+                assert!(msg.contains("123pan oauth authorization failed"));
+                assert!(msg.contains("授权失败：用户取消"));
+            }
+            other => panic!("expected RequestError::Other, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn concurrent_get_token_only_fetches_once() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        // Mock requests endpoint
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock web login
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": { "token": "jwt-token" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock authorize
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=code123&state=OpenList", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock callback
+        let callback_data = serde_json::json!({
+            "access_token": "concurrent-access-token",
+            "refresh_token": "concurrent-refresh-token",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Spawn 20 concurrent tasks
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let c = client.clone();
+            handles.push(tokio::spawn(async move { c.get_token().await }));
+        }
+
+        for handle in handles {
+            let res = handle.await.unwrap();
+            assert_eq!(res.unwrap(), "concurrent-access-token");
+        }
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn get_access_token_reauthorizes_when_cache_file_is_corrupted() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        // Write corrupted JSON to cache file
+        fs::create_dir_all(&cache_dir).unwrap();
+        fs::write(
+            format!("{}/{}", cache_dir, TOKEN_CACHE_FILE),
+            "invalid json content {{",
+        )
+        .unwrap();
+
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": { "token": "jwt-token" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=test_code&state=OpenList", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let callback_data = serde_json::json!({
+            "access_token": "recovered-access-token",
+            "refresh_token": "recovered-refresh-token",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let token = client.get_access_token().await.unwrap();
+        assert_eq!(token.access_token, "recovered-access-token");
+        assert_eq!(token.refresh_token, "recovered-refresh-token");
+
+        let _ = fs::remove_dir_all(cache_dir);
     }
 }

@@ -24,6 +24,29 @@ pub enum Commands {
     Share(ShareArgs),
     SearchFiles(SearchFilesArgs),
     TelegramExport(TelegramExportArgs),
+    /// 网盘授权与认证测试
+    Auth(AuthArgs),
+}
+
+#[derive(Args)]
+pub struct AuthArgs {
+    #[command(subcommand)]
+    pub command: AuthCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommands {
+    /// 测试 123 云盘（pan123）认证并获取/刷新 Token
+    Pan123(Pan123AuthArgs),
+}
+
+#[derive(Args)]
+pub struct Pan123AuthArgs {
+    #[command(flatten)]
+    pub data_dir: DataDirArgs,
+    /// 强制清除本地缓存并重新发起授权
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 #[derive(Args)]
@@ -152,6 +175,11 @@ pub async fn run(cli: Cli) -> AppResult<()> {
                 .await
             }
         },
+        Commands::Auth(args) => match args.command {
+            AuthCommands::Pan123(args) => {
+                handler::run_auth_pan123(args.data_dir.data_dir.as_str(), args.force).await
+            }
+        },
     }
 }
 
@@ -176,7 +204,9 @@ async fn connect_db(db_dir: &str) -> AppResult<DatabaseConnection> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, ShareCommands, TelegramExportCommands, context::CliContext};
+    use super::{
+        AuthCommands, Cli, Commands, ShareCommands, TelegramExportCommands, context::CliContext,
+    };
     use clap::CommandFactory;
     use clap::Parser;
     use std::{
@@ -420,5 +450,27 @@ pan115:
         let ctx = CliContext::new(data_dir.path().to_str().unwrap()).unwrap();
 
         assert_eq!(ctx.pan115().min_request_interval().await.as_millis(), 900);
+    }
+
+    #[test]
+    fn parses_auth_pan123_command() {
+        let cli = Cli::parse_from([
+            "bigbrother",
+            "auth",
+            "pan123",
+            "--data-dir",
+            "./custom-data",
+            "--force",
+        ]);
+
+        match cli.command {
+            Commands::Auth(args) => match args.command {
+                AuthCommands::Pan123(args) => {
+                    assert_eq!(args.data_dir.data_dir, "./custom-data");
+                    assert!(args.force);
+                }
+            },
+            _ => panic!("expected auth pan123 command"),
+        }
     }
 }
