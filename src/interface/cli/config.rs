@@ -78,15 +78,17 @@ impl Default for Pan115Config {
 #[derive(Debug, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 pub struct Pan123Config {
-    pub api_address: String,
-    pub refresh_token: String,
+    pub username: String,
+    pub password: String,
+    pub auth_server_base_url: String,
 }
 
 impl Default for Pan123Config {
     fn default() -> Self {
         Self {
-            api_address: "https://api.oplist.org/123cloud/renewapi".to_string(),
-            refresh_token: String::new(),
+            username: String::new(),
+            password: String::new(),
+            auth_server_base_url: "https://api.oplist.org".to_string(),
         }
     }
 }
@@ -561,5 +563,39 @@ pan115:
         assert_eq!(pan1.base_url, "https://pan1.me");
         assert!(pan1.cookie.is_empty());
         assert_eq!(pan1.reply_message, "感谢分享,太棒了！");
+    }
+
+    #[test]
+    fn pan123_defaults_to_auth_server_url() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let pan123 = config.get_pan123_config();
+        assert_eq!(pan123.auth_server_base_url, "https://api.oplist.org");
+        assert!(pan123.username.is_empty());
+        assert!(pan123.password.is_empty());
+    }
+
+    #[test]
+    fn pan123_parses_from_config() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+pan123:
+  username: "13800000000"
+  password: "mypassword"
+  auth_server_base_url: "https://custom-auth.example.com"
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let pan123 = config.get_pan123_config();
+        assert_eq!(pan123.username, "13800000000");
+        assert_eq!(pan123.password, "mypassword");
+        assert_eq!(
+            pan123.auth_server_base_url,
+            "https://custom-auth.example.com"
+        );
     }
 }

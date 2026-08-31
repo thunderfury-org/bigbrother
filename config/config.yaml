@@ -2,9 +2,10 @@ pan115:
   request_interval_ms: 1500
 
 pan123:
-  # 第三方续期 API 地址（OpenList 提供，用于 OpenAPI token 续期）
-  api_address: "https://api.oplist.org/123cloud/renewapi"
-  refresh_token: ""
+  username: ""
+  password: ""
+  # 第三方鉴权服务地址（OpenList 提供，用于 OpenAPI token 换票与续期）
+  auth_server_base_url: "https://api.oplist.org"
 
 pan1:
   # 123分享社区（pan1.me）登录 Cookie，用于搜索帖子并在导入时解锁隐藏分享链接
