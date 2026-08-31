@@ -621,22 +621,18 @@ impl Client {
         }
 
         let mut token_guard = self.token.write().await;
-        match token_guard.as_ref() {
-            Some(t) => {
-                if !self.is_expired(t) {
-                    return Ok(t.access_token.to_owned());
-                }
-            }
-            None => {
-                let token = self.read_token_from_cache_file(TOKEN_CACHE_FILE)?;
-                if let Some(t) = token
-                    && !self.is_expired(&t)
-                    && !t.access_token.is_empty()
-                {
-                    *token_guard = Some(t.clone());
-                    return Ok(t.access_token.to_owned());
-                }
-            }
+        if let Some(t) = token_guard.as_ref()
+            && !self.is_expired(t)
+        {
+            return Ok(t.access_token.to_owned());
+        }
+
+        if let Ok(Some(t)) = self.read_token_from_cache_file(TOKEN_CACHE_FILE)
+            && !self.is_expired(&t)
+            && !t.access_token.is_empty()
+        {
+            *token_guard = Some(t.clone());
+            return Ok(t.access_token.to_owned());
         }
 
         let cached = self.get_access_token().await?;
@@ -1820,6 +1816,89 @@ mod tests {
                 assert!(msg.contains("授权失败：用户取消"));
             }
             other => panic!("expected RequestError::Other, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(cache_dir);
+    }
+
+    #[tokio::test]
+    async fn concurrent_get_token_only_fetches_once() {
+        let server = MockServer::start().await;
+        let cache_dir = unique_cache_dir();
+
+        let client = Client::with_open_api_base(
+            "user123",
+            "pass123",
+            &server.uri(),
+            &cache_dir,
+            &server.uri(),
+        );
+
+        // Mock requests endpoint
+        let auth_url = format!(
+            "{}/auth?client_id=cid123&redirect_uri={}/callback&scope=user:base&state=OpenList",
+            server.uri(),
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/123cloud/requests"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": auth_url
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock web login
+        Mock::given(method("POST"))
+            .and(path("/api/user/sign_in"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": 0,
+                "message": "ok",
+                "data": { "token": "jwt-token" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock authorize
+        Mock::given(method("GET"))
+            .and(path("/api/v1/oauth2/user/authorize"))
+            .respond_with(ResponseTemplate::new(302).insert_header(
+                "Location",
+                format!("{}/callback?code=code123&state=OpenList", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Mock callback
+        let callback_data = serde_json::json!({
+            "access_token": "concurrent-access-token",
+            "refresh_token": "concurrent-refresh-token",
+        });
+        let fragment = general_purpose::STANDARD.encode(callback_data.to_string());
+
+        Mock::given(method("GET"))
+            .and(path("/callback"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/#{}", server.uri(), fragment)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        // Spawn 20 concurrent tasks
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let c = client.clone();
+            handles.push(tokio::spawn(async move { c.get_token().await }));
+        }
+
+        for handle in handles {
+            let res = handle.await.unwrap();
+            assert_eq!(res.unwrap(), "concurrent-access-token");
         }
 
         let _ = fs::remove_dir_all(cache_dir);
