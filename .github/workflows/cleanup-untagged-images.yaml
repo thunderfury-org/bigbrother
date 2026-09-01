@@ -10,11 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      contents: read
     steps:
       - name: Delete untagged container images
-        uses: actions/delete-package-versions@v5
+        uses: snok/container-retention-policy@v3.1.0
         with:
-          package-name: 'bigbrother'
-          package-type: 'container'
-          untagged-only: true
-          min-versions-to-keep: 0
+          account: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: bigbrother
+          tag-selection: untagged
+          cut-off: 1d
