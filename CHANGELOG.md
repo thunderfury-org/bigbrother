@@ -1,5 +1,19 @@
 # Changelog
+## [0.8.1] - 2026-09-01
+### Bug Fixes
+
+- (app) switch untagged image cleanup to snok/container-retention-policy (#188)
+
+### Support
+
+- (app) upgrade upload/download artifact actions to node 24 versions (#190)
+- (app) speed up multi-platform docker build via native runner matrix (#189)
+- (app) migrate docker build to alpine musl, add arm64 support and enable release strip (#187)
 ## [0.8.0] - 2026-08-31
+### Chores
+
+- (app) release v0.8.0 (#186)
+
 ### Features
 
 - (app) support pan123 auto token renewal with credentials and dynamic auth server (#185)
