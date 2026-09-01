@@ -1,0 +1,20 @@
+name: Cleanup Untagged Images
+
+on:
+  schedule:
+    - cron: '0 2 * * 0' # 每周日 02:00 UTC 自动运行
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'bigbrother'
+          package-type: 'container'
+          untagged-only: true
+          min-versions-to-keep: 0
