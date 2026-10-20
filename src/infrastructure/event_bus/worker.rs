@@ -43,59 +43,84 @@ impl EventWorker {
         Func: Fn(S, E) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
-        let records = self
-            .store
-            .list_pending(self.event_name, self.batch_size)
-            .await?;
+        loop {
+            let records = self
+                .store
+                .list_pending(self.event_name, self.batch_size)
+                .await?;
+            if records.is_empty() {
+                break;
+            }
 
-        for record in records {
-            loop {
-                let payload: E = match serde_json::from_str(&record.payload) {
-                    Ok(payload) => payload,
-                    Err(err) => {
-                        error!(
-                            "Failed to deserialize event '{}' payload `{}`: {}",
-                            self.event_name, record.payload, err
-                        );
-                        if let Err(ack_err) = self.store.ack(record.id).await {
-                            error!("Failed to ack malformed event, {}", ack_err);
-                        }
-                        break;
-                    }
-                };
-
-                match handler(state.clone(), payload).await {
-                    Ok(_) => {
-                        if let Err(err) = self.store.ack(record.id).await {
+            for record in records {
+                loop {
+                    let payload: E = match serde_json::from_str(&record.payload) {
+                        Ok(payload) => payload,
+                        Err(err) => {
                             error!(
-                                "Failed to mark event as acknowledged after processing, {}",
-                                err
+                                "Failed to deserialize event '{}' payload `{}`: {}",
+                                self.event_name, record.payload, err
                             );
+                            self.ack_with_retry(record.id).await?;
+                            break;
                         }
-                        break;
-                    }
-                    Err(err) if err.is_retryable() => {
-                        error!(
-                            "Error processing event '{}', id {}, will retry after 5 seconds, {}",
-                            self.event_name, record.id, err
-                        );
-                        sleep(self.retry_delay).await;
-                    }
-                    Err(err) => {
-                        error!(
-                            "Non-retryable error processing event '{}', id {}, acking: {}",
-                            self.event_name, record.id, err
-                        );
-                        if let Err(ack_err) = self.store.ack(record.id).await {
-                            error!("Failed to ack non-retryable event, {}", ack_err);
+                    };
+
+                    match handler(state.clone(), payload).await {
+                        Ok(_) => {
+                            self.ack_with_retry(record.id).await?;
+                            break;
                         }
-                        break;
+                        Err(err) if err.is_retryable() => {
+                            error!(
+                                "Error processing event '{}', id {}, will retry after 5 seconds, {}",
+                                self.event_name, record.id, err
+                            );
+                            sleep(self.retry_delay).await;
+                        }
+                        Err(err) => {
+                            error!(
+                                "Non-retryable error processing event '{}', id {}, acking: {}",
+                                self.event_name, record.id, err
+                            );
+                            self.ack_with_retry(record.id).await?;
+                            break;
+                        }
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    async fn ack_with_retry(&self, id: i64) -> AppResult<()> {
+        let mut retries = 0;
+        loop {
+            match self.store.ack(id).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if retries >= 3 {
+                        error!(
+                            "Failed to ack event '{}', id {} after {} retries: {}",
+                            self.event_name, id, retries, err
+                        );
+                        return Err(err);
+                    }
+                    retries += 1;
+                    error!(
+                        "Failed to ack event '{}', id {}, retrying ({}/3): {}",
+                        self.event_name, id, retries, err
+                    );
+                    let backoff = if self.retry_delay.is_zero() {
+                        Duration::ZERO
+                    } else {
+                        Duration::from_millis(100 * (1 << (retries - 1)))
+                    };
+                    sleep(backoff).await;
+                }
+            }
+        }
     }
 }
 
@@ -106,7 +131,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use sea_orm::{ConnectOptions, Database};
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -224,5 +249,72 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn drain_continues_until_pending_events_are_empty() {
+        let store = test_store().await;
+        for value in 0..25 {
+            let payload = serde_json::to_string(&SampleEvent { value }).unwrap();
+            store.append(SampleEvent::NAME, &payload).await.unwrap();
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        worker
+            .drain_with_handler::<Arc<AtomicUsize>, SampleEvent, _, _>(
+                calls.clone(),
+                &|calls, _event| async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 25);
+        assert!(
+            store
+                .list_pending(SampleEvent::NAME, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_stops_and_returns_error_when_ack_fails() {
+        let mut options = ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = Database::connect(options).await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        let store = SeaOrmEventStore::new(db.clone());
+
+        let payload = serde_json::to_string(&SampleEvent { value: 77 }).unwrap();
+        store.append(SampleEvent::NAME, &payload).await.unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        let calls_clone = calls.clone();
+        let result = worker
+            .drain_with_handler::<DatabaseConnection, SampleEvent, _, _>(
+                db.clone(),
+                &move |db: DatabaseConnection, _event: SampleEvent| {
+                    let calls = calls_clone.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        db.execute_unprepared("DROP TABLE event").await.unwrap();
+                        Ok(())
+                    }
+                },
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
