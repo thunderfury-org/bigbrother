@@ -63,6 +63,7 @@ impl EventWorker {
                             );
                             if let Err(ack_err) = self.store.ack(record.id).await {
                                 error!("Failed to ack malformed event, {}", ack_err);
+                                return Err(ack_err);
                             }
                             break;
                         }
@@ -75,6 +76,7 @@ impl EventWorker {
                                     "Failed to mark event as acknowledged after processing, {}",
                                     err
                                 );
+                                return Err(err);
                             }
                             break;
                         }
@@ -92,6 +94,7 @@ impl EventWorker {
                             );
                             if let Err(ack_err) = self.store.ack(record.id).await {
                                 error!("Failed to ack non-retryable event, {}", ack_err);
+                                return Err(ack_err);
                             }
                             break;
                         }
@@ -111,7 +114,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use sea_orm::{ConnectOptions, Database};
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -262,5 +265,39 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn drain_stops_and_returns_error_when_ack_fails() {
+        let mut options = ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = Database::connect(options).await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        let store = SeaOrmEventStore::new(db.clone());
+
+        let payload = serde_json::to_string(&SampleEvent { value: 77 }).unwrap();
+        store.append(SampleEvent::NAME, &payload).await.unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        let calls_clone = calls.clone();
+        let result = worker
+            .drain_with_handler::<DatabaseConnection, SampleEvent, _, _>(
+                db.clone(),
+                &move |db: DatabaseConnection, _event: SampleEvent| {
+                    let calls = calls_clone.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        db.execute_unprepared("DROP TABLE event").await.unwrap();
+                        Ok(())
+                    }
+                },
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
