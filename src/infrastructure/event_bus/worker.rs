@@ -43,53 +43,58 @@ impl EventWorker {
         Func: Fn(S, E) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
-        let records = self
-            .store
-            .list_pending(self.event_name, self.batch_size)
-            .await?;
+        loop {
+            let records = self
+                .store
+                .list_pending(self.event_name, self.batch_size)
+                .await?;
+            if records.is_empty() {
+                break;
+            }
 
-        for record in records {
-            loop {
-                let payload: E = match serde_json::from_str(&record.payload) {
-                    Ok(payload) => payload,
-                    Err(err) => {
-                        error!(
-                            "Failed to deserialize event '{}' payload `{}`: {}",
-                            self.event_name, record.payload, err
-                        );
-                        if let Err(ack_err) = self.store.ack(record.id).await {
-                            error!("Failed to ack malformed event, {}", ack_err);
-                        }
-                        break;
-                    }
-                };
-
-                match handler(state.clone(), payload).await {
-                    Ok(_) => {
-                        if let Err(err) = self.store.ack(record.id).await {
+            for record in records {
+                loop {
+                    let payload: E = match serde_json::from_str(&record.payload) {
+                        Ok(payload) => payload,
+                        Err(err) => {
                             error!(
-                                "Failed to mark event as acknowledged after processing, {}",
-                                err
+                                "Failed to deserialize event '{}' payload `{}`: {}",
+                                self.event_name, record.payload, err
                             );
+                            if let Err(ack_err) = self.store.ack(record.id).await {
+                                error!("Failed to ack malformed event, {}", ack_err);
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    Err(err) if err.is_retryable() => {
-                        error!(
-                            "Error processing event '{}', id {}, will retry after 5 seconds, {}",
-                            self.event_name, record.id, err
-                        );
-                        sleep(self.retry_delay).await;
-                    }
-                    Err(err) => {
-                        error!(
-                            "Non-retryable error processing event '{}', id {}, acking: {}",
-                            self.event_name, record.id, err
-                        );
-                        if let Err(ack_err) = self.store.ack(record.id).await {
-                            error!("Failed to ack non-retryable event, {}", ack_err);
+                    };
+
+                    match handler(state.clone(), payload).await {
+                        Ok(_) => {
+                            if let Err(err) = self.store.ack(record.id).await {
+                                error!(
+                                    "Failed to mark event as acknowledged after processing, {}",
+                                    err
+                                );
+                            }
+                            break;
                         }
-                        break;
+                        Err(err) if err.is_retryable() => {
+                            error!(
+                                "Error processing event '{}', id {}, will retry after 5 seconds, {}",
+                                self.event_name, record.id, err
+                            );
+                            sleep(self.retry_delay).await;
+                        }
+                        Err(err) => {
+                            error!(
+                                "Non-retryable error processing event '{}', id {}, acking: {}",
+                                self.event_name, record.id, err
+                            );
+                            if let Err(ack_err) = self.store.ack(record.id).await {
+                                error!("Failed to ack non-retryable event, {}", ack_err);
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -217,6 +222,39 @@ mod tests {
             .unwrap();
 
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(
+            store
+                .list_pending(SampleEvent::NAME, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_continues_until_pending_events_are_empty() {
+        let store = test_store().await;
+        for value in 0..25 {
+            let payload = serde_json::to_string(&SampleEvent { value }).unwrap();
+            store.append(SampleEvent::NAME, &payload).await.unwrap();
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let worker =
+            EventWorker::new(store.clone(), SampleEvent::NAME).with_retry_delay(Duration::ZERO);
+
+        worker
+            .drain_with_handler::<Arc<AtomicUsize>, SampleEvent, _, _>(
+                calls.clone(),
+                &|calls, _event| async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 25);
         assert!(
             store
                 .list_pending(SampleEvent::NAME, 10)
