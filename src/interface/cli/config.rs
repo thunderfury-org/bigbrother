@@ -130,6 +130,13 @@ pub struct LibraryConfig {
 pub struct TelegramConfig {
     pub bot_token: String,
     pub user_id: i64,
+    pub api_url: Option<String>,
+}
+
+impl TelegramConfig {
+    pub fn get_api_url(&self) -> Option<&str> {
+        self.api_url.as_deref()
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

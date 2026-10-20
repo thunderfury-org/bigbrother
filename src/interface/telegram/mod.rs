@@ -1,12 +1,12 @@
+use std::time::Duration;
 use teloxide::prelude::*;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     application::ports::{Message as OutboundMessage, MessageSender},
     infrastructure::event_bus::EventBus,
     interface::runtime::NotifyService,
 };
-
 pub(crate) mod delivery;
 pub mod export;
 pub mod file_index;
@@ -53,17 +53,87 @@ impl BotRuntime {
     }
 }
 
-pub(crate) async fn run(bot: teloxide::Bot, runtime: BotRuntime) {
+pub(crate) async fn run(
+    bot: teloxide::Bot,
+    runtime: BotRuntime,
+    shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) {
+    run_with_retry(bot, runtime, shutdown_rx, Duration::from_secs(5)).await;
+}
+
+pub(crate) async fn run_with_retry(
+    bot: teloxide::Bot,
+    runtime: BotRuntime,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    initial_retry_delay: Duration,
+) {
     let handler = dptree::entry()
         .branch(Update::filter_channel_post().endpoint(handle_channel_post))
         .branch(Update::filter_message().endpoint(handle_message));
 
-    Dispatcher::builder(bot, handler)
-        .enable_ctrlc_handler()
-        .dependencies(dptree::deps![runtime])
-        .build()
-        .dispatch()
-        .await;
+    let mut backoff = initial_retry_delay;
+    let max_backoff = Duration::from_secs(60);
+
+    loop {
+        if *shutdown_rx.borrow() {
+            info!("Telegram bot shutdown requested before starting");
+            break;
+        }
+
+        info!("Starting Telegram bot dispatcher...");
+
+        let listener = teloxide::update_listeners::Polling::builder(bot.clone())
+            .timeout(Duration::from_secs(10))
+            .build();
+        let error_handler = teloxide::error_handlers::LoggingErrorHandler::with_custom_text(
+            "An error from the update listener",
+        );
+
+        let mut dispatcher = Dispatcher::builder(bot.clone(), handler.clone())
+            .dependencies(dptree::deps![runtime.clone()])
+            .build();
+
+        let shutdown_token = dispatcher.shutdown_token();
+        let mut shutdown_watch = shutdown_rx.clone();
+        let shutdown_token_clone = shutdown_token.clone();
+        let shutdown_monitor = tokio::spawn(async move {
+            if shutdown_watch.wait_for(|&s| s).await.is_ok()
+                && let Ok(shutdown_fut) = shutdown_token_clone.shutdown()
+            {
+                shutdown_fut.await;
+            }
+        });
+
+        match dispatcher
+            .try_dispatch_with_listener(listener, error_handler)
+            .await
+        {
+            Ok(()) => {
+                info!("Telegram bot dispatcher stopped gracefully");
+                shutdown_monitor.abort();
+                break;
+            }
+            Err(err) => {
+                shutdown_monitor.abort();
+                if *shutdown_rx.borrow() {
+                    info!("Telegram bot stopping due to shutdown signal");
+                    break;
+                }
+                warn!(
+                    "Telegram bot initialization failed: {err}. Retrying in {:?} in background...",
+                    backoff
+                );
+                tokio::select! {
+                    _ = tokio::time::sleep(backoff) => {}
+                    _ = shutdown_rx.wait_for(|&s| s) => {
+                        info!("Telegram bot retry cancelled by shutdown signal");
+                        break;
+                    }
+                }
+                backoff = (backoff * 2).min(max_backoff);
+            }
+        }
+    }
 }
 
 async fn handle_channel_post(runtime: BotRuntime, msg: Message) -> ResponseResult<()> {
@@ -318,6 +388,61 @@ mod tests {
             SourceHandling::Process {
                 confirm: "开始处理分享: https://115.com/s/share-id?rc=abc".to_string()
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn run_does_not_panic_and_retries_on_network_failure() {
+        use sea_orm_migration::MigratorTrait;
+
+        let mut options = sea_orm::ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = sea_orm::Database::connect(options).await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+        let event_bus = crate::infrastructure::event_bus::EventBus::new(db);
+        let notify_service =
+            crate::infrastructure::event::publisher::EventBusPublisher::new(event_bus.clone());
+        let runtime = super::BotRuntime::new(super::BotRuntimeArgs {
+            user_id: teloxide::types::UserId(123),
+            notify_service,
+            event_bus,
+        });
+
+        let bot = teloxide::Bot::new("123456:dummy_token")
+            .set_api_url(reqwest::Url::parse("http://127.0.0.1:1/").unwrap());
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let handle = tokio::spawn(async move {
+            super::run_with_retry(
+                bot,
+                runtime,
+                shutdown_rx,
+                std::time::Duration::from_millis(30),
+            )
+            .await;
+        });
+
+        // Let it attempt multiple retries in the background
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Verify task did not panic or exit prematurely
+        assert!(
+            !handle.is_finished(),
+            "telegram task should keep retrying in background"
+        );
+
+        // Now trigger shutdown signal
+        shutdown_tx.send(true).unwrap();
+
+        // The task should stop cleanly within 500ms
+        let join_res = tokio::time::timeout(std::time::Duration::from_millis(500), handle)
+            .await
+            .expect("telegram task should stop cleanly on shutdown signal");
+
+        assert!(
+            join_res.is_ok(),
+            "telegram task should exit cleanly without panic"
         );
     }
 }
