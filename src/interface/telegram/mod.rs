@@ -82,55 +82,88 @@ pub(crate) async fn run_with_retry(
 
         info!("Starting Telegram bot dispatcher...");
 
-        let listener = teloxide::update_listeners::Polling::builder(bot.clone())
-            .timeout(Duration::from_secs(10))
-            .build();
-        let error_handler = teloxide::error_handlers::LoggingErrorHandler::with_custom_text(
-            "An error from the update listener",
-        );
+        let bot_for_task = bot.clone();
+        let handler_for_task = handler.clone();
+        let runtime_for_task = runtime.clone();
 
-        let mut dispatcher = Dispatcher::builder(bot.clone(), handler.clone())
-            .dependencies(dptree::deps![runtime.clone()])
+        let mut dispatcher = Dispatcher::builder(bot_for_task.clone(), handler_for_task)
+            .dependencies(dptree::deps![runtime_for_task])
             .build();
 
         let shutdown_token = dispatcher.shutdown_token();
         let mut shutdown_watch = shutdown_rx.clone();
-        let shutdown_token_clone = shutdown_token.clone();
-        let shutdown_monitor = tokio::spawn(async move {
-            if shutdown_watch.wait_for(|&s| s).await.is_ok()
-                && let Ok(shutdown_fut) = shutdown_token_clone.shutdown()
-            {
-                shutdown_fut.await;
-            }
+
+        let mut dispatch_handle = tokio::spawn(async move {
+            let listener = teloxide::update_listeners::polling_default(bot_for_task).await;
+            let error_handler = teloxide::error_handlers::LoggingErrorHandler::with_custom_text(
+                "An error from the update listener",
+            );
+            dispatcher
+                .try_dispatch_with_listener(listener, error_handler)
+                .await
         });
 
-        match dispatcher
-            .try_dispatch_with_listener(listener, error_handler)
-            .await
-        {
-            Ok(()) => {
-                info!("Telegram bot dispatcher stopped gracefully");
-                shutdown_monitor.abort();
-                break;
-            }
-            Err(err) => {
-                shutdown_monitor.abort();
-                if *shutdown_rx.borrow() {
-                    info!("Telegram bot stopping due to shutdown signal");
-                    break;
-                }
-                warn!(
-                    "Telegram bot initialization failed: {err}. Retrying in {:?} in background...",
-                    backoff
-                );
-                tokio::select! {
-                    _ = tokio::time::sleep(backoff) => {}
-                    _ = shutdown_rx.wait_for(|&s| s) => {
-                        info!("Telegram bot retry cancelled by shutdown signal");
+        tokio::select! {
+            join_res = &mut dispatch_handle => {
+                match join_res {
+                    Ok(Ok(())) => {
+                        info!("Telegram bot dispatcher stopped gracefully");
                         break;
                     }
+                    Ok(Err(err)) => {
+                        if *shutdown_rx.borrow() {
+                            info!("Telegram bot stopping due to shutdown signal");
+                            break;
+                        }
+                        warn!(
+                            "Telegram bot initialization failed: {err}. Retrying in {:?} in background...",
+                            backoff
+                        );
+                        tokio::select! {
+                            _ = tokio::time::sleep(backoff) => {}
+                            _ = async { let _ = shutdown_rx.wait_for(|&s| s).await; } => {
+                                info!("Telegram bot retry cancelled by shutdown signal");
+                                break;
+                            }
+                        }
+                        backoff = (backoff * 2).min(max_backoff);
+                    }
+                    Err(join_err) => {
+                        if *shutdown_rx.borrow() || join_err.is_cancelled() {
+                            info!("Telegram bot stopping due to shutdown signal");
+                            break;
+                        }
+                        error!("Telegram bot task failed unexpectedly: {join_err}");
+                        tokio::select! {
+                            _ = tokio::time::sleep(backoff) => {}
+                            _ = async { let _ = shutdown_rx.wait_for(|&s| s).await; } => {
+                                info!("Telegram bot retry cancelled by shutdown signal");
+                                break;
+                            }
+                        }
+                        backoff = (backoff * 2).min(max_backoff);
+                    }
                 }
-                backoff = (backoff * 2).min(max_backoff);
+            }
+            _ = async { let _ = shutdown_watch.wait_for(|&s| s).await; } => {
+                info!("Shutdown signal received, stopping Telegram bot...");
+                match shutdown_token.shutdown() {
+                    Ok(shutdown_fut) => {
+                        if tokio::time::timeout(Duration::from_secs(5), shutdown_fut)
+                            .await
+                            .is_err()
+                        {
+                            warn!("Telegram bot graceful shutdown timed out, aborting task");
+                            dispatch_handle.abort();
+                        }
+                        let _ = dispatch_handle.await;
+                    }
+                    Err(_) => {
+                        dispatch_handle.abort();
+                        let _ = dispatch_handle.await;
+                    }
+                }
+                break;
             }
         }
     }
@@ -444,5 +477,168 @@ mod tests {
             join_res.is_ok(),
             "telegram task should exit cleanly without panic"
         );
+    }
+
+    #[tokio::test]
+    async fn run_deletes_configured_webhook_before_polling() {
+        use sea_orm_migration::MigratorTrait;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
+
+        let mut options = sea_orm::ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = sea_orm::Database::connect(options).await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+        let event_bus = crate::infrastructure::event_bus::EventBus::new(db);
+        let notify_service =
+            crate::infrastructure::event::publisher::EventBusPublisher::new(event_bus.clone());
+        let runtime = super::BotRuntime::new(super::BotRuntimeArgs {
+            user_id: teloxide::types::UserId(123),
+            notify_service,
+            event_bus,
+        });
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/bot123456:dummy_token/GetWebhookInfo"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": {
+                    "url": "https://example.com/webhook",
+                    "has_custom_certificate": false,
+                    "pending_update_count": 0
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/bot123456:dummy_token/DeleteWebhook"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": true,
+                "description": "Webhook was deleted"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/bot123456:dummy_token/GetMe"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": {
+                    "id": 123456,
+                    "is_bot": true,
+                    "first_name": "Test Bot",
+                    "username": "test_bot",
+                    "can_join_groups": true,
+                    "can_read_all_group_messages": false,
+                    "supports_inline_queries": false,
+                    "has_main_web_app": false
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/bot123456:dummy_token/GetUpdates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": []
+            })))
+            .mount(&server)
+            .await;
+
+        let bot = teloxide::Bot::new("123456:dummy_token")
+            .set_api_url(reqwest::Url::parse(&format!("{}/", server.uri())).unwrap());
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let handle = tokio::spawn(async move {
+            super::run_with_retry(
+                bot,
+                runtime,
+                shutdown_rx,
+                std::time::Duration::from_millis(30),
+            )
+            .await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        shutdown_tx.send(true).unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), handle).await;
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn run_shutdown_cancels_in_flight_stalled_request_promptly() {
+        use sea_orm_migration::MigratorTrait;
+
+        let mut options = sea_orm::ConnectOptions::new("sqlite::memory:");
+        options.sqlx_logging(false);
+        let db = sea_orm::Database::connect(options).await.unwrap();
+        crate::migration::Migrator::up(&db, None).await.unwrap();
+        let event_bus = crate::infrastructure::event_bus::EventBus::new(db);
+        let notify_service =
+            crate::infrastructure::event::publisher::EventBusPublisher::new(event_bus.clone());
+        let runtime = super::BotRuntime::new(super::BotRuntimeArgs {
+            user_id: teloxide::types::UserId(123),
+            notify_service,
+            event_bus,
+        });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let stall_server = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    use tokio::io::AsyncReadExt;
+                    let mut buf = [0u8; 1024];
+                    while let Ok(n) = socket.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        let bot = teloxide::Bot::new("123456:dummy_token")
+            .set_api_url(reqwest::Url::parse(&format!("http://{addr}/")).unwrap());
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let handle = tokio::spawn(async move {
+            super::run_with_retry(
+                bot,
+                runtime,
+                shutdown_rx,
+                std::time::Duration::from_millis(30),
+            )
+            .await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(
+            !handle.is_finished(),
+            "telegram task should be in-flight/stalled"
+        );
+
+        shutdown_tx.send(true).unwrap();
+
+        let join_res = tokio::time::timeout(std::time::Duration::from_millis(500), handle)
+            .await
+            .expect("telegram task should cancel in-flight stalled request promptly on shutdown");
+
+        assert!(join_res.is_ok(), "telegram task should exit cleanly");
+        stall_server.abort();
     }
 }
