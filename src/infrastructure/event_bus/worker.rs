@@ -61,23 +61,14 @@ impl EventWorker {
                                 "Failed to deserialize event '{}' payload `{}`: {}",
                                 self.event_name, record.payload, err
                             );
-                            if let Err(ack_err) = self.store.ack(record.id).await {
-                                error!("Failed to ack malformed event, {}", ack_err);
-                                return Err(ack_err);
-                            }
+                            self.ack_with_retry(record.id).await?;
                             break;
                         }
                     };
 
                     match handler(state.clone(), payload).await {
                         Ok(_) => {
-                            if let Err(err) = self.store.ack(record.id).await {
-                                error!(
-                                    "Failed to mark event as acknowledged after processing, {}",
-                                    err
-                                );
-                                return Err(err);
-                            }
+                            self.ack_with_retry(record.id).await?;
                             break;
                         }
                         Err(err) if err.is_retryable() => {
@@ -92,10 +83,7 @@ impl EventWorker {
                                 "Non-retryable error processing event '{}', id {}, acking: {}",
                                 self.event_name, record.id, err
                             );
-                            if let Err(ack_err) = self.store.ack(record.id).await {
-                                error!("Failed to ack non-retryable event, {}", ack_err);
-                                return Err(ack_err);
-                            }
+                            self.ack_with_retry(record.id).await?;
                             break;
                         }
                     }
@@ -104,6 +92,35 @@ impl EventWorker {
         }
 
         Ok(())
+    }
+
+    async fn ack_with_retry(&self, id: i64) -> AppResult<()> {
+        let mut retries = 0;
+        loop {
+            match self.store.ack(id).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if retries >= 3 {
+                        error!(
+                            "Failed to ack event '{}', id {} after {} retries: {}",
+                            self.event_name, id, retries, err
+                        );
+                        return Err(err);
+                    }
+                    retries += 1;
+                    error!(
+                        "Failed to ack event '{}', id {}, retrying ({}/3): {}",
+                        self.event_name, id, retries, err
+                    );
+                    let backoff = if self.retry_delay.is_zero() {
+                        Duration::ZERO
+                    } else {
+                        Duration::from_millis(100 * (1 << (retries - 1)))
+                    };
+                    sleep(backoff).await;
+                }
+            }
+        }
     }
 }
 
