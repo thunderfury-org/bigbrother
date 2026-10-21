@@ -79,6 +79,8 @@ fn parse_audio_codec(codec: &str) -> String {
             "TRUEHD" => "TrueHD",
             "ATMOS" => "Atmos",
             "DTSHD" => "DTS-HD",
+            "LPCM" => "LPCM",
+            "PCM" => "PCM",
             _ => p,
         };
         parts.push(p.to_owned());
@@ -138,6 +140,9 @@ mod tests {
         );
         assert_eq!(normalize_audio_codec("DTS-HD.MA.7.1"), "DTS-HD.MA.7.1");
         assert_eq!(normalize_audio_codec("DTSHD.MA.7.1"), "DTS-HD.MA.7.1");
+        assert_eq!(normalize_audio_codec("LPCM2.0"), "LPCM.2.0");
+        assert_eq!(normalize_audio_codec("LPCM.7.1"), "LPCM.7.1");
+        assert_eq!(normalize_audio_codec("PCM"), "PCM");
     }
 
     #[test]

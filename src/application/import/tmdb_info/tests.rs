@@ -252,6 +252,7 @@ async fn get_tv_info_tries_later_titles_after_cached_none_for_earlier_title() {
         catalog.tv_search_calls.lock().unwrap().as_slice(),
         &[
             ("Perfect Crown DSNP".to_string(), "2026".to_string()),
+            ("Perfect Crown DSNP".to_string(), "".to_string()),
             ("21世纪大君夫人".to_string(), "2026".to_string()),
         ]
     );
@@ -348,4 +349,68 @@ async fn get_movie_info_skips_empty_descriptions_in_llm_fallback() {
     assert!(movie.is_none());
     // No TMDB search calls because all descriptions were empty
     assert!(catalog.movie_search_calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn get_tv_info_falls_back_to_empty_year_when_year_search_returns_empty() {
+    let catalog = FakeMetadataCatalog::default();
+    catalog.tv_search_results.lock().unwrap().insert(
+        ("Spy in the Wild".to_string(), "".to_string()),
+        vec![SearchTvResult {
+            id: 73910,
+            name: "Spy in the Wild".into(),
+            original_name: "Spy in the Wild".into(),
+            first_air_date: "2017-01-12".into(),
+            ..Default::default()
+        }],
+    );
+    catalog.tv_details.lock().unwrap().insert(
+        73910,
+        TvDetail {
+            id: 73910,
+            name: "Spy in the Wild".into(),
+            first_air_date: "2017-01-12".into(),
+            number_of_episodes: 9,
+            number_of_seasons: 2,
+            origin_country: vec!["GB".into()],
+            original_language: "en".into(),
+            original_name: "Spy in the Wild".into(),
+            genres: Vec::new(),
+            seasons: vec![
+                Season {
+                    id: 1,
+                    name: "Season 1".into(),
+                    episode_count: 5,
+                    season_number: 1,
+                },
+                Season {
+                    id: 2,
+                    name: "Season 2".into(),
+                    episode_count: 4,
+                    season_number: 2,
+                },
+            ],
+        },
+    );
+
+    let lookup = TmdbLookup::new(catalog.clone(), FakeTitleExtractor);
+    let meta = Metadata {
+        titles: vec![Title {
+            title: "Spy in the Wild".into(),
+            language: "en".into(),
+        }],
+        year: "2020".into(),
+        ..Default::default()
+    };
+
+    let tv = lookup.get_tv_info(&meta, &[]).await.unwrap();
+
+    assert_eq!(tv.as_ref().map(|item| item.id), Some(73910));
+    assert_eq!(
+        catalog.tv_search_calls.lock().unwrap().as_slice(),
+        &[
+            ("Spy in the Wild".to_string(), "2020".to_string()),
+            ("Spy in the Wild".to_string(), "".to_string()),
+        ]
+    );
 }

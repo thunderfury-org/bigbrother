@@ -36,7 +36,7 @@ pub(crate) const VIDEO_CODEC_KEYWORDS: &[&str] =
     &["H264", "H265", "X264", "X265", "HEVC", "AVC", "AV1", "VP9"];
 
 pub(crate) const AUDIO_CODEC_KEYWORDS: &[&str] = &[
-    "AAC", "FLAC", "DTS", "DTS-HD", "TRUEHD", "ATMOS", "EAC3", "AC3", "DDP", "DD",
+    "AAC", "FLAC", "DTS", "DTS-HD", "TRUEHD", "ATMOS", "EAC3", "AC3", "DDP", "DD", "LPCM", "PCM",
 ];
 
 pub(crate) const QUALITY_KEYWORDS: &[&str] = &[
@@ -72,8 +72,25 @@ pub(crate) const QUALITY_PATTERNS: &[&str] = &[
 pub(crate) const VIDEO_CODEC_PATTERNS: &[&str] =
     &[r"HEVC", r"AVC", r"AV1", r"VP-9", r"H\.?26[45]", r"X26[45]"];
 
-pub(crate) const AUDIO_CODEC_PATTERNS: &[&str] =
-    &[r"AAC", r"FLAC", r"DTS(?:-?HD)?", r"TRUEHD", r"ATMOS"];
+pub(crate) const AUDIO_CODEC_PATTERNS: &[&str] = &[
+    r"AAC",
+    r"FLAC",
+    r"DTS(?:-?HD)?",
+    r"TRUEHD",
+    r"ATMOS",
+    r"LPCM",
+    r"PCM",
+];
+
+pub(crate) const SEASON_COMPLETE_PATTERNS: &[&str] = &[
+    r"(?:全|共)\s*\d{1,4}\s*[集话話期]?",
+    r"全[一二三四五六七八九十\d]+季",
+    r"全[一二三四五六七八九十\d]+部",
+    r"全集",
+];
+
+pub(crate) const AUDIO_TRACK_PATTERNS: &[&str] =
+    &[r"\d{1,2}Audios?", r"(?:Dual|Multi)[-_.]?Audios?"];
 
 pub(crate) const HDR_PATTERNS: &[&str] = &[r"HDR10\+?", r"HDR", r"DV", r"DOVI", r"HLG"];
 
@@ -180,6 +197,8 @@ pub(crate) static TECHNICAL_FRAGMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
         EPISODE_TYPE_KEYWORDS,
         PROMOTIONAL_NOISE_KEYWORDS,
         TECHNICAL_FRAGMENT_EXTRAS,
+        SEASON_COMPLETE_PATTERNS,
+        AUDIO_TRACK_PATTERNS,
     ]);
     Regex::new(&format!("(?i)(?:{alternatives})")).unwrap()
 });
@@ -202,6 +221,8 @@ pub(crate) static NOISE_BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
         EPISODE_TYPE_KEYWORDS,
         QUALITY_MISC_PATTERNS,
         STREAMING_PROVIDER_KEYWORDS,
+        SEASON_COMPLETE_PATTERNS,
+        AUDIO_TRACK_PATTERNS,
     ]);
     Regex::new(&format!("(?i)^(?:{alternatives})$")).unwrap()
 });
@@ -246,6 +267,16 @@ static QUALITY_MISC_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!("(?i)^(?:{alternatives})$")).unwrap()
 });
 
+static SEASON_COMPLETE_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let alternatives = collect_alternatives(&[SEASON_COMPLETE_PATTERNS]);
+    Regex::new(&format!("(?i)^(?:{alternatives})$")).unwrap()
+});
+
+static AUDIO_TRACK_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    let alternatives = collect_alternatives(&[AUDIO_TRACK_PATTERNS]);
+    Regex::new(&format!("(?i)^(?:{alternatives})$")).unwrap()
+});
+
 /// Classify a single bare token by its text. Combines literal-keyword
 /// classification (`classify_bare`) with pattern-based labels (`Resolution`,
 /// `FrameRate`, `Year`, `Episode`). Returns `Label::Unknown` if no rule fires.
@@ -272,6 +303,9 @@ pub(crate) fn classify_token(text: &str) -> Label {
         return Label::PromotionalNoise;
     }
     if QUALITY_MISC_TOKEN_RE.is_match(text) {
+        return Label::PromotionalNoise;
+    }
+    if SEASON_COMPLETE_TOKEN_RE.is_match(text) || AUDIO_TRACK_TOKEN_RE.is_match(text) {
         return Label::PromotionalNoise;
     }
     if CONTAINER_EXT_KEYWORDS
@@ -500,5 +534,28 @@ mod tests {
     fn classify_token_falls_back_to_unknown() {
         assert_eq!(classify_token("Perfect"), Label::Unknown);
         assert_eq!(classify_token("BTN"), Label::Unknown);
+    }
+
+    #[test]
+    fn classifies_lpcm_and_pcm_as_audio_codec() {
+        assert_eq!(classify_bare("LPCM"), Some(Label::AudioCodec));
+        assert_eq!(classify_bare("PCM"), Some(Label::AudioCodec));
+        assert_eq!(classify_bare("lpcm"), Some(Label::AudioCodec));
+    }
+
+    #[test]
+    fn classify_token_recognizes_season_complete_and_audio_track_as_noise() {
+        assert_eq!(classify_token("全4集"), Label::PromotionalNoise);
+        assert_eq!(classify_token("共12集"), Label::PromotionalNoise);
+        assert_eq!(classify_token("全24话"), Label::PromotionalNoise);
+        assert_eq!(classify_token("2Audio"), Label::PromotionalNoise);
+        assert_eq!(classify_token("DualAudio"), Label::PromotionalNoise);
+    }
+
+    #[test]
+    fn noise_bracket_matches_season_complete() {
+        assert!(NOISE_BRACKET_RE.is_match("全4集"));
+        assert!(NOISE_BRACKET_RE.is_match("共12集"));
+        assert!(NOISE_BRACKET_RE.is_match("2Audio"));
     }
 }

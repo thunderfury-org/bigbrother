@@ -287,3 +287,61 @@ async fn identify_returns_unmatched_when_episode_slot_unresolved() {
     assert_eq!(outcome.unmatched.len(), 1);
     assert_eq!(outcome.unmatched[0].file_name, "Breaking.Bad.Special.mkv");
 }
+
+#[tokio::test]
+async fn identify_matches_tv_when_year_search_falls_back_to_empty_year() {
+    let catalog = FakeCatalog::default();
+    catalog.tv_search_results.lock().unwrap().insert(
+        ("Spy in the Wild".into(), "".into()),
+        vec![SearchTvResult {
+            id: 73910,
+            name: "Spy in the Wild".into(),
+            original_name: "Spy in the Wild".into(),
+            first_air_date: "2017-01-12".into(),
+            ..Default::default()
+        }],
+    );
+    catalog
+        .tv_details
+        .lock()
+        .unwrap()
+        .insert(73910, tv_detail(73910, "Spy in the Wild", 2));
+    let svc = MediaIdentifyService::new(catalog, NoOpTitleExtractor);
+    let files = vec![
+        tv_media_file(
+            "Spy.in.the.Wild.S02E01.mkv",
+            "Spy in the Wild",
+            "2020",
+            2,
+            1,
+        ),
+        tv_media_file(
+            "Spy.in.the.Wild.S02E02.mkv",
+            "Spy in the Wild",
+            "2020",
+            2,
+            2,
+        ),
+    ];
+
+    let outcome = svc.identify(files).await.unwrap();
+
+    assert_eq!(outcome.unmatched.len(), 0);
+    assert_eq!(outcome.groups.len(), 1);
+    match &outcome.groups[0] {
+        Media::Tv { detail, files } => {
+            assert_eq!(detail.id, 73910);
+            let season_2 = files.get(&2).expect("expected season 2");
+            assert_eq!(season_2.len(), 2);
+            assert_eq!(
+                season_2.get(&1).unwrap()[0].video.name,
+                "Spy.in.the.Wild.S02E01.mkv"
+            );
+            assert_eq!(
+                season_2.get(&2).unwrap()[0].video.name,
+                "Spy.in.the.Wild.S02E02.mkv"
+            );
+        }
+        Media::Movie { .. } => panic!("expected Media::Tv, got Media::Movie"),
+    }
+}

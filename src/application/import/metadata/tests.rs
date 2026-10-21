@@ -87,3 +87,42 @@ fn parse_media_metadata_extracts_title_from_cas_context_path() {
             .any(|title| title.title == "The Epoch of Miyu")
     );
 }
+
+#[test]
+fn parse_media_metadata_cleans_complete_season_and_lpcm_audio_tags() {
+    let lookup = MetadataLookup::default();
+
+    let metadata = lookup.parse_media_metadata(
+        "Spy.in.the.Wild.S02E01.2020.BluRay.1080p.LPCM2.0.2Audio.x265.10bit-BlackTV.mkv",
+        "/荒野间谍 第二季[全4集][国英多音轨+简繁英字幕].Spy.in.the.Wild.S02.2020.BluRay.1080p.LPCM2.0.2Audio.x265.10bit-BlackTV",
+    );
+
+    assert!(metadata.is_tv_episode());
+    assert_eq!(metadata.season_number, Some(2));
+    assert_eq!(metadata.episode_number, Some(1));
+    assert_eq!(metadata.year, "2020");
+    assert_eq!(metadata.resolution, "1080p");
+    assert_eq!(metadata.quality, "BluRay");
+    assert_eq!(metadata.video_codec, "H265");
+    assert_eq!(metadata.audio_codec, "LPCM.2.0");
+    assert_eq!(metadata.release_group, "BlackTV");
+
+    let title_texts: Vec<&str> = metadata.titles.iter().map(|t| t.title.as_str()).collect();
+    assert!(
+        title_texts.contains(&"Spy in the Wild"),
+        "titles: {title_texts:?}"
+    );
+    assert!(title_texts.contains(&"荒野间谍"), "titles: {title_texts:?}");
+    assert!(
+        !title_texts.iter().any(|t| t.contains("全4集")),
+        "titles: {title_texts:?}"
+    );
+    assert!(
+        !title_texts.iter().any(|t| t.contains("LPCM")),
+        "titles: {title_texts:?}"
+    );
+    assert!(
+        !title_texts.iter().any(|t| t.contains("Audio")),
+        "titles: {title_texts:?}"
+    );
+}
