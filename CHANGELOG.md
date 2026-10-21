@@ -1,8 +1,17 @@
 # Changelog
+## [0.8.2] - 2026-10-21
+### Bug Fixes
+
+- (app) degrade gracefully on telegram startup errors and decouple shutdown (#194)
+- (app) drain pending events in a loop until store is empty (#193)
 ## [0.8.1] - 2026-09-01
 ### Bug Fixes
 
 - (app) switch untagged image cleanup to snok/container-retention-policy (#188)
+
+### Chores
+
+- (app) release v0.8.1 (#191)
 
 ### Support
 
