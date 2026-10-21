@@ -15,7 +15,12 @@ pub(crate) mod media_dirs;
 pub(crate) mod share;
 pub(crate) mod subscription;
 
-pub(crate) async fn run(name: &'static str, addr: String, app: Router) -> AppResult<()> {
+pub(crate) async fn run(
+    name: &'static str,
+    addr: String,
+    app: Router,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) -> AppResult<()> {
     info!("Starting {name} at {}", addr);
 
     let app = app
@@ -24,7 +29,14 @@ pub(crate) async fn run(name: &'static str, addr: String, app: Router) -> AppRes
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(name))
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = shutdown_signal(name) => {}
+                _ = shutdown_rx.wait_for(|&s| s) => {
+                    info!("Shutdown signal received for {name}...");
+                }
+            }
+        })
         .await?;
     info!("{name} has shutdown gracefully.");
     Ok(())
