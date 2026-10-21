@@ -140,12 +140,13 @@ impl Client {
     }
 
     pub async fn search_tv(&self, query: &str, year: &str) -> RequestResult<Vec<SearchTvResult>> {
-        self.get::<SearchTvResponse>(
-            "/search/tv",
-            Some(vec![("query", query), ("first_air_date_year", year)]),
-        )
-        .await
-        .map(|resp| resp.results)
+        let mut query_params = vec![("query", query)];
+        if !year.is_empty() {
+            query_params.push(("year", year));
+        }
+        self.get::<SearchTvResponse>("/search/tv", Some(query_params))
+            .await
+            .map(|resp| resp.results)
     }
 
     pub async fn get_tv_detail(&self, id: u32) -> RequestResult<Option<TvDetail>> {
@@ -257,7 +258,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/search/tv"))
             .and(query_param("query", "Breaking Bad"))
-            .and(query_param("first_air_date_year", "2008"))
+            .and(query_param("year", "2008"))
             .and(query_param("language", "zh-CN"))
             .and(query_param("include_adult", "true"))
             .and(query_param("api_key", "test-api-key"))
@@ -318,5 +319,33 @@ mod tests {
             }
             other => panic!("expected decode error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn search_tv_omits_year_query_when_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/search/tv"))
+            .and(query_param("query", "Breaking Bad"))
+            .and(query_param("language", "zh-CN"))
+            .and(query_param("include_adult", "true"))
+            .and(query_param("api_key", "test-api-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "results": [{
+                    "id": 1396,
+                    "name": "Breaking Bad",
+                    "original_name": "Breaking Bad",
+                    "first_air_date": "2008-01-20",
+                    "poster_path": "/breaking-bad.jpg",
+                    "overview": "A chemistry teacher turned meth maker."
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client(&server).search_tv("Breaking Bad", "").await.unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, 1396);
     }
 }

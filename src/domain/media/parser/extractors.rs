@@ -77,7 +77,7 @@ static VIDEO_CODEC_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?P<value>[HX]\.?(?:26[45])|AVC|HEVC|AV1|VP-9)").unwrap());
 static AUDIO_CODEC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)(?P<value>(?:AAC|FLAC|Dolby[.\s]?Digital|DDP?|DTS(?:[.\s-]?HD)?|TrueHD)(?:[.\s_-]?(?:Atmos|MA|DDP?|\d\.\d))*)",
+        r"(?i)(?P<value>(?:AAC|FLAC|Dolby[.\s]?Digital|DDP?|DTS(?:[.\s-]?HD)?|TrueHD|LPCM|PCM)(?:[.\s_-]?(?:Atmos|MA|DDP?|\d\.\d))*)",
     )
     .unwrap()
 });

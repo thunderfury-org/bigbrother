@@ -211,10 +211,13 @@ impl TmdbLookup {
                 }
                 continue;
             }
-            let tvs = self
+            let mut tvs = self
                 .metadata_catalog
                 .search_tv(&title.title, &meta.year)
                 .await?;
+            if tvs.is_empty() && !meta.year.is_empty() {
+                tvs = self.metadata_catalog.search_tv(&title.title, "").await?;
+            }
             match resolve_tv_candidate(
                 &title.title,
                 &meta.year,
@@ -256,10 +259,16 @@ impl TmdbLookup {
                     }
                     continue;
                 }
-                let tvs = self
+                let mut tvs = self
                     .metadata_catalog
                     .search_tv(&extracted.title, &meta.year)
                     .await?;
+                if tvs.is_empty() && !meta.year.is_empty() {
+                    tvs = self
+                        .metadata_catalog
+                        .search_tv(&extracted.title, "")
+                        .await?;
+                }
                 match resolve_tv_candidate(
                     &extracted.title,
                     &meta.year,

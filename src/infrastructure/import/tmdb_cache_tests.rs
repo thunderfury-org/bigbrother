@@ -106,7 +106,7 @@ async fn search_tv_uses_cache_on_second_call() {
     Mock::given(method("GET"))
         .and(path("/search/tv"))
         .and(query_param("query", "Breaking Bad"))
-        .and(query_param("first_air_date_year", "2008"))
+        .and(query_param("year", "2008"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "results": [{
                 "id": 1396,
