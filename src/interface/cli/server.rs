@@ -50,9 +50,20 @@ pub(super) async fn run_with_shutdown(
     // Infrastructure
     let event_bus = EventBus::new(db.clone());
     let mut bot = teloxide::Bot::new(config.get_telegram_config().bot_token.as_str());
-    if let Some(api_url) = config.get_telegram_config().get_api_url()
-        && let Ok(url) = reqwest::Url::parse(api_url)
-    {
+    if let Some(api_url) = config.get_telegram_config().get_api_url() {
+        let url = reqwest::Url::parse(api_url).map_err(|e| {
+            AppError::InvalidParameter(format!("invalid telegram api_url '{api_url}': {e}"))
+        })?;
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(AppError::InvalidParameter(format!(
+                "invalid telegram api_url '{api_url}': scheme must be http or https"
+            )));
+        }
+        if url.cannot_be_a_base() {
+            return Err(AppError::InvalidParameter(format!(
+                "invalid telegram api_url '{api_url}': url cannot be a base"
+            )));
+        }
         bot = bot.set_api_url(url);
     }
     let cache = Cache::new(db.clone());
@@ -465,5 +476,48 @@ library:
         );
 
         drop(occupied_listener);
+    }
+
+    #[tokio::test]
+    async fn server_fails_fast_when_telegram_api_url_is_invalid() {
+        let data_dir = TempServerDataDir::new();
+        data_dir.write_config(
+            r#"
+telegram:
+  bot_token: "123456:dummy_token"
+  user_id: 123
+  api_url: "localhost:8081"
+media_server:
+  host: "127.0.0.1"
+  port: 0
+  strm_path_prefix: "/strm"
+library:
+  remote_path: "/remote"
+  local_path: "/local"
+"#,
+        );
+
+        let (_trigger_tx, trigger_rx) = tokio::sync::oneshot::channel::<()>();
+        let data_dir_path = data_dir.path().to_str().unwrap().to_string();
+
+        let server_task = tokio::spawn(async move {
+            run_with_shutdown(&data_dir_path, async move {
+                let _ = trigger_rx.await;
+            })
+            .await
+        });
+
+        let join_res = tokio::time::timeout(Duration::from_secs(5), server_task)
+            .await
+            .expect("Server should fail fast on invalid telegram api_url and not hang");
+
+        let app_res = join_res.expect("Server task should join without panic");
+        match app_res {
+            Err(AppError::InvalidParameter(msg)) => {
+                assert!(msg.contains("invalid telegram api_url"));
+                assert!(msg.contains("localhost:8081"));
+            }
+            other => panic!("expected InvalidParameter error, got: {other:?}"),
+        }
     }
 }

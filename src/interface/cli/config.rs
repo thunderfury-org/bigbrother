@@ -135,7 +135,10 @@ pub struct TelegramConfig {
 
 impl TelegramConfig {
     pub fn get_api_url(&self) -> Option<&str> {
-        self.api_url.as_deref()
+        self.api_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
     }
 }
 
@@ -604,5 +607,49 @@ pan123:
             pan123.auth_server_base_url,
             "https://custom-auth.example.com"
         );
+    }
+
+    #[test]
+    fn telegram_config_defaults_api_url_to_none() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config("");
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let telegram = config.get_telegram_config();
+        assert_eq!(telegram.get_api_url(), None);
+    }
+
+    #[test]
+    fn telegram_config_parses_custom_api_url() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+telegram:
+  bot_token: "123456:dummy_token"
+  user_id: 123
+  api_url: "http://127.0.0.1:8081/"
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let telegram = config.get_telegram_config();
+        assert_eq!(telegram.get_api_url(), Some("http://127.0.0.1:8081/"));
+    }
+
+    #[test]
+    fn telegram_config_ignores_empty_or_whitespace_api_url() {
+        let data_dir = TempConfigDir::new();
+        data_dir.write_config(
+            r#"
+telegram:
+  bot_token: "123456:dummy_token"
+  user_id: 123
+  api_url: "   "
+"#,
+        );
+
+        let config = Manager::try_from(data_dir.path().to_str().unwrap()).unwrap();
+        let telegram = config.get_telegram_config();
+        assert_eq!(telegram.get_api_url(), None);
     }
 }
